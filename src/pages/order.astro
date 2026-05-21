@@ -1,0 +1,313 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+// ──────────────────────────────────────────────────────────────────
+// CONFIGURE YOUR NEXT DROP HERE
+// Set ORDERS_CURRENTLY_OPEN = true when you open a preorder window.
+// ──────────────────────────────────────────────────────────────────
+const ORDERS_CURRENTLY_OPEN = false;
+
+// Date/time when the NEXT preorder window opens (used for countdown)
+const NEXT_DROP_OPEN_STR  = '2026-06-07T10:00:00';
+const NEXT_DROP_OPEN_LABEL = 'Saturday, June 7, 2026 at 10:00 AM';
+
+// Date/time when the CURRENT (or upcoming) window closes
+const ORDERS_CLOSE_LABEL = 'June 8, 2026 at 11:59 PM';
+
+// Square ordering link
+const ORDER_LINK = 'https://kateredkneads.square.site/shop/katering-now/LQ62D5N5VAEN2X4RSTCFQTVK';
+
+const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f78214d446f6be87ef75ef20bf04c7b33944d12f06092b0856af4a12be';
+---
+
+<Layout
+  title="Preorder — Katered Kneads"
+  description="Place a preorder for handmade cookies delivered to UC Berkeley or UC Davis. Preorders open every two weeks."
+  activePage="order"
+>
+
+  <!-- Order Hero -->
+  <section class="order-hero">
+    <div class="container">
+      <p class="eyebrow">Preorders</p>
+      <h1 class="order-heading">Place Your Order</h1>
+      <p class="order-sub">Handmade, limited-batch cookies — biweekly drops at UC Berkeley &amp; UC Davis.</p>
+    </div>
+  </section>
+
+  <!-- Order Status Panel -->
+  <section class="section order-status-section" id="order-status">
+    <div class="container">
+
+      {ORDERS_CURRENTLY_OPEN ? (
+        <div class="status-panel status-open">
+          <div class="status-badge status-badge-open">● Orders Open</div>
+          <h2 class="status-heading">Preorders are open!</h2>
+          <p class="status-text">Get your order in before the window closes. Limited quantities per item.</p>
+          <p class="status-closes">Preorders close: <strong>{ORDERS_CLOSE_LABEL}</strong></p>
+          <a href={ORDER_LINK} target="_blank" rel="noopener noreferrer" class="btn-primary">Order Now on Square →</a>
+        </div>
+      ) : (
+        <div class="status-panel status-closed">
+          <div class="status-badge status-badge-closed">● Preorders Closed</div>
+          <h2 class="status-heading">Next drop opens in</h2>
+          <p class="status-date">{NEXT_DROP_OPEN_LABEL}</p>
+
+          <div class="countdown" id="countdown" aria-live="polite" aria-label="Countdown to next drop">
+            <div class="countdown-item">
+              <span class="countdown-num" id="cd-days">--</span>
+              <span class="countdown-label">Days</span>
+            </div>
+            <div class="countdown-sep" aria-hidden="true">:</div>
+            <div class="countdown-item">
+              <span class="countdown-num" id="cd-hours">--</span>
+              <span class="countdown-label">Hours</span>
+            </div>
+            <div class="countdown-sep" aria-hidden="true">:</div>
+            <div class="countdown-item">
+              <span class="countdown-num" id="cd-minutes">--</span>
+              <span class="countdown-label">Min</span>
+            </div>
+            <div class="countdown-sep" aria-hidden="true">:</div>
+            <div class="countdown-item">
+              <span class="countdown-num" id="cd-seconds">--</span>
+              <span class="countdown-label">Sec</span>
+            </div>
+          </div>
+
+          <p class="status-cta-hint">Don't want to check back? <a href="#sms-signup">Join the SMS list ↓</a></p>
+        </div>
+      )}
+    </div>
+  </section>
+
+  <!-- SMS Sign-up (shown when orders are closed) -->
+  {!ORDERS_CURRENTLY_OPEN && (
+    <section class="section section-tinted" id="sms-signup">
+      <div class="container">
+        <div class="sms-block">
+          <div class="sms-text">
+            <p class="eyebrow">Never Miss a Drop</p>
+            <h2 class="section-heading">Join the SMS List</h2>
+            <p>
+              We text our list about 5 minutes before preorders open. Be first to grab your picks before quantities run out.
+            </p>
+            <ul class="sms-benefits">
+              <li>Text notification ~5 min before orders open</li>
+              <li>First to see new menu items each drop</li>
+              <li>Easy opt-out anytime — just reply STOP</li>
+            </ul>
+          </div>
+
+          <div class="sms-form-wrap">
+            {/* Replace the Formspree action URL with your own form endpoint.
+                Sign up for free at formspree.io to collect submissions by email,
+                then wire up Twilio or a similar service for SMS automation. */}
+            <form
+              class="sms-form"
+              id="sms-form"
+              action="https://formspree.io/f/YOUR_FORM_ID"
+              method="POST"
+            >
+              <input type="hidden" name="_subject" value="New SMS Signup — Katered Kneads" />
+
+              <div class="form-field">
+                <label for="sms-name">First Name</label>
+                <input
+                  type="text"
+                  id="sms-name"
+                  name="name"
+                  placeholder="Your first name"
+                  required
+                  autocomplete="given-name"
+                />
+              </div>
+
+              <div class="form-field">
+                <label for="sms-phone">Phone Number</label>
+                <input
+                  type="tel"
+                  id="sms-phone"
+                  name="phone"
+                  placeholder="+1 (555) 000-0000"
+                  required
+                  autocomplete="tel"
+                />
+              </div>
+
+              <div class="form-field">
+                <label for="sms-campus">Your Campus</label>
+                <select id="sms-campus" name="campus" required>
+                  <option value="">Select your campus</option>
+                  <option value="UC Berkeley">UC Berkeley</option>
+                  <option value="UC Davis">UC Davis</option>
+                  <option value="Both">Both (I'm flexible)</option>
+                </select>
+              </div>
+
+              <p class="form-disclaimer">
+                By signing up you consent to receive SMS notifications from Katered Kneads.
+                Message &amp; data rates may apply. Reply STOP to unsubscribe at any time.
+              </p>
+
+              <button type="submit" class="btn-primary form-submit">Join the SMS List →</button>
+            </form>
+
+            <p class="form-success" id="form-success" hidden>
+              ✓ You're on the list! We'll text you before the next drop.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+  )}
+
+  <!-- Next Drop Preview -->
+  <section class="section" id="next-drop">
+    <div class="container">
+      <div class="section-header">
+        <p class="eyebrow">Coming Up</p>
+        <h2 class="section-heading">Next Drop Preview</h2>
+        <p class="section-sub">A peek at what's baking for the next drop. Full menu and pricing revealed when orders open.</p>
+      </div>
+
+      <div class="cookie-grid">
+        <div class="cookie-card">
+          <div class="cookie-card-image">
+            <img src={`${CDN}/2024-03-16_20-23-15_1710645807.jpg`} alt="Mochi Brownies" loading="lazy" />
+            <span class="cookie-tag">Returning</span>
+          </div>
+          <div class="cookie-card-body">
+            <h3>Mochi Brownies</h3>
+            <p>The drop classic you keep asking for. Chewy, fudgy, and worth every bite.</p>
+          </div>
+        </div>
+
+        <div class="cookie-card">
+          <div class="cookie-card-image">
+            <img src={`${CDN}/IMG_1939_1710645204.jpg`} alt="Caramelies" loading="lazy" />
+            <span class="cookie-tag">Back Again</span>
+          </div>
+          <div class="cookie-card-body">
+            <h3>Caramelies</h3>
+            <p>Buttery caramel with a sea salt finish. These always sell out first.</p>
+          </div>
+        </div>
+
+        <div class="cookie-card cookie-card-tease">
+          <div class="cookie-card-image cookie-card-image-mystery">
+            <div class="mystery-placeholder">?</div>
+          </div>
+          <div class="cookie-card-body">
+            <h3>New Item</h3>
+            <p>Something new is dropping. Follow us on Instagram for the reveal.</p>
+          </div>
+        </div>
+
+        <div class="cookie-card cookie-card-tease">
+          <div class="cookie-card-image cookie-card-image-mystery">
+            <div class="mystery-placeholder">?</div>
+          </div>
+          <div class="cookie-card-body">
+            <h3>Surprise Drop</h3>
+            <p>Join the SMS list to be the first to know what's coming.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How Preorders Work -->
+  <section class="section section-tinted" id="how-preorders-work">
+    <div class="container">
+      <div class="section-header">
+        <p class="eyebrow">Quick Guide</p>
+        <h2 class="section-heading">How Preorders Work</h2>
+      </div>
+      <div class="steps-grid">
+        <div class="step">
+          <div class="step-number">01</div>
+          <h3>Get Notified</h3>
+          <p>Join the SMS list above. We'll text you approximately 5 minutes before orders open so you can be first in line.</p>
+        </div>
+        <div class="step">
+          <div class="step-number">02</div>
+          <h3>Choose Your Items</h3>
+          <p>Browse this drop's menu and add what you want. Select UC Berkeley or UC Davis for pickup.</p>
+        </div>
+        <div class="step">
+          <div class="step-number">03</div>
+          <h3>Pick Up &amp; Enjoy</h3>
+          <p>Grab your freshly baked order at the confirmed campus location. That's it.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <script define:vars={{ NEXT_DROP_OPEN_STR }}>
+    // ── Countdown Timer ──────────────────────────────────────────────
+    var target = new Date(NEXT_DROP_OPEN_STR).getTime();
+
+    function pad(n) {
+      return String(n).padStart(2, '0');
+    }
+
+    function updateCountdown() {
+      var now = Date.now();
+      var diff = target - now;
+
+      if (diff <= 0) {
+        // Drop has arrived — reload so the page reflects the open state
+        return;
+      }
+
+      var days    = Math.floor(diff / (1000 * 60 * 60 * 24));
+      var hours   = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      var minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      var seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+      var dEl = document.getElementById('cd-days');
+      var hEl = document.getElementById('cd-hours');
+      var mEl = document.getElementById('cd-minutes');
+      var sEl = document.getElementById('cd-seconds');
+
+      if (dEl) dEl.textContent = pad(days);
+      if (hEl) hEl.textContent = pad(hours);
+      if (mEl) mEl.textContent = pad(minutes);
+      if (sEl) sEl.textContent = pad(seconds);
+    }
+
+    if (document.getElementById('cd-days')) {
+      updateCountdown();
+      setInterval(updateCountdown, 1000);
+    }
+
+    // ── SMS Form ─────────────────────────────────────────────────────
+    var form = document.getElementById('sms-form');
+    var successMsg = document.getElementById('form-success');
+
+    if (form) {
+      form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        var data = new FormData(form);
+
+        fetch(form.action, {
+          method: 'POST',
+          body: data,
+          headers: { 'Accept': 'application/json' }
+        })
+        .then(function(res) {
+          if (res.ok) {
+            form.hidden = true;
+            if (successMsg) successMsg.hidden = false;
+          }
+        })
+        .catch(function(err) {
+          console.error('Form submission error:', err);
+        });
+      });
+    }
+  </script>
+
+</Layout>
+
