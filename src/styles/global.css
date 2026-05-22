@@ -1216,6 +1216,53 @@ footer {
   margin-top: 1rem;
 }
 
+/* ── Reviews Grid ────────────────────────────────────────────── */
+.reviews-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2rem;
+  border-top: 1px solid var(--accent);
+  padding-top: 2.5rem;
+}
+
+.review-card {
+  border: 1px solid var(--accent);
+  padding: 2rem 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.review-text {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 1.1rem;
+  font-weight: 400;
+  font-style: italic;
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+.review-author {
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+@media (max-width: 768px) {
+  .reviews-grid {
+    grid-template-columns: 1fr;
+    gap: 1.25rem;
+  }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+  .reviews-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
 /* ═══════════════════════════════════════════════════════════════
    ORDER PAGE
 ═══════════════════════════════════════════════════════════════ */
@@ -1454,6 +1501,29 @@ footer {
   font-size: 0.9rem;
   text-align: center;
   font-weight: 500;
+}
+
+/* ── Order page bottom links ─────────────────────────────────── */
+.order-page-links {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid var(--accent);
+  padding-top: 2rem;
+}
+
+.order-page-link {
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.order-page-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 /* ═══════════════════════════════════════════════════════════════

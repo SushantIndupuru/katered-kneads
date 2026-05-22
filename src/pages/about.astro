@@ -1,0 +1,216 @@
+---
+import Layout from '../layouts/Layout.astro';
+export const prerender = true
+
+const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f78214d446f6be87ef75ef20bf04c7b33944d12f06092b0856af4a12be';
+---
+
+<Layout
+  title="About — Katered Kneads"
+  description="Learn about Katered Kneads — a student-run home bakery serving UC Berkeley and UC Davis with 100% scratch handmade cookies."
+  activePage="about"
+>
+
+  <!-- Page Hero -->
+  <section class="order-hero">
+    <div class="container">
+      <p class="eyebrow">Our Story</p>
+      <h1 class="order-heading">About Us</h1>
+      <p class="order-sub">A student-run home bakery making the homemade cookies you've been missing since you got to college.</p>
+    </div>
+  </section>
+
+  <!-- Who We Are (extended) -->
+  <section class="section" id="who-we-are">
+    <div class="container">
+      <div class="about-split">
+        <div class="about-text">
+          <p class="eyebrow">The People Behind the Kneads</p>
+          <h2 class="section-heading">Made with love, not mixes</h2>
+          <p>
+            Katered Kneads started because we kept asking: why does so much "homemade" food taste like it came from a bag? We decided to do something about it.
+          </p>
+          <p>
+            Founded by siblings Ellyse and Jake — one obsessed with the kitchen, one with making it all run — every drop is a reflection of the care that only comes from people who genuinely love what they make.
+          </p>
+          <p>
+            We serve UC Berkeley and UC Davis through limited biweekly preorders. We keep quantities deliberately small so every single bake gets the attention it deserves. When your order arrives, it was made for you — not sitting on a shelf.
+          </p>
+        </div>
+        <div class="about-image">
+          <img
+            src={`${CDN}/IMG_7202_1710646151.jpg`}
+            alt="Close-up of handmade Katered Kneads baked goods"
+          />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Mission / Social Proof (dark section) -->
+  <section class="section section-dark" id="mission">
+    <div class="container">
+      <div class="mission-inner">
+        <blockquote class="mission-quote">
+          "We started Katered Kneads because we believe everyone deserves a truly great cookie — made by hand, with real ingredients, and absolutely no shortcuts."
+        </blockquote>
+        <p class="mission-byline">— Ellyse &amp; Jake, co-founders</p>
+
+        <div class="trust-badges">
+          <div class="trust-badge">
+            <span class="trust-badge-title">100% Scratch</span>
+            <span class="trust-badge-sub">No mixes, no pre-made dough. Every knead starts from raw ingredients.</span>
+          </div>
+          <div class="trust-badge">
+            <span class="trust-badge-title">Made to Order</span>
+            <span class="trust-badge-sub">We only bake what's been preordered — no waste, maximum freshness.</span>
+          </div>
+          <div class="trust-badge">
+            <span class="trust-badge-title">Deliberately Limited</span>
+            <span class="trust-badge-sub">Small batches so every single bake gets the care it deserves.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- What Customers Say -->
+  <section class="section section-tinted" id="reviews">
+    <div class="container">
+      <div class="section-header">
+        <p class="eyebrow">Don't Take Our Word for It</p>
+        <h2 class="section-heading">What our customers say</h2>
+      </div>
+      <div class="reviews-grid">
+        <div class="review-card">
+          <p class="review-text">"The mochi brownies are unlike anything I've ever had. I set an alarm for the drops now — absolutely worth it."</p>
+          <p class="review-author">— UC Berkeley student</p>
+        </div>
+        <div class="review-card">
+          <p class="review-text">"You can actually taste the difference when something is made from scratch. These cookies are the real deal."</p>
+          <p class="review-author">— UC Davis customer</p>
+        </div>
+        <div class="review-card">
+          <p class="review-text">"I ordered on a whim and now I've been on the SMS list for months. Cannot miss a drop."</p>
+          <p class="review-author">— recurring customer</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Contact -->
+  <section class="section" id="contact">
+    <div class="container">
+      <div class="section-header">
+        <p class="eyebrow">Get in Touch</p>
+        <h2 class="section-heading">Contact Us</h2>
+      </div>
+      <div class="contact-grid">
+        <div>
+          <p class="eyebrow" style="margin-bottom: 0.75rem;">Email</p>
+          <a href="mailto:kateredkneads@gmail.com" class="contact-link">kateredkneads@gmail.com</a>
+        </div>
+        <div>
+          <p class="eyebrow" style="margin-bottom: 0.75rem;">Instagram</p>
+          <a href="https://www.instagram.com/Katered_Kneads" target="_blank" rel="noopener noreferrer" class="contact-link">@Katered_Kneads</a>
+        </div>
+        <div>
+          <p class="eyebrow" style="margin-bottom: 0.75rem;">Campuses</p>
+          <p class="contact-detail">UC Berkeley &amp; UC Davis</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section class="section" id="faq">
+    <div class="container">
+      <div class="section-header">
+        <p class="eyebrow">Common Questions</p>
+        <h2 class="section-heading">Frequently Asked</h2>
+      </div>
+      <div class="faq-list" role="list">
+
+        <div class="faq-item" role="listitem">
+          <button class="faq-question" aria-expanded="false">
+            <span>How do preorders work?</span>
+            <span class="faq-toggle" aria-hidden="true">+</span>
+          </button>
+          <div class="faq-answer" role="region">
+            <div class="faq-answer-inner">
+              Preorders open once every two weeks. When orders open, you'll have a limited window to visit our order page and select your items. We bake exactly what's been ordered, so quantities are limited. Join our SMS list on the order page to be notified the moment a drop opens.
+            </div>
+          </div>
+        </div>
+
+        <div class="faq-item" role="listitem">
+          <button class="faq-question" aria-expanded="false">
+            <span>Where do I pick up my order?</span>
+            <span class="faq-toggle" aria-hidden="true">+</span>
+          </button>
+          <div class="faq-answer" role="region">
+            <div class="faq-answer-inner">
+              We offer pickup at UC Berkeley and UC Davis. When you place an order, you'll select your campus. The exact pickup spot and time are confirmed with each drop.
+            </div>
+          </div>
+        </div>
+
+        <div class="faq-item" role="listitem">
+          <button class="faq-question" aria-expanded="false">
+            <span>What's on the menu each drop?</span>
+            <span class="faq-toggle" aria-hidden="true">+</span>
+          </button>
+          <div class="faq-answer" role="region">
+            <div class="faq-answer-inner">
+              We typically offer 3–4 different cookies or baked goods per drop. The menu is announced when preorders open — follow us on Instagram or join the SMS list to see what's dropping next.
+            </div>
+          </div>
+        </div>
+
+        <div class="faq-item" role="listitem">
+          <button class="faq-question" aria-expanded="false">
+            <span>Do your products contain allergens?</span>
+            <span class="faq-toggle" aria-hidden="true">+</span>
+          </button>
+          <div class="faq-answer" role="region">
+            <div class="faq-answer-inner">
+              Yes. Most of our bakes contain gluten (wheat flour), dairy (butter, milk, cream), and eggs. Everything is made in a home kitchen that also handles tree nuts, sesame, and other common allergens. Please get in touch before ordering if you have a severe allergy.
+            </div>
+          </div>
+        </div>
+
+        <div class="faq-item" role="listitem">
+          <button class="faq-question" aria-expanded="false">
+            <span>Can I cancel or modify my order?</span>
+            <span class="faq-toggle" aria-hidden="true">+</span>
+          </button>
+          <div class="faq-answer" role="region">
+            <div class="faq-answer-inner">
+              Because we bake in small, planned batches, modifications and cancellations can only be accepted up to 48 hours before pickup. After that window we're unable to offer changes or refunds. For urgent issues, reach out via Instagram DM or email and we'll do our best to help.
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <script>
+    document.querySelectorAll('.faq-question').forEach(button => {
+      button.addEventListener('click', () => {
+        const item = button.closest('.faq-item');
+        const isOpen = item?.classList.contains('open');
+        document.querySelectorAll('.faq-item').forEach(i => {
+          i.classList.remove('open');
+          i.querySelector('.faq-question')?.setAttribute('aria-expanded', 'false');
+        });
+        if (!isOpen && item) {
+          item.classList.add('open');
+          button.setAttribute('aria-expanded', 'true');
+        }
+      });
+    });
+  </script>
+
+</Layout>
+
