@@ -1,34 +1,8 @@
 ---
+export const prerender = true
 import Layout from '../layouts/Layout.astro';
 
 const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f78214d446f6be87ef75ef20bf04c7b33944d12f06092b0856af4a12be';
-
-const bestsellers = [
-  {
-    image: `${CDN}/2024-03-16_20-23-15_1710645807.jpg`,
-    name: 'Mochi Brownies',
-    description: 'Chewy mochi meets fudgy brownie in a ridiculously addictive square.',
-    tag: 'Fan Favorite',
-  },
-  {
-    image: `${CDN}/IMG_1939_1710645204.jpg`,
-    name: 'Caramelies',
-    description: 'Buttery caramel cookie with a sea salt finish. Impossible to eat just one.',
-    tag: 'Bestseller',
-  },
-  {
-    image: `${CDN}/2024-03-16_20-16-40_1710645429.jpg`,
-    name: 'Black Sesame Choux',
-    description: 'Light choux pastry filled with silky black sesame cream.',
-    tag: 'House Special',
-  },
-  {
-    image: `${CDN}/IMG_1779_1710647354.JPG`,
-    name: 'Chocolate Crinkle Cookies',
-    description: 'Deep, dark chocolate centre with a crackled powdered sugar crust.',
-    tag: 'Classic',
-  },
-];
 ---
 
 <Layout title="Katered Kneads — Handmade Campus Cookies">
@@ -72,14 +46,20 @@ const bestsellers = [
           <p class="eyebrow">Who We Are</p>
           <h2 class="section-heading">Baked with one rule</h2>
           <p>
-            Every single knead is made 100% from scratch, by hand, every time. No mixes. No shortcuts. Just real ingredients, real effort, and real love poured into every bite.
+            Every single knead is made 100% from scratch, by hand, every time. No mixes. No shortcuts. Just premium ingredients, real effort, and real love poured into every bite.
           </p>
           <p>
-            Katered Kneads is a student-run home bakery serving UC Berkeley and UC Davis through limited biweekly preorders. We keep quantities small so every bake gets the attention it truly deserves.
+            College is full of mass-produced, dry, frankly disappointing cookies. We started Katered Kneads because we missed what a real homemade cookie actually tastes like — and we're bringing that back to campus.
           </p>
           <p>
-            Founded by siblings Ellyse and Jake — one obsessed with the kitchen, one with making it all run — every drop reflects the care that can only come from people who genuinely love what they make.
+            Katered Kneads is a student-run home bakery serving UC Berkeley and UC Davis through biweekly preorders. We keep quantities small because each batch demands the time and care that quality ingredients deserve.
           </p>
+          <p>
+            Founded by siblings Ellyse and Jake, every drop reflects the care that can only come from people who genuinely love what they make.
+          </p>
+          <div style="margin-top: 2rem;">
+            <a href="/menu" class="btn-primary">See Our Menu →</a>
+          </div>
         </div>
         <div class="about-image">
           <img
@@ -91,36 +71,8 @@ const bestsellers = [
     </div>
   </section>
 
-  <!-- ③ Bestsellers -->
-  <section class="section section-tinted" id="bestsellers">
-    <div class="container">
-      <div class="section-header">
-        <p class="eyebrow">From the Kitchen</p>
-        <h2 class="section-heading">Our Bestsellers</h2>
-        <p class="section-sub">A taste of what shows up in our drops. The exact menu rotates each drop — follow us or join the SMS list to see what's coming next.</p>
-      </div>
-      <div class="cookie-grid">
-        {bestsellers.map(item => (
-          <div class="cookie-card">
-            <div class="cookie-card-image">
-              <img src={item.image} alt={item.name} loading="lazy" />
-              <span class="cookie-tag">{item.tag}</span>
-            </div>
-            <div class="cookie-card-body">
-              <h3>{item.name}</h3>
-              <p>{item.description}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-      <div class="cookie-cta">
-        <a href="/order" class="btn-primary">See This Drop's Menu →</a>
-      </div>
-    </div>
-  </section>
-
-  <!-- ④ How It Works -->
-  <section class="section" id="how-it-works">
+  <!-- ③ How It Works -->
+  <section class="section section-tinted" id="how-it-works">
     <div class="container">
       <div class="section-header">
         <p class="eyebrow">Getting Your Kneads</p>
@@ -140,7 +92,7 @@ const bestsellers = [
           <div class="how-step-number">02</div>
           <div class="how-step-content">
             <h3>Place Your Order</h3>
-            <p>Head to our order page, browse that drop's menu, and choose your items. Orders are first-come, first-served — quantities are deliberately limited.</p>
+            <p>Head to our order page, browse that drop's menu, and choose your items. Orders are first-come, first-served — we can only make so many because every single cookie is baked by hand with premium ingredients and takes real time to do right.</p>
           </div>
         </div>
         <div class="how-step">
@@ -164,146 +116,5 @@ const bestsellers = [
       </div>
     </div>
   </section>
-
-  <!-- ⑤ Social Proof / Mission -->
-  <section class="section section-dark" id="mission">
-    <div class="container">
-      <div class="mission-inner">
-        <blockquote class="mission-quote">
-          "We started Katered Kneads because we believe everyone deserves a truly great cookie — made by hand, with real ingredients, and absolutely no shortcuts."
-        </blockquote>
-        <p class="mission-byline">— Ellyse &amp; Jake, co-founders</p>
-
-        <div class="trust-badges">
-          <div class="trust-badge">
-            <span class="trust-badge-title">100% Scratch</span>
-            <span class="trust-badge-sub">No mixes, no pre-made dough. Every knead starts from raw ingredients.</span>
-          </div>
-          <div class="trust-badge">
-            <span class="trust-badge-title">Made to Order</span>
-            <span class="trust-badge-sub">We only bake what's been preordered — no waste, maximum freshness.</span>
-          </div>
-          <div class="trust-badge">
-            <span class="trust-badge-title">Deliberately Limited</span>
-            <span class="trust-badge-sub">Small batches so every single bake gets the care it deserves.</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Contact -->
-  <section class="section" id="contact">
-    <div class="container">
-      <div class="section-header">
-        <p class="eyebrow">Get in Touch</p>
-        <h2 class="section-heading">Contact Us</h2>
-      </div>
-      <div class="contact-grid">
-        <div>
-          <p class="eyebrow" style="margin-bottom: 0.75rem;">Email</p>
-          <a href="mailto:kateredkneads@gmail.com" class="contact-link">kateredkneads@gmail.com</a>
-        </div>
-        <div>
-          <p class="eyebrow" style="margin-bottom: 0.75rem;">Instagram</p>
-          <a href="https://www.instagram.com/Katered_Kneads" target="_blank" rel="noopener noreferrer" class="contact-link">@Katered_Kneads</a>
-        </div>
-        <div>
-          <p class="eyebrow" style="margin-bottom: 0.75rem;">Campuses</p>
-          <p class="contact-detail">UC Berkeley &amp; UC Davis</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- FAQ -->
-  <section class="section" id="faq">
-    <div class="container">
-      <div class="section-header">
-        <p class="eyebrow">Common Questions</p>
-        <h2 class="section-heading">Frequently Asked</h2>
-      </div>
-      <div class="faq-list" role="list">
-
-        <div class="faq-item" role="listitem">
-          <button class="faq-question" aria-expanded="false">
-            <span>How do preorders work?</span>
-            <span class="faq-toggle" aria-hidden="true">+</span>
-          </button>
-          <div class="faq-answer" role="region">
-            <div class="faq-answer-inner">
-              Preorders open once every two weeks. When orders open, you'll have a limited window to visit our order page and select your items. We bake exactly what's been ordered, so quantities are limited. Join our SMS list on the order page to be notified the moment a drop opens.
-            </div>
-          </div>
-        </div>
-
-        <div class="faq-item" role="listitem">
-          <button class="faq-question" aria-expanded="false">
-            <span>Where do I pick up my order?</span>
-            <span class="faq-toggle" aria-hidden="true">+</span>
-          </button>
-          <div class="faq-answer" role="region">
-            <div class="faq-answer-inner">
-              We offer pickup at UC Berkeley and UC Davis. When you place an order, you'll select your campus. The exact pickup spot and time are confirmed with each drop.
-            </div>
-          </div>
-        </div>
-
-        <div class="faq-item" role="listitem">
-          <button class="faq-question" aria-expanded="false">
-            <span>What's on the menu each drop?</span>
-            <span class="faq-toggle" aria-hidden="true">+</span>
-          </button>
-          <div class="faq-answer" role="region">
-            <div class="faq-answer-inner">
-              We typically offer 3–4 different cookies or baked goods per drop. The menu is announced when preorders open — follow us on Instagram or join the SMS list to see what's dropping next.
-            </div>
-          </div>
-        </div>
-
-        <div class="faq-item" role="listitem">
-          <button class="faq-question" aria-expanded="false">
-            <span>Do your products contain allergens?</span>
-            <span class="faq-toggle" aria-hidden="true">+</span>
-          </button>
-          <div class="faq-answer" role="region">
-            <div class="faq-answer-inner">
-              Yes. Most of our bakes contain gluten (wheat flour), dairy (butter, milk, cream), and eggs. Everything is made in a home kitchen that also handles tree nuts, sesame, and other common allergens. Please get in touch before ordering if you have a severe allergy.
-            </div>
-          </div>
-        </div>
-
-        <div class="faq-item" role="listitem">
-          <button class="faq-question" aria-expanded="false">
-            <span>Can I cancel or modify my order?</span>
-            <span class="faq-toggle" aria-hidden="true">+</span>
-          </button>
-          <div class="faq-answer" role="region">
-            <div class="faq-answer-inner">
-              Because we bake in small, planned batches, modifications and cancellations can only be accepted up to 48 hours before pickup. After that window we're unable to offer changes or refunds. For urgent issues, reach out via Instagram DM or email and we'll do our best to help.
-            </div>
-          </div>
-        </div>
-
-      </div>
-    </div>
-  </section>
-
-  <script>
-    document.querySelectorAll('.faq-question').forEach(button => {
-      button.addEventListener('click', () => {
-        const item = button.closest('.faq-item');
-        const isOpen = item?.classList.contains('open');
-        document.querySelectorAll('.faq-item').forEach(i => {
-          i.classList.remove('open');
-          i.querySelector('.faq-question')?.setAttribute('aria-expanded', 'false');
-        });
-        if (!isOpen && item) {
-          item.classList.add('open');
-          button.setAttribute('aria-expanded', 'true');
-        }
-      });
-    });
-  </script>
 
 </Layout>

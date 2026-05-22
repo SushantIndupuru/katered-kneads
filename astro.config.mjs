@@ -3,13 +3,18 @@ import { defineConfig } from 'astro/config';
 
 import tailwindcss from '@tailwindcss/vite';
 
+import vercel from '@astrojs/vercel';
+
 // https://astro.build/config
 export default defineConfig({
+  output: 'server',
   vite: {
     plugins: [tailwindcss()]
   },
 server: {
-    host: true, // or specify '0.0.0.0'
+    host: true,
     allowedHosts: ['preview.sushant.art'],
   },
+  adapter: vercel()
 });
+

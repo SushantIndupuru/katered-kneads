@@ -1,0 +1,172 @@
+---
+import Layout from '../layouts/Layout.astro';
+export const prerender = true
+
+const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f78214d446f6be87ef75ef20bf04c7b33944d12f06092b0856af4a12be';
+
+const bestsellers = [
+  {
+    image: `${CDN}/2024-03-16_20-23-15_1710645807.jpg`,
+    name: 'Mochi Brownies',
+    description: 'Chewy mochi meets fudgy brownie in a ridiculously addictive square.',
+    tag: 'Fan Favorite',
+  },
+  {
+    image: `${CDN}/IMG_1939_1710645204.jpg`,
+    name: 'Caramelies',
+    description: 'Buttery caramel cookie with a sea salt finish. Impossible to eat just one.',
+    tag: 'Bestseller',
+  },
+  {
+    image: `${CDN}/2024-03-16_20-16-40_1710645429.jpg`,
+    name: 'Black Sesame Choux',
+    description: 'Light choux pastry filled with silky black sesame cream.',
+    tag: 'House Special',
+  },
+  {
+    image: `${CDN}/IMG_1779_1710647354.JPG`,
+    name: 'Chocolate Crinkle Cookies',
+    description: 'Deep, dark chocolate centre with a crackled powdered sugar crust.',
+    tag: 'Classic',
+  },
+];
+---
+
+<Layout
+  title="Menu — Katered Kneads"
+  description="Browse the Katered Kneads menu. Small-batch handmade cookies — the lineup rotates every biweekly drop."
+  activePage="menu"
+>
+
+  <!-- Page Hero -->
+  <section class="order-hero">
+    <div class="container">
+      <p class="eyebrow">From the Kitchen</p>
+      <h1 class="order-heading">Our Menu</h1>
+      <p class="order-sub">The exact lineup rotates each drop. Follow us or join the SMS list to see what's coming next.</p>
+    </div>
+  </section>
+
+  <!-- Bestsellers -->
+  <section class="section" id="bestsellers">
+    <div class="container">
+      <div class="section-header">
+        <p class="eyebrow">Always a Hit</p>
+        <h2 class="section-heading">Our Bestsellers</h2>
+        <p class="section-sub">These are the bakes our customers keep coming back for. Some are drop regulars, some rotate — but they're always worth grabbing when they appear.</p>
+      </div>
+      <div class="cookie-grid">
+        {bestsellers.map(item => (
+          <div class="cookie-card">
+            <div class="cookie-card-image">
+              <img src={item.image} alt={item.name} loading="lazy" />
+              <span class="cookie-tag">{item.tag}</span>
+            </div>
+            <div class="cookie-card-body">
+              <h3>{item.name}</h3>
+              <p>{item.description}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  </section>
+
+  <!-- This Drop's Preview -->
+  <section class="section section-tinted" id="this-drop">
+    <div class="container">
+      <div class="section-header">
+        <p class="eyebrow">Coming Up</p>
+        <h2 class="section-heading">Next Drop Preview</h2>
+        <p class="section-sub">A sneak peek at what's baking for the next drop. Full menu and pricing revealed when orders open.</p>
+      </div>
+
+      <div class="cookie-grid">
+        <div class="cookie-card">
+          <div class="cookie-card-image">
+            <img src={`${CDN}/2024-03-16_20-23-15_1710645807.jpg`} alt="Mochi Brownies" loading="lazy" />
+            <span class="cookie-tag">Returning</span>
+          </div>
+          <div class="cookie-card-body">
+            <h3>Mochi Brownies</h3>
+            <p>The drop classic you keep asking for. Chewy, fudgy, and worth every bite.</p>
+          </div>
+        </div>
+
+        <div class="cookie-card">
+          <div class="cookie-card-image">
+            <img src={`${CDN}/IMG_1939_1710645204.jpg`} alt="Caramelies" loading="lazy" />
+            <span class="cookie-tag">Back Again</span>
+          </div>
+          <div class="cookie-card-body">
+            <h3>Caramelies</h3>
+            <p>Buttery caramel with a sea salt finish. These always sell out first.</p>
+          </div>
+        </div>
+
+        <div class="cookie-card cookie-card-tease">
+          <div class="cookie-card-image cookie-card-image-mystery">
+            <div class="mystery-placeholder">?</div>
+          </div>
+          <div class="cookie-card-body">
+            <h3>New Item</h3>
+            <p>Something new is dropping. Follow us on Instagram for the reveal.</p>
+          </div>
+        </div>
+
+        <div class="cookie-card cookie-card-tease">
+          <div class="cookie-card-image cookie-card-image-mystery">
+            <div class="mystery-placeholder">?</div>
+          </div>
+          <div class="cookie-card-body">
+            <h3>Surprise Drop</h3>
+            <p>Join the SMS list to be the first to know what's coming.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="cookie-cta">
+        <a href="/order" class="btn-primary">Place a Preorder →</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Photo Gallery -->
+  <section class="section" id="gallery">
+    <div class="container">
+      <div class="section-header">
+        <p class="eyebrow">Made by Hand</p>
+        <h2 class="section-heading">A look inside the kitchen</h2>
+        <p class="section-sub">Every batch made fresh. No shortcuts, no mixes — just real ingredients and genuine care.</p>
+      </div>
+      <div class="gallery-grid">
+        <figure class="gallery-item">
+          <img src={`${CDN}/2024-03-16_20-23-15_1710645807.jpg`} alt="Mochi Brownies close-up" loading="lazy" />
+          <figcaption>Mochi Brownies</figcaption>
+        </figure>
+        <figure class="gallery-item">
+          <img src={`${CDN}/IMG_1939_1710645204.jpg`} alt="Caramelies" loading="lazy" />
+          <figcaption>Caramelies</figcaption>
+        </figure>
+        <figure class="gallery-item">
+          <img src={`${CDN}/2024-03-16_20-16-40_1710645429.jpg`} alt="Black Sesame Choux" loading="lazy" />
+          <figcaption>Black Sesame Choux</figcaption>
+        </figure>
+        <figure class="gallery-item">
+          <img src={`${CDN}/IMG_1779_1710647354.JPG`} alt="Chocolate Crinkle Cookies" loading="lazy" />
+          <figcaption>Chocolate Crinkle Cookies</figcaption>
+        </figure>
+        <figure class="gallery-item">
+          <img src={`${CDN}/IMG_7202_1710646151.jpg`} alt="Katered Kneads baked goods" loading="lazy" />
+          <figcaption>Fresh from the Oven</figcaption>
+        </figure>
+        <figure class="gallery-item">
+          <img src={`${CDN}/2024-03-16_21-07-46_1710648486.jpg`} alt="Katered Kneads spread" loading="lazy" />
+          <figcaption>Drop Day Spread</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+</Layout>
+

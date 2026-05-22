@@ -1,5 +1,6 @@
 ---
 import Layout from '../layouts/Layout.astro';
+export const prerender = true
 
 // ──────────────────────────────────────────────────────────────────
 // CONFIGURE YOUR NEXT DROP HERE
@@ -162,85 +163,11 @@ const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f7
     </section>
   )}
 
-  <!-- Next Drop Preview -->
-  <section class="section" id="next-drop">
-    <div class="container">
-      <div class="section-header">
-        <p class="eyebrow">Coming Up</p>
-        <h2 class="section-heading">Next Drop Preview</h2>
-        <p class="section-sub">A peek at what's baking for the next drop. Full menu and pricing revealed when orders open.</p>
-      </div>
-
-      <div class="cookie-grid">
-        <div class="cookie-card">
-          <div class="cookie-card-image">
-            <img src={`${CDN}/2024-03-16_20-23-15_1710645807.jpg`} alt="Mochi Brownies" loading="lazy" />
-            <span class="cookie-tag">Returning</span>
-          </div>
-          <div class="cookie-card-body">
-            <h3>Mochi Brownies</h3>
-            <p>The drop classic you keep asking for. Chewy, fudgy, and worth every bite.</p>
-          </div>
-        </div>
-
-        <div class="cookie-card">
-          <div class="cookie-card-image">
-            <img src={`${CDN}/IMG_1939_1710645204.jpg`} alt="Caramelies" loading="lazy" />
-            <span class="cookie-tag">Back Again</span>
-          </div>
-          <div class="cookie-card-body">
-            <h3>Caramelies</h3>
-            <p>Buttery caramel with a sea salt finish. These always sell out first.</p>
-          </div>
-        </div>
-
-        <div class="cookie-card cookie-card-tease">
-          <div class="cookie-card-image cookie-card-image-mystery">
-            <div class="mystery-placeholder">?</div>
-          </div>
-          <div class="cookie-card-body">
-            <h3>New Item</h3>
-            <p>Something new is dropping. Follow us on Instagram for the reveal.</p>
-          </div>
-        </div>
-
-        <div class="cookie-card cookie-card-tease">
-          <div class="cookie-card-image cookie-card-image-mystery">
-            <div class="mystery-placeholder">?</div>
-          </div>
-          <div class="cookie-card-body">
-            <h3>Surprise Drop</h3>
-            <p>Join the SMS list to be the first to know what's coming.</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <!-- How Preorders Work -->
-  <section class="section section-tinted" id="how-preorders-work">
-    <div class="container">
-      <div class="section-header">
-        <p class="eyebrow">Quick Guide</p>
-        <h2 class="section-heading">How Preorders Work</h2>
-      </div>
-      <div class="steps-grid">
-        <div class="step">
-          <div class="step-number">01</div>
-          <h3>Get Notified</h3>
-          <p>Join the SMS list above. We'll text you approximately 5 minutes before orders open so you can be first in line.</p>
-        </div>
-        <div class="step">
-          <div class="step-number">02</div>
-          <h3>Choose Your Items</h3>
-          <p>Browse this drop's menu and add what you want. Select UC Berkeley or UC Davis for pickup.</p>
-        </div>
-        <div class="step">
-          <div class="step-number">03</div>
-          <h3>Pick Up &amp; Enjoy</h3>
-          <p>Grab your freshly baked order at the confirmed campus location. That's it.</p>
-        </div>
-      </div>
+  <!-- Back to menu CTA -->
+  <section class="section" id="back-to-menu">
+    <div class="container order-page-links">
+      <a href="/menu" class="order-page-link">← Browse the Menu</a>
+      <a href="/" class="order-page-link">How It Works →</a>
     </div>
   </section>
 
