@@ -1,0 +1,84 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="404 — Page Not Found | Katered Kneads" description="The page you're looking for doesn't exist.">
+  <main class="not-found-page">
+    <div class="not-found-inner">
+
+      <div class="not-found-number" aria-hidden="true">404</div>
+
+      <p class="eyebrow">Page Not Found</p>
+      <h1 class="not-found-heading">Lost in the dough.</h1>
+      <p class="not-found-sub">
+        The page you're looking for seems to have crumbled. It may have moved,
+        been removed, or never existed in the first place.
+      </p>
+
+      <div class="not-found-actions">
+        <a href="/" class="btn-primary">Back to Home</a>
+        <a href="/menu" class="cta-link">View the Menu →</a>
+        <a href="/order" class="cta-link">Place an Order →</a>
+      </div>
+
+    </div>
+  </main>
+</Layout>
+
+<style>
+  .not-found-page {
+    min-height: 100svh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: calc(70px + 4rem) 1.5rem 6rem;
+  }
+
+  .not-found-inner {
+    max-width: 560px;
+    width: 100%;
+  }
+
+  .not-found-number {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: clamp(7rem, 22vw, 14rem);
+    font-weight: 300;
+    line-height: 0.9;
+    letter-spacing: -0.03em;
+    color: var(--accent);
+    margin-bottom: 1.5rem;
+    user-select: none;
+  }
+
+  .not-found-heading {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: clamp(2rem, 5vw, 3.2rem);
+    font-weight: 500;
+    line-height: 1.15;
+    color: var(--text-primary);
+    margin: 0.5rem 0 1.25rem;
+  }
+
+  .not-found-sub {
+    font-size: 0.95rem;
+    color: var(--text-muted);
+    line-height: 1.75;
+    margin-bottom: 2.5rem;
+    max-width: 440px;
+  }
+
+  .not-found-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1.5rem;
+  }
+
+  @media (max-width: 480px) {
+    .not-found-actions {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+</style>
+

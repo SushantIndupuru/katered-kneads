@@ -1,0 +1,2023 @@
+---
+import '../styles/global.css';
+import {getMenuItems, getBestSellers, getNewItems} from '../lib/db';
+import {createAnonClient} from '../lib/supabase';
+import type {MenuItem, SpecialMenuItem} from '../types/MenuItem.ts';
+
+const token = Astro.cookies.get('sb-access-token')?.value;
+if (!token) return Astro.redirect('/admin/login');
+
+const _supabase = createAnonClient();
+const {data: {user: authUser}, error: authError} = await _supabase.auth.getUser(token);
+if (authError || !authUser) {
+    Astro.cookies.delete('sb-access-token', {path: '/'});
+    Astro.cookies.delete('sb-refresh-token', {path: '/'});
+    return Astro.redirect('/admin/login');
+}
+
+let items: MenuItem[] = [];
+let bestSellers: SpecialMenuItem[] = [];
+let newItems: SpecialMenuItem[] = [];
+let fetchError = '';
+
+try {
+    items = await getMenuItems();
+} catch (e) {
+    fetchError = 'Could not load menu items.';
+}
+
+try {
+    bestSellers = await getBestSellers();
+} catch (e) {
+    // non-fatal
+}
+
+try {
+    newItems = await getNewItems();
+} catch (e) {
+    // non-fatal
+}
+
+const bestSellerIds = new Set(bestSellers.map(bs => bs.menuItem.id));
+const newItemIds = new Set(newItems.map(ni => ni.menuItem.id));
+
+const user = authUser as { email?: string };
+const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string;
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
+    <link rel="icon" href="/favicon.ico"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <meta name="robots" content="noindex, nofollow"/>
+    <title>Admin — Katered Kneads</title>
+</head>
+<body class="admin-body">
+
+<!-- Sidebar -->
+<aside class="admin-sidebar">
+    <div class="admin-sidebar-top">
+        <a href="/" class="admin-logo">Katered Kneads</a>
+        <span class="admin-badge">Admin</span>
+    </div>
+
+    <nav class="admin-nav">
+        <a href="/admin" class="admin-nav-link admin-nav-active">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="7" height="7"/>
+                <rect x="14" y="3" width="7" height="7"/>
+                <rect x="14" y="14" width="7" height="7"/>
+                <rect x="3" y="14" width="7" height="7"/>
+            </svg>
+            Dashboard
+        </a>
+        <a href="/menu" target="_blank" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+                <polyline points="10 9 9 9 8 9"/>
+            </svg>
+            View Menu ↗
+        </a>
+    </nav>
+
+    <div class="admin-sidebar-footer">
+        <p class="admin-user-email">{user?.email ?? 'Admin'}</p>
+        <form method="POST" action="/api/v1/auth/logout">
+            <button type="submit" class="admin-logout-btn">Sign Out</button>
+        </form>
+    </div>
+</aside>
+
+<!-- Main content -->
+<main class="admin-main">
+    <div class="admin-topbar">
+        <div>
+            <h1 class="admin-page-title" id="page-title">Menu Items</h1>
+            <p class="admin-page-sub" id="page-sub">{items.length} total item{items.length !== 1 ? 's' : ''}</p>
+        </div>
+        <button class="btn-primary" id="open-add-modal">+ Add Item</button>
+    </div>
+
+    <!-- Tab bar -->
+    <div class="admin-tabs" data-items-total={items.length}>
+        <button class="admin-tab admin-tab-active" data-tab="menu-items">Menu Items</button>
+        <button class="admin-tab" data-tab="best-sellers">
+            ★ Best Sellers
+            {bestSellers.length > 0 && <span class="admin-tab-count">{bestSellers.length}</span>}
+        </button>
+        <button class="admin-tab" data-tab="new-items">
+            ✦ New Items
+            {newItems.length > 0 && <span class="admin-tab-count">{newItems.length}</span>}
+        </button>
+    </div>
+
+    {fetchError && (
+            <div class="admin-alert admin-alert-error">{fetchError}</div>)}
+
+    <!-- Menu items tab -->
+    <div id="tab-menu-items" class="admin-tab-panel">
+        <div class="admin-table-wrap">
+            {items.length === 0 ? (
+                    <div class="admin-empty">No menu items yet. Add one to get started.</div>) : (
+                    <table class="admin-table">
+                        <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>Mystery</th>
+                            <th>Image</th>
+                            <th>Actions</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {items.map(item => (
+                                <tr data-id={item.id}>
+                                    <td class="admin-td-name">{item.name}</td>
+                                    <td class="admin-td-desc">{item.description || '—'}</td>
+                                    <td>
+                        <span class={`admin-mystery-badge ${item.mystery ? 'is-mystery' : ''}`}>
+                          {item.mystery ? 'Yes' : 'No'}
+                        </span>
+                                    </td>
+                                    <td class="admin-td-image">
+                                        {item.mystery ? (
+                                            <span class="admin-no-image">—</span>
+                                        ) : (
+                                            <a href={storageUrl + item.id} target="_blank" class="admin-image-thumb-link"
+                                               title={storageUrl + item.id}>
+                                                <img src={storageUrl + item.id} alt={item.name} class="admin-image-thumb"/>
+                                            </a>
+                                        )}
+                                    </td>
+                                    <td class="admin-td-actions">
+                                        <div class="admin-td-actions-inner">
+                                            <button
+                                                    class="admin-btn-edit"
+                                                    data-id={item.id}
+                                                    data-name={item.name}
+                                                    data-description={item.description}
+                                                    data-image={storageUrl + item.id}
+                                                    data-mystery={String(item.mystery)}
+                                            >Edit
+                                            </button>
+                                            <button class="admin-btn-delete" data-id={item.id}>Delete</button>
+                                        </div>
+                                    </td>
+                                </tr>))}
+                        </tbody>
+                    </table>)}
+        </div>
+    </div>
+
+    <!-- Best sellers tab -->
+    <div id="tab-best-sellers" class="admin-tab-panel" hidden>
+        <div class="admin-table-wrap">
+            {bestSellers.length === 0 ? (
+                    <div class="admin-empty">No best sellers yet. Add one below.</div>) : (
+                    <table class="admin-table">
+                        <thead>
+                        <tr>
+                            <th class="admin-th-drag"></th>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>Tag</th>
+                            <th>Actions</th>
+                        </tr>
+                        </thead>
+                        <tbody id="best-sellers-tbody">
+                        {bestSellers.map(({menuItem, tag}) => (
+                                <tr data-id={menuItem.id} draggable="true">
+                                    <td class="admin-td-drag"><span class="drag-handle">⠿</span></td>
+                                    <td class="admin-td-name">{menuItem.name}</td>
+                                    <td class="admin-td-desc">{menuItem.description || '—'}</td>
+                                    <td>
+                                        {tag ? <span class="admin-bs-tag">{tag}</span> : <span class="admin-no-image">—</span>}
+                                    </td>
+                                    <td class="admin-td-actions">
+                                        <div class="admin-td-actions-inner">
+                                            <button class="admin-btn-bs-edit" data-id={menuItem.id} data-name={menuItem.name} data-tag={tag ?? ''}>Edit Tag</button>
+                                            <button class="admin-btn-bs-remove" data-id={menuItem.id} data-name={menuItem.name}>Remove</button>
+                                        </div>
+                                    </td>
+                                </tr>))}
+                        </tbody>
+                    </table>)}
+        </div>
+        <div class="admin-bs-add-row">
+            <button class="btn-primary" id="open-bs-modal">+ Add Best Seller</button>
+        </div>
+    </div>
+
+    <!-- New items tab -->
+    <div id="tab-new-items" class="admin-tab-panel" hidden>
+        <div class="admin-table-wrap">
+            {newItems.length === 0 ? (
+                    <div class="admin-empty">No new items yet. Add one below.</div>) : (
+                    <table class="admin-table">
+                        <thead>
+                        <tr>
+                            <th class="admin-th-drag"></th>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>Tag</th>
+                            <th>Actions</th>
+                        </tr>
+                        </thead>
+                        <tbody id="new-items-tbody">
+                        {newItems.map(({menuItem, tag}) => (
+                                <tr data-id={menuItem.id} draggable="true">
+                                    <td class="admin-td-drag"><span class="drag-handle">⠿</span></td>
+                                    <td class="admin-td-name">{menuItem.name}</td>
+                                    <td class="admin-td-desc">{menuItem.description || '—'}</td>
+                                    <td>
+                                        {tag ? <span class="admin-bs-tag">{tag}</span> : <span class="admin-no-image">—</span>}
+                                    </td>
+                                    <td class="admin-td-actions">
+                                        <div class="admin-td-actions-inner">
+                                            <button class="admin-btn-ni-edit" data-id={menuItem.id} data-name={menuItem.name} data-tag={tag ?? ''}>Edit Tag</button>
+                                            <button class="admin-btn-ni-remove" data-id={menuItem.id} data-name={menuItem.name}>Remove</button>
+                                        </div>
+                                    </td>
+                                </tr>))}
+                        </tbody>
+                    </table>)}
+        </div>
+        <div class="admin-bs-add-row">
+            <button class="btn-primary" id="open-ni-modal">+ Add New Item</button>
+        </div>
+    </div>
+</main>
+
+<!-- Add Modal -->
+<div class="admin-modal-overlay" id="add-modal" hidden>
+    <div class="admin-modal">
+        <div class="admin-modal-header">
+            <h2 class="admin-modal-title">Add Menu Item</h2>
+            <button class="admin-modal-close" id="close-add-modal">✕</button>
+        </div>
+        <form class="admin-modal-form" id="add-form">
+            <div class="form-field admin-checkbox-field">
+                <label class="admin-checkbox-label">
+                    <input id="add-mystery" name="mystery" type="checkbox"/>
+                    <span>Mystery item <span class="admin-field-hint">(hidden on public menu until mystery is removed)</span></span>
+                </label>
+            </div>
+            <div id="add-mystery-notice" class="admin-mystery-notice" hidden>
+                <strong>Mystery mode:</strong> The name below is for your internal records only and will not be visible to customers until this item is no longer marked as mystery. The hint (if provided) appears on the public menu in place of a description.
+            </div>
+            <div class="form-field">
+                <label for="add-name" id="add-name-label">Name *</label>
+                <input id="add-name" name="name" type="text" placeholder="e.g. Brown Butter Chocolate Chip" required/>
+            </div>
+            <div class="form-field" id="add-description-field">
+                <label for="add-description" id="add-description-label">Description *</label>
+                <textarea id="add-description" name="description" rows="3"
+                          placeholder="A brief description of the item…" required></textarea>
+            </div>
+            <div class="form-field" id="add-image-field">
+                <label for="add-image">Image</label>
+                <label class="upload-label" id="add-upload-label" for="add-image">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="16 16 12 12 8 16"/>
+                        <line x1="12" y1="12" x2="12" y2="21"/>
+                        <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+                    </svg>
+                    <span id="add-image-label-text">Choose file…</span>
+                </label>
+                <input id="add-image" name="image" type="file" accept="image/*" class="upload-input"/>
+                <div id="add-image-preview" class="image-preview" hidden>
+                    <img id="add-image-preview-img" src="" alt="Preview"/>
+                    <button type="button" class="image-preview-remove" id="add-image-remove">✕ Remove</button>
+                </div>
+            </div>
+            <div id="add-form-error" class="admin-alert admin-alert-error" hidden></div>
+            <div class="admin-modal-actions">
+                <button type="button" class="admin-btn-cancel" id="cancel-add-modal">Cancel</button>
+                <button type="submit" class="btn-primary" id="add-submit-btn">Add Item</button>
+                <span class="modal-spinner" id="add-spinner" hidden></span>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Modal -->
+<div class="admin-modal-overlay" id="edit-modal" hidden>
+    <div class="admin-modal">
+        <div class="admin-modal-header">
+            <h2 class="admin-modal-title">Edit Menu Item</h2>
+            <button class="admin-modal-close" id="close-edit-modal">✕</button>
+        </div>
+        <form class="admin-modal-form" id="edit-form">
+            <input type="hidden" id="edit-id" name="id"/>
+            <div class="form-field admin-checkbox-field">
+                <label class="admin-checkbox-label">
+                    <input id="edit-mystery" name="mystery" type="checkbox"/>
+                    <span>Mystery item <span class="admin-field-hint">(hidden on public menu until mystery is removed)</span></span>
+                </label>
+            </div>
+            <div id="edit-mystery-notice" class="admin-mystery-notice" hidden>
+                <strong>Mystery mode:</strong> The name below is for your internal records only and will not be visible to customers until this item is no longer marked as mystery. The hint (if provided) appears on the public menu in place of a description.
+            </div>
+            <div class="form-field">
+                <label for="edit-name" id="edit-name-label">Name *</label>
+                <input id="edit-name" name="name" type="text" required/>
+            </div>
+            <div class="form-field" id="edit-description-field">
+                <label for="edit-description" id="edit-description-label">Description *</label>
+                <textarea id="edit-description" name="description" rows="3" required></textarea>
+            </div>
+            <div class="form-field" id="edit-image-field">
+                <label for="edit-image">Image</label>
+                <div id="edit-current-image-wrap" class="image-preview">
+                    <img id="edit-current-image-img" src="" alt="Current image"/>
+                </div>
+                <label class="upload-label" for="edit-image" id="edit-upload-label">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                         stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="16 16 12 12 8 16"/>
+                        <line x1="12" y1="12" x2="12" y2="21"/>
+                        <path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/>
+                    </svg>
+                    <span id="edit-image-label-text">Replace image…</span>
+                </label>
+                <input id="edit-image" name="image" type="file" accept="image/*" class="upload-input"/>
+                <div id="edit-image-preview" class="image-preview" hidden>
+                    <img id="edit-image-preview-img" src="" alt="Preview"/>
+                    <button type="button" class="image-preview-remove" id="edit-image-remove">✕ Remove</button>
+                </div>
+            </div>
+            <div id="edit-form-error" class="admin-alert admin-alert-error" hidden></div>
+            <div class="admin-modal-actions">
+                <button type="button" class="admin-btn-cancel" id="cancel-edit-modal">Cancel</button>
+                <button type="submit" class="btn-primary" id="edit-submit-btn">Save Changes</button>
+                <span class="modal-spinner" id="edit-spinner" hidden></span>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Delete Confirm Modal -->
+<div class="admin-modal-overlay" id="delete-modal" hidden>
+    <div class="admin-modal admin-modal-sm">
+        <div class="admin-modal-header">
+            <h2 class="admin-modal-title">Delete Item</h2>
+            <button class="admin-modal-close" id="close-delete-modal">✕</button>
+        </div>
+        <p class="admin-delete-confirm-text">Are you sure you want to delete <strong id="delete-item-name"></strong>?
+            This cannot be undone.</p>
+        <div id="delete-form-error" class="admin-alert admin-alert-error" hidden></div>
+        <div class="admin-modal-actions">
+            <button type="button" class="admin-btn-cancel" id="cancel-delete-modal">Cancel</button>
+            <button type="button" class="admin-btn-delete-confirm" id="confirm-delete">Delete</button>
+            <span class="modal-spinner" id="delete-spinner" hidden></span>
+        </div>
+    </div>
+</div>
+
+<!-- Add Best Seller Modal -->
+<div class="admin-modal-overlay" id="bs-modal" hidden>
+    <div class="admin-modal admin-modal-sm">
+        <div class="admin-modal-header">
+            <h2 class="admin-modal-title">Add Best Seller</h2>
+            <button class="admin-modal-close" id="close-bs-modal">✕</button>
+        </div>
+        <form class="admin-modal-form" id="bs-form">
+            <div class="form-field">
+                <label for="bs-item-select">Menu Item *</label>
+                <select id="bs-item-select" name="id" required>
+                    <option value="">— Select an item —</option>
+                    {items.filter(i => !bestSellerIds.has(i.id)).map(item => (
+                        <option value={item.id}>{item.name}</option>
+                    ))}
+                </select>
+            </div>
+            <div class="form-field">
+                <label for="bs-tag">Tag <span class="admin-field-hint">(optional label, e.g. "Customer Favourite")</span></label>
+                <input id="bs-tag" name="tag" type="text" placeholder="e.g. Customer Favourite"/>
+            </div>
+            <div id="bs-form-error" class="admin-alert admin-alert-error" hidden></div>
+            <div class="admin-modal-actions">
+                <button type="button" class="admin-btn-cancel" id="cancel-bs-modal">Cancel</button>
+                <button type="submit" class="btn-primary" id="bs-submit-btn">Add</button>
+                <span class="modal-spinner" id="bs-spinner" hidden></span>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Best Seller Tag Modal -->
+<div class="admin-modal-overlay" id="bs-edit-modal" hidden>
+    <div class="admin-modal admin-modal-sm">
+        <div class="admin-modal-header">
+            <h2 class="admin-modal-title">Edit Tag</h2>
+            <button class="admin-modal-close" id="close-bs-edit-modal">✕</button>
+        </div>
+        <form class="admin-modal-form" id="bs-edit-form">
+            <input type="hidden" id="bs-edit-id"/>
+            <p class="admin-delete-confirm-text" style="margin-bottom:0.5rem">
+                Editing tag for <strong id="bs-edit-item-name"></strong>
+            </p>
+            <div class="form-field">
+                <label for="bs-edit-tag">Tag <span class="admin-field-hint">(optional label, e.g. "Customer Favourite")</span></label>
+                <input id="bs-edit-tag" name="tag" type="text" placeholder="e.g. Customer Favourite"/>
+            </div>
+            <div id="bs-edit-error" class="admin-alert admin-alert-error" hidden></div>
+            <div class="admin-modal-actions">
+                <button type="button" class="admin-btn-cancel" id="cancel-bs-edit-modal">Cancel</button>
+                <button type="submit" class="btn-primary" id="bs-edit-submit-btn">Save</button>
+                <span class="modal-spinner" id="bs-edit-spinner" hidden></span>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Remove Best Seller Confirm Modal -->
+<div class="admin-modal-overlay" id="bs-remove-modal" hidden>
+    <div class="admin-modal admin-modal-sm">
+        <div class="admin-modal-header">
+            <h2 class="admin-modal-title">Remove Best Seller</h2>
+            <button class="admin-modal-close" id="close-bs-remove-modal">✕</button>
+        </div>
+        <p class="admin-delete-confirm-text">Remove <strong id="bs-remove-item-name"></strong> from best sellers?</p>
+        <div id="bs-remove-error" class="admin-alert admin-alert-error" hidden></div>
+        <div class="admin-modal-actions">
+            <button type="button" class="admin-btn-cancel" id="cancel-bs-remove-modal">Cancel</button>
+            <button type="button" class="admin-btn-delete-confirm" id="confirm-bs-remove">Remove</button>
+            <span class="modal-spinner" id="bs-remove-spinner" hidden></span>
+        </div>
+    </div>
+</div>
+
+<!-- Add New Item Modal -->
+<div class="admin-modal-overlay" id="ni-modal" hidden>
+    <div class="admin-modal admin-modal-sm">
+        <div class="admin-modal-header">
+            <h2 class="admin-modal-title">Add New Item</h2>
+            <button class="admin-modal-close" id="close-ni-modal">✕</button>
+        </div>
+        <form class="admin-modal-form" id="ni-form">
+            <div class="form-field">
+                <label for="ni-item-select">Menu Item *</label>
+                <select id="ni-item-select" name="id" required>
+                    <option value="">— Select an item —</option>
+                    {items.filter(i => !newItemIds.has(i.id)).map(item => (
+                        <option value={item.id}>{item.name}</option>
+                    ))}
+                </select>
+            </div>
+            <div class="form-field">
+                <label for="ni-tag">Tag <span class="admin-field-hint">(optional label, e.g. "Just Added")</span></label>
+                <input id="ni-tag" name="tag" type="text" placeholder="e.g. Just Added"/>
+            </div>
+            <div id="ni-form-error" class="admin-alert admin-alert-error" hidden></div>
+            <div class="admin-modal-actions">
+                <button type="button" class="admin-btn-cancel" id="cancel-ni-modal">Cancel</button>
+                <button type="submit" class="btn-primary" id="ni-submit-btn">Add</button>
+                <span class="modal-spinner" id="ni-spinner" hidden></span>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit New Item Tag Modal -->
+<div class="admin-modal-overlay" id="ni-edit-modal" hidden>
+    <div class="admin-modal admin-modal-sm">
+        <div class="admin-modal-header">
+            <h2 class="admin-modal-title">Edit Tag</h2>
+            <button class="admin-modal-close" id="close-ni-edit-modal">✕</button>
+        </div>
+        <form class="admin-modal-form" id="ni-edit-form">
+            <input type="hidden" id="ni-edit-id"/>
+            <p class="admin-delete-confirm-text" style="margin-bottom:0.5rem">
+                Editing tag for <strong id="ni-edit-item-name"></strong>
+            </p>
+            <div class="form-field">
+                <label for="ni-edit-tag">Tag <span class="admin-field-hint">(optional label, e.g. "Just Added")</span></label>
+                <input id="ni-edit-tag" name="tag" type="text" placeholder="e.g. Just Added"/>
+            </div>
+            <div id="ni-edit-error" class="admin-alert admin-alert-error" hidden></div>
+            <div class="admin-modal-actions">
+                <button type="button" class="admin-btn-cancel" id="cancel-ni-edit-modal">Cancel</button>
+                <button type="submit" class="btn-primary" id="ni-edit-submit-btn">Save</button>
+                <span class="modal-spinner" id="ni-edit-spinner" hidden></span>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Remove New Item Confirm Modal -->
+<div class="admin-modal-overlay" id="ni-remove-modal" hidden>
+    <div class="admin-modal admin-modal-sm">
+        <div class="admin-modal-header">
+            <h2 class="admin-modal-title">Remove New Item</h2>
+            <button class="admin-modal-close" id="close-ni-remove-modal">✕</button>
+        </div>
+        <p class="admin-delete-confirm-text">Remove <strong id="ni-remove-item-name"></strong> from new items?</p>
+        <div id="ni-remove-error" class="admin-alert admin-alert-error" hidden></div>
+        <div class="admin-modal-actions">
+            <button type="button" class="admin-btn-cancel" id="cancel-ni-remove-modal">Cancel</button>
+            <button type="button" class="admin-btn-delete-confirm" id="confirm-ni-remove">Remove</button>
+            <span class="modal-spinner" id="ni-remove-spinner" hidden></span>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ── Modal helpers ──────────────────────────────────────────
+    function openModal(id: string) {
+        const el = document.getElementById(id);
+        if (el) {
+            el.hidden = false;
+            document.body.style.overflow = 'hidden';
+        }
+    }
+
+    function closeModal(id: string) {
+        const el = document.getElementById(id);
+        if (el) {
+            el.hidden = true;
+            document.body.style.overflow = '';
+        }
+    }
+
+    function showError(id: string, msg: string) {
+        const el = document.getElementById(id);
+        if (el) {
+            el.textContent = msg;
+            el.hidden = false;
+        }
+    }
+
+    function clearError(id: string) {
+        const el = document.getElementById(id);
+        if (el) {
+            el.hidden = true;
+            el.textContent = '';
+        }
+    }
+
+    // Close on overlay click
+    ['add-modal', 'edit-modal', 'delete-modal', 'bs-modal', 'bs-edit-modal', 'bs-remove-modal', 'ni-modal', 'ni-edit-modal', 'ni-remove-modal'].forEach(id => {
+        document.getElementById(id)?.addEventListener('click', (e) => {
+            if (e.target === e.currentTarget) closeModal(id);
+        });
+    });
+
+    // Close on Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        ['add-modal', 'edit-modal', 'delete-modal', 'bs-modal', 'bs-edit-modal', 'bs-remove-modal', 'ni-modal', 'ni-edit-modal', 'ni-remove-modal'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el && !el.hidden) closeModal(id);
+        });
+    });
+
+    // ── Tabs ───────────────────────────────────────────────────
+    const tabs = document.querySelectorAll<HTMLButtonElement>('.admin-tab');
+    const addItemBtn = document.getElementById('open-add-modal') as HTMLButtonElement;
+    const pageTitle = document.getElementById('page-title');
+    const pageSub = document.getElementById('page-sub');
+    const tabBar = document.querySelector<HTMLElement>('.admin-tabs');
+    const totalItems = parseInt(tabBar?.dataset.itemsTotal ?? '0', 10);
+
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const target = tab.dataset.tab;
+            tabs.forEach(t => t.classList.toggle('admin-tab-active', t === tab));
+            document.getElementById('tab-menu-items')!.hidden = target !== 'menu-items';
+            document.getElementById('tab-best-sellers')!.hidden = target !== 'best-sellers';
+            document.getElementById('tab-new-items')!.hidden = target !== 'new-items';
+            if (target === 'menu-items') {
+                if (pageTitle) pageTitle.textContent = 'Menu Items';
+                if (pageSub) pageSub.textContent = `${totalItems} total item${totalItems !== 1 ? 's' : ''}`;
+                addItemBtn.hidden = false;
+            } else if (target === 'best-sellers') {
+                if (pageTitle) pageTitle.textContent = 'Best Sellers';
+                if (pageSub) pageSub.textContent = 'Featured items shown on the public menu';
+                addItemBtn.hidden = true;
+            } else {
+                if (pageTitle) pageTitle.textContent = 'New Items';
+                if (pageSub) pageSub.textContent = 'Recently added items highlighted on the public menu';
+                addItemBtn.hidden = true;
+            }
+        });
+    });
+
+    // ── File → base64 helper ───────────────────────────────────
+    function readFileAsDataURL(file: File): Promise<string> {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+        });
+    }
+
+    function resetUploadField(inputId: string, labelTextId: string, previewId: string, previewImgId: string) {
+        const input = document.getElementById(inputId) as HTMLInputElement;
+        if (input) input.value = '';
+        const labelText = document.getElementById(labelTextId);
+        if (labelText) labelText.textContent = 'Choose file…';
+        const preview = document.getElementById(previewId);
+        if (preview) preview.hidden = true;
+        const previewImg = document.getElementById(previewImgId) as HTMLImageElement;
+        if (previewImg) previewImg.src = '';
+    }
+
+    function wireUploadInput(inputId: string, labelId: string, labelTextId: string, previewId: string, previewImgId: string, removeId: string) {
+        const input = document.getElementById(inputId) as HTMLInputElement;
+        const label = document.getElementById(labelId) as HTMLLabelElement;
+
+        function applyFile(file: File) {
+            const labelText = document.getElementById(labelTextId);
+            if (labelText) labelText.textContent = file.name;
+            readFileAsDataURL(file).then(dataUrl => {
+                const previewImg = document.getElementById(previewImgId) as HTMLImageElement;
+                if (previewImg) previewImg.src = dataUrl;
+                const preview = document.getElementById(previewId);
+                if (preview) preview.hidden = false;
+            });
+        }
+
+        input?.addEventListener('change', () => {
+            const file = input.files?.[0];
+            if (file) applyFile(file);
+        });
+
+        // Drag-and-drop
+        label?.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            label.classList.add('upload-label-dragover');
+        });
+        label?.addEventListener('dragleave', () => {
+            label.classList.remove('upload-label-dragover');
+        });
+        label?.addEventListener('drop', (e) => {
+            e.preventDefault();
+            label.classList.remove('upload-label-dragover');
+            const file = e.dataTransfer?.files?.[0];
+            if (!file) return;
+            // Inject into the input so existing form logic picks it up
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            input.files = dt.files;
+            applyFile(file);
+        });
+
+        document.getElementById(removeId)?.addEventListener('click', () => {
+            resetUploadField(inputId, labelTextId, previewId, previewImgId);
+        });
+    }
+
+    wireUploadInput('add-image', 'add-upload-label', 'add-image-label-text', 'add-image-preview', 'add-image-preview-img', 'add-image-remove');
+    wireUploadInput('edit-image', 'edit-upload-label', 'edit-image-label-text', 'edit-image-preview', 'edit-image-preview-img', 'edit-image-remove');
+
+    // ── Mystery toggle ─────────────────────────────────────────
+    function applyMysteryState(prefix: string, isMystery: boolean) {
+        const notice = document.getElementById(`${prefix}-mystery-notice`);
+        const nameLabel = document.getElementById(`${prefix}-name-label`);
+        const descLabel = document.getElementById(`${prefix}-description-label`);
+        const descTextarea = document.getElementById(`${prefix}-description`) as HTMLTextAreaElement | null;
+        const imageField = document.getElementById(`${prefix}-image-field`);
+        const currentImageWrap = document.getElementById(`${prefix}-current-image-wrap`);
+
+        if (notice) notice.hidden = !isMystery;
+        if (imageField) imageField.hidden = isMystery;
+        if (currentImageWrap) currentImageWrap.hidden = isMystery;
+
+        if (nameLabel) {
+            nameLabel.innerHTML = isMystery
+                ? 'Name * <span class="admin-field-hint">(internal only — not shown to customers)</span>'
+                : 'Name *';
+        }
+
+        if (isMystery) {
+            if (descLabel) descLabel.textContent = 'Hint (optional)';
+            if (descTextarea) {
+                descTextarea.placeholder = 'Optional hint shown to customers on the public menu…';
+                descTextarea.required = false;
+            }
+        } else {
+            if (descLabel) descLabel.textContent = 'Description *';
+            if (descTextarea) {
+                descTextarea.placeholder = 'A brief description of the item…';
+                descTextarea.required = true;
+            }
+        }
+    }
+
+    function wireMysteryToggle(prefix: string) {
+        const checkbox = document.getElementById(`${prefix}-mystery`) as HTMLInputElement | null;
+        if (!checkbox) return;
+        checkbox.addEventListener('change', () => applyMysteryState(prefix, checkbox.checked));
+        // apply initial state
+        applyMysteryState(prefix, checkbox.checked);
+    }
+
+    wireMysteryToggle('add');
+    wireMysteryToggle('edit');
+
+    // ── Add modal ──────────────────────────────────────────────
+    document.getElementById('open-add-modal')?.addEventListener('click', () => {
+        (document.getElementById('add-form') as HTMLFormElement)?.reset();
+        resetUploadField('add-image', 'add-image-label-text', 'add-image-preview', 'add-image-preview-img');
+        applyMysteryState('add', false);
+        clearError('add-form-error');
+        openModal('add-modal');
+    });
+    document.getElementById('close-add-modal')?.addEventListener('click', () => closeModal('add-modal'));
+    document.getElementById('cancel-add-modal')?.addEventListener('click', () => closeModal('add-modal'));
+
+    document.getElementById('add-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        clearError('add-form-error');
+        const form = e.target as HTMLFormElement;
+        const data = Object.fromEntries(new FormData(form));
+        const submitBtn = document.getElementById('add-submit-btn') as HTMLButtonElement;
+        const spinner = document.getElementById('add-spinner') as HTMLElement;
+        submitBtn.disabled = true;
+        spinner.hidden = false;
+
+        // Upload image first to get the UUID that will also be the DB row id
+        const imageFile = (document.getElementById('add-image') as HTMLInputElement).files?.[0];
+        if (!imageFile) {
+            showError('add-form-error', 'An image is required.');
+            submitBtn.disabled = false;
+            spinner.hidden = true;
+            return;
+        }
+        const uploadForm = new FormData();
+        uploadForm.append('file', imageFile);
+        const uploadRes = await fetch('/api/v1/upload', {method: 'POST', body: uploadForm});
+        if (!uploadRes.ok) {
+            const err = await uploadRes.json();
+            showError('add-form-error', err.error ?? 'Image upload failed.');
+            submitBtn.disabled = false;
+            spinner.hidden = true;
+            return;
+        }
+        const {uuid} = await uploadRes.json();
+
+        const payload = {
+            id: uuid,
+            name: data.name,
+            description: data.description,
+            mystery: 'mystery' in data && data.mystery === 'on',
+        };
+
+        const res = await fetch('/api/v1/menu', {
+            method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload),
+        });
+
+        if (res.ok) {
+            location.reload();
+        } else {
+            const err = await res.json();
+            showError('add-form-error', err.error ?? 'Something went wrong.');
+            submitBtn.disabled = false;
+            spinner.hidden = true;
+        }
+    });
+
+    // ── Edit modal ─────────────────────────────────────────────
+    document.querySelectorAll<HTMLButtonElement>('.admin-btn-edit').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const {id, name, description, image, mystery} = btn.dataset;
+            (document.getElementById('edit-id') as HTMLInputElement).value = id ?? '';
+            (document.getElementById('edit-name') as HTMLInputElement).value = name ?? '';
+            (document.getElementById('edit-description') as HTMLTextAreaElement).value = description ?? '';
+
+            // Always show the current image (url = storageUrl + id)
+            const currentImg = document.getElementById('edit-current-image-img') as HTMLImageElement;
+            if (currentImg) currentImg.src = image ?? '';
+
+            // Reset the file upload field
+            resetUploadField('edit-image', 'edit-image-label-text', 'edit-image-preview', 'edit-image-preview-img');
+
+            (document.getElementById('edit-mystery') as HTMLInputElement).checked = mystery === 'true';
+            applyMysteryState('edit', mystery === 'true');
+            clearError('edit-form-error');
+            openModal('edit-modal');
+        });
+    });
+
+    document.getElementById('close-edit-modal')?.addEventListener('click', () => closeModal('edit-modal'));
+    document.getElementById('cancel-edit-modal')?.addEventListener('click', () => closeModal('edit-modal'));
+
+    document.getElementById('edit-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        clearError('edit-form-error');
+        const form = e.target as HTMLFormElement;
+        const data = Object.fromEntries(new FormData(form));
+        const id = (document.getElementById('edit-id') as HTMLInputElement).value;
+        const submitBtn = document.getElementById('edit-submit-btn') as HTMLButtonElement;
+        const spinner = document.getElementById('edit-spinner') as HTMLElement;
+        submitBtn.disabled = true;
+        spinner.hidden = false;
+
+        // If a new image file was selected, re-upload to storage using the item's id (upsert)
+        const imageFile = (document.getElementById('edit-image') as HTMLInputElement).files?.[0];
+        if (imageFile) {
+            const uploadForm = new FormData();
+            uploadForm.append('file', imageFile);
+            uploadForm.append('id', id);
+            const uploadRes = await fetch('/api/v1/upload', {method: 'POST', body: uploadForm});
+            if (!uploadRes.ok) {
+                const err = await uploadRes.json();
+                showError('edit-form-error', err.error ?? 'Image upload failed.');
+                submitBtn.disabled = false;
+                spinner.hidden = true;
+                return;
+            }
+        }
+
+        const payload = {
+            name: data.name, description: data.description, mystery: 'mystery' in data && data.mystery === 'on',
+        };
+
+        const res = await fetch(`/api/v1/menu/${id}`, {
+            method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload),
+        });
+
+        if (res.ok) {
+            location.reload();
+        } else {
+            const err = await res.json();
+            showError('edit-form-error', err.error ?? 'Something went wrong.');
+            submitBtn.disabled = false;
+            spinner.hidden = true;
+        }
+    });
+
+    // ── Delete modal ───────────────────────────────────────────
+    let pendingDeleteId: string | null = null;
+
+    document.querySelectorAll<HTMLButtonElement>('.admin-btn-delete').forEach(btn => {
+        btn.addEventListener('click', () => {
+            pendingDeleteId = btn.dataset.id ?? null;
+            const row = btn.closest('tr');
+            const name = row?.querySelector('.admin-td-name')?.textContent ?? 'this item';
+            const nameEl = document.getElementById('delete-item-name');
+            if (nameEl) nameEl.textContent = name;
+            clearError('delete-form-error');
+            openModal('delete-modal');
+        });
+    });
+    document.getElementById('close-delete-modal')?.addEventListener('click', () => closeModal('delete-modal'));
+    document.getElementById('cancel-delete-modal')?.addEventListener('click', () => closeModal('delete-modal'));
+
+    document.getElementById('confirm-delete')?.addEventListener('click', async () => {
+        if (!pendingDeleteId) return;
+        clearError('delete-form-error');
+        const confirmBtn = document.getElementById('confirm-delete') as HTMLButtonElement;
+        const spinner = document.getElementById('delete-spinner') as HTMLElement;
+        confirmBtn.disabled = true;
+        spinner.hidden = false;
+        const res = await fetch(`/api/v1/menu/${pendingDeleteId}`, {method: 'DELETE'});
+        if (res.ok) {
+            location.reload();
+        } else {
+            const err = await res.json();
+            showError('delete-form-error', err.error ?? 'Could not delete item.');
+            confirmBtn.disabled = false;
+            spinner.hidden = true;
+        }
+    });
+
+    // ── Add Best Seller modal ──────────────────────────────────
+    document.getElementById('open-bs-modal')?.addEventListener('click', () => {
+        (document.getElementById('bs-form') as HTMLFormElement)?.reset();
+        clearError('bs-form-error');
+        openModal('bs-modal');
+    });
+    document.getElementById('close-bs-modal')?.addEventListener('click', () => closeModal('bs-modal'));
+    document.getElementById('cancel-bs-modal')?.addEventListener('click', () => closeModal('bs-modal'));
+
+    document.getElementById('bs-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        clearError('bs-form-error');
+        const form = e.target as HTMLFormElement;
+        const data = Object.fromEntries(new FormData(form));
+        const submitBtn = document.getElementById('bs-submit-btn') as HTMLButtonElement;
+        const spinner = document.getElementById('bs-spinner') as HTMLElement;
+        submitBtn.disabled = true;
+        spinner.hidden = false;
+
+        const res = await fetch('/api/v1/best-sellers', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ id: data.id, tag: data.tag }),
+        });
+
+        if (res.ok) {
+            location.reload();
+        } else {
+            const err = await res.json();
+            showError('bs-form-error', err.error ?? 'Something went wrong.');
+            submitBtn.disabled = false;
+            spinner.hidden = true;
+        }
+    });
+
+    // ── Edit Best Seller Tag modal ─────────────────────────────
+    document.querySelectorAll<HTMLButtonElement>('.admin-btn-bs-edit').forEach(btn => {
+        btn.addEventListener('click', () => {
+            (document.getElementById('bs-edit-id') as HTMLInputElement).value = btn.dataset.id ?? '';
+            (document.getElementById('bs-edit-tag') as HTMLInputElement).value = btn.dataset.tag ?? '';
+            const nameEl = document.getElementById('bs-edit-item-name');
+            if (nameEl) nameEl.textContent = btn.dataset.name ?? 'this item';
+            clearError('bs-edit-error');
+            openModal('bs-edit-modal');
+        });
+    });
+    document.getElementById('close-bs-edit-modal')?.addEventListener('click', () => closeModal('bs-edit-modal'));
+    document.getElementById('cancel-bs-edit-modal')?.addEventListener('click', () => closeModal('bs-edit-modal'));
+
+    document.getElementById('bs-edit-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        clearError('bs-edit-error');
+        const id = (document.getElementById('bs-edit-id') as HTMLInputElement).value;
+        const tag = (document.getElementById('bs-edit-tag') as HTMLInputElement).value;
+        const submitBtn = document.getElementById('bs-edit-submit-btn') as HTMLButtonElement;
+        const spinner = document.getElementById('bs-edit-spinner') as HTMLElement;
+        submitBtn.disabled = true;
+        spinner.hidden = false;
+
+        const res = await fetch(`/api/v1/best-sellers/${id}`, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ tag }),
+        });
+
+        if (res.ok) {
+            location.reload();
+        } else {
+            const err = await res.json();
+            showError('bs-edit-error', err.error ?? 'Something went wrong.');
+            submitBtn.disabled = false;
+            spinner.hidden = true;
+        }
+    });
+
+    // ── Remove Best Seller modal ───────────────────────────────
+    let pendingBsRemoveId: string | null = null;
+
+    document.querySelectorAll<HTMLButtonElement>('.admin-btn-bs-remove').forEach(btn => {
+        btn.addEventListener('click', () => {
+            pendingBsRemoveId = btn.dataset.id ?? null;
+            const nameEl = document.getElementById('bs-remove-item-name');
+            if (nameEl) nameEl.textContent = btn.dataset.name ?? 'this item';
+            clearError('bs-remove-error');
+            openModal('bs-remove-modal');
+        });
+    });
+    document.getElementById('close-bs-remove-modal')?.addEventListener('click', () => closeModal('bs-remove-modal'));
+    document.getElementById('cancel-bs-remove-modal')?.addEventListener('click', () => closeModal('bs-remove-modal'));
+
+    document.getElementById('confirm-bs-remove')?.addEventListener('click', async () => {
+        if (!pendingBsRemoveId) return;
+        clearError('bs-remove-error');
+        const confirmBtn = document.getElementById('confirm-bs-remove') as HTMLButtonElement;
+        const spinner = document.getElementById('bs-remove-spinner') as HTMLElement;
+        confirmBtn.disabled = true;
+        spinner.hidden = false;
+        const res = await fetch(`/api/v1/best-sellers/${pendingBsRemoveId}`, {method: 'DELETE'});
+        if (res.ok) {
+            location.reload();
+        } else {
+            const err = await res.json();
+            showError('bs-remove-error', err.error ?? 'Could not remove best seller.');
+            confirmBtn.disabled = false;
+            spinner.hidden = true;
+        }
+    });
+
+    // ── Add New Item modal ─────────────────────────────────────
+    document.getElementById('open-ni-modal')?.addEventListener('click', () => {
+        (document.getElementById('ni-form') as HTMLFormElement)?.reset();
+        clearError('ni-form-error');
+        openModal('ni-modal');
+    });
+    document.getElementById('close-ni-modal')?.addEventListener('click', () => closeModal('ni-modal'));
+    document.getElementById('cancel-ni-modal')?.addEventListener('click', () => closeModal('ni-modal'));
+
+    document.getElementById('ni-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        clearError('ni-form-error');
+        const form = e.target as HTMLFormElement;
+        const data = Object.fromEntries(new FormData(form));
+        const submitBtn = document.getElementById('ni-submit-btn') as HTMLButtonElement;
+        const spinner = document.getElementById('ni-spinner') as HTMLElement;
+        submitBtn.disabled = true;
+        spinner.hidden = false;
+
+        const res = await fetch('/api/v1/new-items', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ id: data.id, tag: data.tag }),
+        });
+
+        if (res.ok) {
+            location.reload();
+        } else {
+            const err = await res.json();
+            showError('ni-form-error', err.error ?? 'Something went wrong.');
+            submitBtn.disabled = false;
+            spinner.hidden = true;
+        }
+    });
+
+    // ── Edit New Item Tag modal ────────────────────────────────
+    document.querySelectorAll<HTMLButtonElement>('.admin-btn-ni-edit').forEach(btn => {
+        btn.addEventListener('click', () => {
+            (document.getElementById('ni-edit-id') as HTMLInputElement).value = btn.dataset.id ?? '';
+            (document.getElementById('ni-edit-tag') as HTMLInputElement).value = btn.dataset.tag ?? '';
+            const nameEl = document.getElementById('ni-edit-item-name');
+            if (nameEl) nameEl.textContent = btn.dataset.name ?? 'this item';
+            clearError('ni-edit-error');
+            openModal('ni-edit-modal');
+        });
+    });
+    document.getElementById('close-ni-edit-modal')?.addEventListener('click', () => closeModal('ni-edit-modal'));
+    document.getElementById('cancel-ni-edit-modal')?.addEventListener('click', () => closeModal('ni-edit-modal'));
+
+    document.getElementById('ni-edit-form')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        clearError('ni-edit-error');
+        const id = (document.getElementById('ni-edit-id') as HTMLInputElement).value;
+        const tag = (document.getElementById('ni-edit-tag') as HTMLInputElement).value;
+        const submitBtn = document.getElementById('ni-edit-submit-btn') as HTMLButtonElement;
+        const spinner = document.getElementById('ni-edit-spinner') as HTMLElement;
+        submitBtn.disabled = true;
+        spinner.hidden = false;
+
+        const res = await fetch(`/api/v1/new-items/${id}`, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ tag }),
+        });
+
+        if (res.ok) {
+            location.reload();
+        } else {
+            const err = await res.json();
+            showError('ni-edit-error', err.error ?? 'Something went wrong.');
+            submitBtn.disabled = false;
+            spinner.hidden = true;
+        }
+    });
+
+    // ── Remove New Item modal ──────────────────────────────────
+    let pendingNiRemoveId: string | null = null;
+
+    document.querySelectorAll<HTMLButtonElement>('.admin-btn-ni-remove').forEach(btn => {
+        btn.addEventListener('click', () => {
+            pendingNiRemoveId = btn.dataset.id ?? null;
+            const nameEl = document.getElementById('ni-remove-item-name');
+            if (nameEl) nameEl.textContent = btn.dataset.name ?? 'this item';
+            clearError('ni-remove-error');
+            openModal('ni-remove-modal');
+        });
+    });
+    document.getElementById('close-ni-remove-modal')?.addEventListener('click', () => closeModal('ni-remove-modal'));
+    document.getElementById('cancel-ni-remove-modal')?.addEventListener('click', () => closeModal('ni-remove-modal'));
+
+    document.getElementById('confirm-ni-remove')?.addEventListener('click', async () => {
+        if (!pendingNiRemoveId) return;
+        clearError('ni-remove-error');
+        const confirmBtn = document.getElementById('confirm-ni-remove') as HTMLButtonElement;
+        const spinner = document.getElementById('ni-remove-spinner') as HTMLElement;
+        confirmBtn.disabled = true;
+        spinner.hidden = false;
+        const res = await fetch(`/api/v1/new-items/${pendingNiRemoveId}`, {method: 'DELETE'});
+        if (res.ok) {
+            location.reload();
+        } else {
+            const err = await res.json();
+            showError('ni-remove-error', err.error ?? 'Could not remove new item.');
+            confirmBtn.disabled = false;
+            spinner.hidden = true;
+        }
+    });
+
+    // ── Drag-to-reorder ────────────────────────────────────────
+    function wireTableDragSort(tbodyId: string, reorderUrl: string) {
+        const tbody = document.getElementById(tbodyId);
+        if (!tbody) return;
+
+        let dragSrc: HTMLTableRowElement | null = null;
+
+        tbody.addEventListener('dragstart', (e: DragEvent) => {
+            const row = (e.target as HTMLElement).closest('tr') as HTMLTableRowElement | null;
+            if (!row) return;
+            dragSrc = row;
+            row.classList.add('dragging');
+            if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+        });
+
+        tbody.addEventListener('dragend', () => {
+            tbody.querySelectorAll<HTMLTableRowElement>('tr').forEach(r => {
+                r.classList.remove('dragging', 'drag-over-top', 'drag-over-bottom');
+            });
+            dragSrc = null;
+        });
+
+        tbody.addEventListener('dragover', (e: DragEvent) => {
+            e.preventDefault();
+            if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+            const row = (e.target as HTMLElement).closest('tr') as HTMLTableRowElement | null;
+            if (!row || row === dragSrc) return;
+            tbody.querySelectorAll<HTMLTableRowElement>('tr').forEach(r => {
+                r.classList.remove('drag-over-top', 'drag-over-bottom');
+            });
+            const rect = row.getBoundingClientRect();
+            const isTop = e.clientY < rect.top + rect.height / 2;
+            row.classList.add(isTop ? 'drag-over-top' : 'drag-over-bottom');
+        });
+
+        tbody.addEventListener('dragleave', (e: DragEvent) => {
+            const row = (e.target as HTMLElement).closest('tr') as HTMLTableRowElement | null;
+            if (row) row.classList.remove('drag-over-top', 'drag-over-bottom');
+        });
+
+        tbody.addEventListener('drop', async (e: DragEvent) => {
+            e.preventDefault();
+            const row = (e.target as HTMLElement).closest('tr') as HTMLTableRowElement | null;
+            tbody.querySelectorAll<HTMLTableRowElement>('tr').forEach(r => {
+                r.classList.remove('drag-over-top', 'drag-over-bottom');
+            });
+            if (!row || !dragSrc || row === dragSrc) return;
+
+            const rect = row.getBoundingClientRect();
+            const isTop = e.clientY < rect.top + rect.height / 2;
+            tbody.insertBefore(dragSrc, isTop ? row : row.nextSibling);
+
+            const ids = Array.from(tbody.querySelectorAll<HTMLTableRowElement>('tr[data-id]'))
+                .map(r => r.dataset.id as string);
+
+            try {
+                const res = await fetch(reorderUrl, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ids}),
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    console.error('Reorder failed:', err.error ?? 'Unknown error');
+                }
+            } catch (err) {
+                console.error('Reorder request failed:', err);
+            }
+        });
+    }
+
+    wireTableDragSort('best-sellers-tbody', '/api/v1/best-sellers');
+    wireTableDragSort('new-items-tbody', '/api/v1/new-items');
+</script>
+
+<style>
+    /* ── Admin layout ─────────────────────────────────────────── */
+    .admin-body {
+        min-height: 100vh;
+        background: #F3EDE5;
+        display: flex;
+    }
+
+    .admin-sidebar {
+        width: 220px;
+        flex-shrink: 0;
+        background: var(--bg);
+        border-right: 1px solid var(--accent);
+        display: flex;
+        flex-direction: column;
+        padding: 2rem 1.5rem;
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100vh;
+        overflow-y: auto;
+    }
+
+    .admin-sidebar-top {
+        margin-bottom: 2.5rem;
+    }
+
+    .admin-logo {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 1.15rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--text-primary);
+        text-decoration: none;
+        display: block;
+    }
+
+    .admin-badge {
+        display: inline-block;
+        margin-top: 0.35rem;
+        font-size: 0.62rem;
+        font-weight: 600;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        background: var(--text-primary);
+        color: var(--bg);
+        padding: 0.18rem 0.55rem;
+    }
+
+    .admin-nav {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+        flex: 1;
+    }
+
+    .admin-nav-link {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        font-size: 0.82rem;
+        font-weight: 500;
+        color: var(--text-muted);
+        text-decoration: none;
+        padding: 0.6rem 0.75rem;
+        border-radius: 2px;
+        transition: background 0.15s, color 0.15s;
+    }
+
+    .admin-nav-link:hover,
+    .admin-nav-active {
+        background: #EDE8E1;
+        color: var(--text-primary);
+    }
+
+    .admin-sidebar-footer {
+        border-top: 1px solid var(--accent);
+        padding-top: 1.25rem;
+        margin-top: auto;
+    }
+
+    .admin-user-email {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-bottom: 0.75rem;
+        word-break: break-all;
+    }
+
+    .admin-logout-btn {
+        font-size: 0.78rem;
+        font-weight: 500;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        cursor: pointer;
+        background: none;
+        border: 1px solid var(--accent);
+        padding: 0.45rem 0.9rem;
+        transition: border-color 0.15s, color 0.15s;
+        width: 100%;
+    }
+
+    .admin-logout-btn:hover {
+        border-color: var(--text-primary);
+        color: var(--text-primary);
+    }
+
+    /* ── Main area ────────────────────────────────────────────── */
+    .admin-main {
+        margin-left: 220px;
+        flex: 1;
+        padding: 2.5rem 2rem;
+        min-width: 0;
+    }
+
+    .admin-topbar {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        margin-bottom: 2rem;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .admin-page-title {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 2rem;
+        font-weight: 500;
+        color: var(--text-primary);
+        line-height: 1.2;
+    }
+
+    .admin-page-sub {
+        font-size: 0.82rem;
+        color: var(--text-muted);
+        margin-top: 0.25rem;
+    }
+
+    /* ── Stats strip ──────────────────────────────────────────── */
+    .admin-stats {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 2rem;
+        flex-wrap: wrap;
+    }
+
+    .admin-stat-card {
+        background: var(--bg);
+        border: 1px solid var(--accent);
+        padding: 1.25rem 1.75rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.3rem;
+        min-width: 120px;
+    }
+
+    .admin-stat-label {
+        font-size: 0.68rem;
+        font-weight: 600;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+    }
+
+    .admin-stat-value {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 2rem;
+        font-weight: 500;
+        color: var(--text-primary);
+        line-height: 1;
+    }
+
+    /* ── Table ────────────────────────────────────────────────── */
+    .admin-table-wrap {
+        background: var(--bg);
+        border: 1px solid var(--accent);
+        overflow-x: auto;
+    }
+
+    .admin-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.875rem;
+    }
+
+    .admin-table thead {
+        border-bottom: 1px solid var(--accent);
+    }
+
+    .admin-table th {
+        text-align: left;
+        font-size: 0.65rem;
+        font-weight: 600;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        padding: 0.9rem 1.25rem;
+        white-space: nowrap;
+    }
+
+    .admin-table td {
+        padding: 1rem 1.25rem;
+        vertical-align: middle;
+        border-bottom: 1px solid var(--accent);
+        color: var(--text-primary);
+    }
+
+    .admin-table tr:last-child td {
+        border-bottom: none;
+    }
+
+    .admin-table tr:hover td {
+        background: #FAF7F2;
+    }
+
+    .admin-td-name {
+        font-weight: 500;
+        white-space: nowrap;
+    }
+
+    .admin-td-desc {
+        max-width: 240px;
+        color: var(--text-muted);
+        font-size: 0.82rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .admin-td-image {
+        padding-top: 0.5rem;
+        padding-bottom: 0.5rem;
+        white-space: nowrap;
+    }
+
+    .admin-td-actions {
+        white-space: nowrap;
+    }
+
+    .admin-td-actions-inner {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+    }
+
+    .admin-tag {
+        font-size: 0.63rem;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        border: 1px solid var(--accent);
+        padding: 0.2rem 0.55rem;
+        color: var(--text-muted);
+        white-space: nowrap;
+    }
+
+    .admin-mystery-badge {
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        color: var(--text-muted);
+    }
+
+    .admin-mystery-badge.is-mystery {
+        color: #9A4A2A;
+    }
+
+    .admin-image-thumb-link {
+        display: inline-block;
+        line-height: 0;
+    }
+
+    .admin-image-thumb {
+        width: 48px;
+        height: 48px;
+        object-fit: cover;
+        border: 1px solid var(--accent);
+        transition: opacity 0.15s;
+    }
+
+    .admin-image-thumb:hover {
+        opacity: 0.8;
+    }
+
+    .admin-image-link {
+        font-size: 0.8rem;
+        color: var(--text-primary);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+    }
+
+    .admin-no-image {
+        color: var(--text-muted);
+    }
+
+    .admin-btn-edit,
+    .admin-btn-bs-edit,
+    .admin-btn-ni-edit,
+    .admin-btn-delete {
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 0.35rem 0.75rem;
+        border: 1px solid var(--accent);
+        background: none;
+        cursor: pointer;
+        transition: all 0.15s;
+    }
+
+    .admin-btn-edit,
+    .admin-btn-bs-edit,
+    .admin-btn-ni-edit {
+        color: var(--text-primary);
+    }
+
+    .admin-btn-edit:hover,
+    .admin-btn-bs-edit:hover,
+    .admin-btn-ni-edit:hover {
+        background: var(--text-primary);
+        color: var(--bg);
+        border-color: var(--text-primary);
+    }
+
+    .admin-btn-delete {
+        color: #9A3A1A;
+        border-color: #E8C4B4;
+    }
+
+    .admin-btn-delete:hover {
+        background: #9A3A1A;
+        color: var(--bg);
+        border-color: #9A3A1A;
+    }
+
+    .admin-empty {
+        padding: 3rem;
+        text-align: center;
+        font-size: 0.9rem;
+        color: var(--text-muted);
+    }
+
+    /* ── Tabs ─────────────────────────────────────────────────── */
+    .admin-tabs {
+        display: flex;
+        gap: 0;
+        border-bottom: 1px solid var(--accent);
+        margin-bottom: 1.5rem;
+    }
+
+    .admin-tab {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        padding: 0.7rem 1.25rem;
+        border: none;
+        background: none;
+        cursor: pointer;
+        color: var(--text-muted);
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+        transition: color 0.15s, border-color 0.15s;
+    }
+
+    .admin-tab:hover {
+        color: var(--text-primary);
+    }
+
+    .admin-tab-active {
+        color: var(--text-primary);
+        border-bottom-color: var(--text-primary);
+    }
+
+    .admin-tab-count {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--text-primary);
+        color: var(--bg);
+        font-size: 0.6rem;
+        font-weight: 700;
+        min-width: 1.35rem;
+        height: 1.35rem;
+        padding: 0 0.35rem;
+        border-radius: 999px;
+    }
+
+    .admin-tab-panel[hidden] {
+        display: none;
+    }
+
+    /* ── Best Sellers tab extras ─────────────────────────────── */
+    .admin-bs-add-row {
+        margin-top: 1.25rem;
+        display: flex;
+        justify-content: flex-end;
+    }
+
+    .admin-bs-tag {
+        display: inline-block;
+        font-size: 0.63rem;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        background: #FFF8F0;
+        border: 1px solid #E8C49A;
+        color: #7A4A1A;
+        padding: 0.2rem 0.55rem;
+        white-space: nowrap;
+    }
+
+    /* ── Drag-to-reorder ─────────────────────────────────────── */
+    .admin-th-drag {
+        width: 2rem;
+        padding: 0;
+    }
+
+    .admin-td-drag {
+        width: 2rem;
+        padding: 0;
+        text-align: center;
+        cursor: grab;
+    }
+
+    .drag-handle {
+        display: inline-block;
+        font-size: 1.1rem;
+        color: var(--text-muted);
+        line-height: 1;
+        user-select: none;
+        transition: color 0.15s;
+    }
+
+    tr:hover .drag-handle {
+        color: var(--text-primary);
+    }
+
+    tr.dragging {
+        opacity: 0.45;
+    }
+
+    tr.drag-over-top td {
+        border-top: 2px solid var(--text-primary);
+    }
+
+    tr.drag-over-bottom td {
+        border-bottom: 2px solid var(--text-primary);
+    }
+
+    .admin-btn-bs-remove,
+    .admin-btn-ni-remove {
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 0.35rem 0.75rem;
+        border: 1px solid #E8C4B4;
+        background: none;
+        color: #9A3A1A;
+        cursor: pointer;
+        transition: all 0.15s;
+    }
+
+    .admin-btn-bs-remove:hover,
+    .admin-btn-ni-remove:hover {
+        background: #9A3A1A;
+        color: var(--bg);
+        border-color: #9A3A1A;
+    }
+
+    .admin-modal-form select {
+        width: 100%;
+        padding: 0.8rem 1rem;
+        border: 1px solid var(--accent);
+        background: var(--bg);
+        color: var(--text-primary);
+        font-family: 'DM Sans', sans-serif;
+        font-size: 0.9rem;
+        outline: none;
+        cursor: pointer;
+        transition: border-color 0.2s ease;
+        border-radius: 0;
+        appearance: none;
+        -webkit-appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 0.85rem center;
+        padding-right: 2.5rem;
+    }
+
+    .admin-modal-form select:focus {
+        border-color: var(--text-primary);
+    }
+
+    /* ── Alert ────────────────────────────────────────────────── */
+    .admin-alert {
+        padding: 0.75rem 1rem;
+        font-size: 0.85rem;
+        margin-bottom: 1rem;
+    }
+
+    .admin-alert-error {
+        background: #FDF0EE;
+        border: 1px solid #D9836A;
+        color: #9A3A1A;
+    }
+
+    /* ── Modals ───────────────────────────────────────────────── */
+    .admin-modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(26, 26, 26, 0.5);
+        z-index: 200;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem;
+    }
+
+    .admin-modal-overlay[hidden] {
+        display: none;
+    }
+
+    .admin-modal {
+        background: var(--bg);
+        border: 1px solid var(--accent);
+        width: 100%;
+        max-width: 560px;
+        max-height: 90vh;
+        overflow-y: auto;
+        padding: 2rem;
+    }
+
+    .admin-modal-sm {
+        max-width: 420px;
+    }
+
+    .admin-modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1.75rem;
+    }
+
+    .admin-modal-title {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 1.5rem;
+        font-weight: 500;
+        color: var(--text-primary);
+    }
+
+    .admin-modal-close {
+        background: none;
+        border: none;
+        font-size: 1.1rem;
+        cursor: pointer;
+        color: var(--text-muted);
+        line-height: 1;
+        padding: 0.25rem;
+    }
+
+    .admin-modal-close:hover {
+        color: var(--text-primary);
+    }
+
+    .admin-modal-form {
+        display: flex;
+        flex-direction: column;
+        gap: 1.25rem;
+    }
+
+    .admin-form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+    }
+
+    .admin-modal-form textarea {
+        width: 100%;
+        padding: 0.8rem 1rem;
+        border: 1px solid var(--accent);
+        background: var(--bg);
+        color: var(--text-primary);
+        font-family: 'DM Sans', sans-serif;
+        font-size: 0.9rem;
+        outline: none;
+        resize: vertical;
+        transition: border-color 0.2s ease;
+        border-radius: 0;
+    }
+
+    .admin-modal-form textarea:focus {
+        border-color: var(--text-primary);
+    }
+
+    .admin-checkbox-field {
+        flex-direction: row;
+        align-items: center;
+    }
+
+    .admin-checkbox-label {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        cursor: pointer;
+        font-size: 0.875rem;
+        color: var(--text-primary);
+    }
+
+    .admin-checkbox-label input[type="checkbox"] {
+        appearance: none;
+        -webkit-appearance: none;
+        width: 1rem;
+        height: 1rem;
+        min-width: 1rem;
+        border: 1.5px solid var(--accent);
+        background: var(--bg);
+        cursor: pointer;
+        display: inline-grid;
+        place-content: center;
+        transition: border-color 0.15s, background 0.15s;
+        border-radius: 0;
+    }
+
+    .admin-checkbox-label input[type="checkbox"]:hover {
+        border-color: var(--text-primary);
+    }
+
+    .admin-checkbox-label input[type="checkbox"]::before {
+        content: '';
+        width: 0.5rem;
+        height: 0.5rem;
+        background: var(--text-primary);
+        clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+        transform: scale(0);
+        transition: transform 0.1s ease-in-out;
+    }
+
+    .admin-checkbox-label input[type="checkbox"]:checked {
+        border-color: var(--text-primary);
+    }
+
+    .admin-checkbox-label input[type="checkbox"]:checked::before {
+        transform: scale(1);
+    }
+
+    /* ── Mystery notice ───────────────────────────────────────── */
+    .admin-mystery-notice {
+        background: #FFF8F0;
+        border: 1px solid #E8C49A;
+        color: #7A4A1A;
+        font-size: 0.82rem;
+        line-height: 1.6;
+        padding: 0.75rem 1rem;
+        border-radius: 2px;
+    }
+
+    .admin-mystery-notice strong {
+        font-weight: 600;
+    }
+
+    .admin-field-hint {
+        font-size: 0.75rem;
+        font-weight: 400;
+        color: var(--text-muted);
+    }
+
+    /* ── File upload ──────────────────────────────────────────── */
+    .upload-input {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+    }
+
+    .upload-label {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        padding: 0.75rem 1rem;
+        border: 1px dashed var(--accent);
+        background: var(--bg);
+        color: var(--text-muted);
+        font-size: 0.875rem;
+        cursor: pointer;
+        transition: border-color 0.15s, color 0.15s;
+        user-select: none;
+    }
+
+    .upload-label:hover,
+    .upload-label-dragover {
+        border-color: var(--text-primary);
+        color: var(--text-primary);
+    }
+
+    .upload-label-dragover {
+        background: #EDE8E1;
+    }
+
+    .image-preview {
+        margin-top: 0.6rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .image-preview img {
+        width: 72px;
+        height: 72px;
+        object-fit: cover;
+        border: 1px solid var(--accent);
+        flex-shrink: 0;
+    }
+
+    .image-preview-remove {
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: #9A3A1A;
+        background: none;
+        border: 1px solid #E8C4B4;
+        padding: 0.3rem 0.65rem;
+        cursor: pointer;
+        transition: all 0.15s;
+    }
+
+    .image-preview-remove:hover {
+        background: #9A3A1A;
+        color: #fff;
+        border-color: #9A3A1A;
+    }
+
+    .admin-modal-actions {
+        display: flex;
+        gap: 0.75rem;
+        justify-content: flex-end;
+        margin-top: 0.5rem;
+    }
+
+    .admin-btn-cancel {
+        font-size: 0.82rem;
+        font-weight: 500;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        padding: 0.9rem 1.5rem;
+        border: 1px solid var(--accent);
+        background: none;
+        cursor: pointer;
+        color: var(--text-muted);
+        transition: all 0.15s;
+    }
+
+    .admin-btn-cancel:hover {
+        color: var(--text-primary);
+        border-color: var(--text-primary);
+    }
+
+    .admin-btn-delete-confirm {
+        font-family: 'DM Sans', sans-serif;
+        font-size: 0.82rem;
+        font-weight: 600;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        background: #9A3A1A;
+        color: #fff;
+        padding: 0.9rem 1.9rem;
+        border: none;
+        cursor: pointer;
+        transition: opacity 0.2s;
+    }
+
+    .admin-btn-delete-confirm:hover {
+        opacity: 0.85;
+    }
+
+    .admin-delete-confirm-text {
+        font-size: 0.9rem;
+        color: var(--text-muted);
+        margin-bottom: 1.5rem;
+        line-height: 1.7;
+    }
+
+    .admin-delete-confirm-text strong {
+        color: var(--text-primary);
+    }
+
+    /* ── Loading spinner ──────────────────────────────────────── */
+    .modal-spinner {
+        display: inline-block;
+        width: 18px;
+        height: 18px;
+        border: 2px solid var(--accent);
+        border-top-color: var(--text-primary);
+        border-radius: 50%;
+        animation: modal-spin 0.7s linear infinite;
+        flex-shrink: 0;
+        align-self: center;
+    }
+
+    .modal-spinner[hidden] {
+        display: none;
+    }
+
+    @keyframes modal-spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    /* ── Responsive ───────────────────────────────────────────── */
+    @media (max-width: 768px) {
+        .admin-sidebar {
+            display: none;
+        }
+
+        .admin-main {
+            margin-left: 0;
+            padding: 1.5rem 1rem;
+        }
+
+        .admin-form-row {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+</body>
+</html>
+

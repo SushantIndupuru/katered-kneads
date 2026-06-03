@@ -1,7 +1,9 @@
 ---
 export const prerender = true
+import Image from 'astro/components/Image.astro';
 import Layout from '../layouts/Layout.astro';
-
+import box from '../images/box.webp'
+import banner from '../images/banner.webp'
 const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f78214d446f6be87ef75ef20bf04c7b33944d12f06092b0856af4a12be';
 ---
 
@@ -10,11 +12,12 @@ const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f7
   <!-- ① Hero -->
   <section class="hero" id="home">
     <div class="hero-banner">
-      <img
+      <!--<img
         src={`${CDN}/2024-03-16_21-07-46_1710648486.jpg`}
         alt="Freshly baked goods from Katered Kneads"
         class="hero-image"
-      />
+      />-->
+      <Image class = "hero-image" src={banner} alt={"Freshly baked goods from Katered Kneads"}></Image>
       <div class="hero-overlay">
         <p class="eyebrow hero-eyebrow">UC Berkeley &amp; UC Davis</p>
         <h1 class="hero-headline">Katered<br />Kneads</h1>
@@ -62,10 +65,11 @@ const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f7
           </div>
         </div>
         <div class="about-image">
-          <img
+          <!--<img
             src={`${CDN}/IMG_7202_1710646151.jpg`}
             alt="Close-up of handmade Katered Kneads baked goods"
-          />
+          />-->
+          <Image src={box} alt={"Close-up of handmade Katered Kneads baked goods"}></Image>
         </div>
       </div>
     </div>

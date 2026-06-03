@@ -1,5 +1,7 @@
 ---
+import Image from 'astro/components/Image.astro';
 import Layout from '../layouts/Layout.astro';
+import box from "../images/box.webp";
 export const prerender = true
 
 const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f78214d446f6be87ef75ef20bf04c7b33944d12f06092b0856af4a12be';
@@ -38,10 +40,7 @@ const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f7
           </p>
         </div>
         <div class="about-image">
-          <img
-            src={`${CDN}/IMG_7202_1710646151.jpg`}
-            alt="Close-up of handmade Katered Kneads baked goods"
-          />
+          <Image src={box} alt={"Close-up of handmade Katered Kneads baked goods"}></Image>
         </div>
       </div>
     </div>
