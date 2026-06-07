@@ -2,29 +2,42 @@
 export const prerender = true
 import Image from 'astro/components/Image.astro';
 import Layout from '../layouts/Layout.astro';
-import box from '../images/box.webp'
 import banner from '../images/banner.webp'
-const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f78214d446f6be87ef75ef20bf04c7b33944d12f06092b0856af4a12be';
+import { getNewItems } from '../lib/db'
+
+// ── Drop Configuration ────────────────────────────────────────
+// Set ORDERS_CURRENTLY_OPEN = true when a preorder window is live.
+const ORDERS_CURRENTLY_OPEN = false;
+const NEXT_DROP_OPEN_STR   = '2026-06-07T10:00:00';
+const NEXT_DROP_OPEN_LABEL = 'Saturday, June 7, 2026';
+const ORDERS_CLOSE_LABEL   = 'June 8, 2026 at 11:59 PM';
+const DROP_NUMBER          = 7;
+const ORDER_LINK           = 'https://kateredkneads.square.site/shop/katering-now/LQ62D5N5VAEN2X4RSTCFQTVK';
+const CDN_URL              = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL;
+
+const dropItems = await getNewItems();
 ---
 
 <Layout title="Katered Kneads — Handmade Campus Cookies">
 
-  <!-- ① Hero -->
-  <section class="hero" id="home">
+  <!-- Drop Announcement Bar -->
+  <div class={`drop-bar${ORDERS_CURRENTLY_OPEN ? ' drop-bar-open' : ''}`}>
+    {ORDERS_CURRENTLY_OPEN
+      ? <span>● Preorders are <strong>OPEN NOW</strong> — closes {ORDERS_CLOSE_LABEL} <a href="/order">Order Now →</a></span>
+      : <span>Drop #{DROP_NUMBER} opens <strong>{NEXT_DROP_OPEN_LABEL}</strong> <a href="/order">Get Notified →</a></span>
+    }
+  </div>
+
+  <!-- Hero -->
+  <section class="hero hero--no-top" id="home">
     <div class="hero-banner">
-      <!--<img
-        src={`${CDN}/2024-03-16_21-07-46_1710648486.jpg`}
-        alt="Freshly baked goods from Katered Kneads"
-        class="hero-image"
-      />-->
-      <Image class = "hero-image" src={banner} alt={"Freshly baked goods from Katered Kneads"}></Image>
+      <Image class="hero-image" src={banner} alt="Freshly baked goods from Katered Kneads" />
       <div class="hero-overlay">
-        <p class="eyebrow hero-eyebrow">UC Berkeley &amp; UC Davis</p>
+        <p class="eyebrow">UC Berkeley &amp; UC Davis</p>
         <h1 class="hero-headline">Katered<br />Kneads</h1>
       </div>
     </div>
 
-    <!-- Brand statement below the image -->
     <div class="hero-tagline-block">
       <p class="hero-tagline">
         Small-batch, handmade cookies baked fresh from scratch — dropped every two weeks on campus.
@@ -35,47 +48,77 @@ const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f7
         <span class="pill">Limited Per Drop</span>
         <span class="pill">Campus Pickup</span>
       </div>
-      <div style="margin-top: 2.25rem;">
-        <a href="/order" class="btn-primary">Place a Preorder →</a>
+      <div style="margin-top: 2.25rem; display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: center;">
+        <a href="/order" class="btn-primary">
+          {ORDERS_CURRENTLY_OPEN ? 'Order Now →' : 'View Current Drop →'}
+        </a>
+        <a href="/menu" class="btn-secondary">Browse the Menu →</a>
       </div>
     </div>
   </section>
 
-  <!-- ② What is Katered Kneads -->
-  <section class="section" id="about">
+  <!-- Current / Upcoming Drop Section -->
+  <section class="section" id="current-drop">
     <div class="container">
-      <div class="about-split">
-        <div class="about-text">
-          <p class="eyebrow">Who We Are</p>
-          <h2 class="section-heading">Baked with one rule</h2>
-          <p>
-            Every single knead is made 100% from scratch, by hand, every time. No mixes. No shortcuts. Just premium ingredients, real effort, and real love poured into every bite.
+
+      <div class="drop-header-row">
+        <div>
+          <p class="eyebrow">{ORDERS_CURRENTLY_OPEN ? 'Live Now' : 'Coming Up'}</p>
+          <h2 class="drop-section-title">Drop <span class="drop-num">#{DROP_NUMBER}</span></h2>
+          <p class="drop-date-label">
+            {ORDERS_CURRENTLY_OPEN
+              ? `Open until ${ORDERS_CLOSE_LABEL}`
+              : `Opens ${NEXT_DROP_OPEN_LABEL}`
+            }
           </p>
-          <p>
-            College is full of mass-produced, dry, frankly disappointing cookies. We started Katered Kneads because we missed what a real homemade cookie actually tastes like — and we're bringing that back to campus.
-          </p>
-          <p>
-            Katered Kneads is a student-run home bakery serving UC Berkeley and UC Davis through biweekly preorders. We keep quantities small because each batch demands the time and care that quality ingredients deserve.
-          </p>
-          <p>
-            Founded by siblings Ellyse and Jake, every drop reflects the care that can only come from people who genuinely love what they make.
-          </p>
-          <div style="margin-top: 2rem;">
-            <a href="/menu" class="btn-primary">See Our Menu →</a>
+        </div>
+        <span class={`drop-status-chip ${ORDERS_CURRENTLY_OPEN ? 'chip-open' : 'chip-closed'}`}>
+          {ORDERS_CURRENTLY_OPEN ? '● Live Now' : '● Coming Soon'}
+        </span>
+      </div>
+
+      {dropItems.length > 0 ? (
+        <div class="product-grid">
+          {dropItems.map(item => (
+            <div class={`product-card${item.menuItem.mystery ? ' product-card-mystery' : ''}`}>
+              <div class="product-card-image">
+                {item.menuItem.mystery
+                  ? <div class="mystery-placeholder">?</div>
+                  : <img src={CDN_URL + item.menuItem.id} alt={item.menuItem.name} loading="lazy" />
+                }
+                <span class={`stock-badge ${ORDERS_CURRENTLY_OPEN ? 'stock-badge-available' : 'stock-badge-coming-soon'}`}>
+                  {ORDERS_CURRENTLY_OPEN ? 'Limited' : 'Coming Soon'}
+                </span>
+                {item.tag && <span class="cookie-tag">{item.tag}</span>}
+              </div>
+              <div class="product-card-body">
+                <h3>{item.menuItem.mystery ? '???' : item.menuItem.name}</h3>
+                <p>{item.menuItem.mystery ? 'Revealed when orders open.' : item.menuItem.description}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div class="drop-placeholder">
+          <p class="eyebrow">Menu Dropping Soon</p>
+          <p>Items for Drop #{DROP_NUMBER} will be revealed when orders open. Join the SMS list to be the first to know.</p>
+          <div style="margin-top: 1.5rem;">
+            <a href="/order#sms-signup" class="btn-primary">Join SMS List →</a>
           </div>
         </div>
-        <div class="about-image">
-          <!--<img
-            src={`${CDN}/IMG_7202_1710646151.jpg`}
-            alt="Close-up of handmade Katered Kneads baked goods"
-          />-->
-          <Image src={box} alt={"Close-up of handmade Katered Kneads baked goods"}></Image>
-        </div>
+      )}
+
+      <div class="drop-cta">
+        <a href="/order" class="btn-primary">
+          {ORDERS_CURRENTLY_OPEN ? 'Place Your Order →' : 'See Full Drop Details →'}
+        </a>
+        <a href="/menu" class="btn-secondary">Full Menu →</a>
       </div>
+
     </div>
   </section>
 
-  <!-- ③ How It Works -->
+  <!-- How It Works -->
   <section class="section section-tinted" id="how-it-works">
     <div class="container">
       <div class="section-header">
@@ -88,35 +131,62 @@ const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f7
         <div class="how-step">
           <div class="how-step-number">01</div>
           <div class="how-step-content">
-            <h3>Check the Drop</h3>
-            <p>Preorders open once every two weeks. <a href="/order#sms-signup">Join our SMS list</a> to get a text about 5 minutes before orders open — be first in before quantities run out.</p>
+            <h3>Watch for the Drop</h3>
+            <p>Preorders open once every two weeks. <a href="/order#sms-signup">Join our SMS list</a> to get a text ~5 minutes before orders go live.</p>
           </div>
         </div>
         <div class="how-step">
           <div class="how-step-number">02</div>
           <div class="how-step-content">
             <h3>Place Your Order</h3>
-            <p>Head to our order page, browse that drop's menu, and choose your items. Orders are first-come, first-served — we can only make so many because every single cookie is baked by hand with premium ingredients and takes real time to do right.</p>
+            <p>Browse that drop's menu and select your items. Orders are first-come, first-served — quantities are limited and sell fast.</p>
           </div>
         </div>
         <div class="how-step">
           <div class="how-step-number">03</div>
           <div class="how-step-content">
             <h3>Choose Your Campus</h3>
-            <p>Select pickup at UC Davis or UC Berkeley. Exact location and time are confirmed with each drop so you always know where to find us.</p>
+            <p>Select pickup at UC Davis or UC Berkeley. Exact location and time confirmed with each drop.</p>
           </div>
         </div>
         <div class="how-step">
           <div class="how-step-number">04</div>
           <div class="how-step-content">
-            <h3>Get Your Kneads</h3>
-            <p>Pick up your freshly baked order on campus. That's it — you've got Katered Kneads.</p>
+            <h3>Pick Up Fresh</h3>
+            <p>Grab your freshly baked order on campus. Baked to order — never sitting on a shelf.</p>
           </div>
         </div>
       </div>
 
       <div class="how-cta">
         <a href="/order" class="btn-primary">Go to Order Page →</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Brand Manifesto -->
+  <section class="section section-dark">
+    <div class="container">
+      <div class="mission-inner">
+        <blockquote class="mission-quote">
+          "We started Katered Kneads because we believe everyone deserves a truly great cookie — made by hand, with real ingredients, and absolutely no shortcuts."
+        </blockquote>
+        <p class="mission-byline">— Ellyse &amp; Jake, co-founders</p>
+
+        <div class="trust-badges">
+          <div class="trust-badge">
+            <span class="trust-badge-title">100% Scratch</span>
+            <span class="trust-badge-sub">No mixes, no pre-made dough. Every knead starts from raw ingredients.</span>
+          </div>
+          <div class="trust-badge">
+            <span class="trust-badge-title">Made to Order</span>
+            <span class="trust-badge-sub">We only bake what's been preordered — no waste, maximum freshness.</span>
+          </div>
+          <div class="trust-badge">
+            <span class="trust-badge-title">Deliberately Limited</span>
+            <span class="trust-badge-sub">Small batches so every single bake gets the care it deserves.</span>
+          </div>
+        </div>
       </div>
     </div>
   </section>

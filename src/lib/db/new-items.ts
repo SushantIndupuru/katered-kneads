@@ -1,5 +1,5 @@
 import { createServerClient } from '../supabase.ts';
-import type { MenuItem, SpecialMenuItem } from '../../types/MenuItem.ts';
+import type { MenuItem, SpecialMenuItem } from '../../types/db-types.ts';
 
 export async function listNewItems(): Promise<{ id: string; tag: string; sort_order: number }[]> {
     const supabase = createServerClient();

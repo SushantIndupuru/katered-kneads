@@ -1,8 +1,8 @@
 ---
 import '../styles/global.css';
-import {getMenuItems, getBestSellers, getNewItems} from '../lib/db';
+import {getMenuItems, getNewItems} from '../lib/db';
 import {createAnonClient} from '../lib/supabase';
-import type {MenuItem, SpecialMenuItem} from '../types/MenuItem.ts';
+import type {MenuItem, SpecialMenuItem} from '../types/db-types.ts';
 
 const token = Astro.cookies.get('sb-access-token')?.value;
 if (!token) return Astro.redirect('/admin/login');
@@ -16,7 +16,6 @@ if (authError || !authUser) {
 }
 
 let items: MenuItem[] = [];
-let bestSellers: SpecialMenuItem[] = [];
 let newItems: SpecialMenuItem[] = [];
 let fetchError = '';
 
@@ -27,18 +26,11 @@ try {
 }
 
 try {
-    bestSellers = await getBestSellers();
-} catch (e) {
-    // non-fatal
-}
-
-try {
     newItems = await getNewItems();
 } catch (e) {
     // non-fatal
 }
 
-const bestSellerIds = new Set(bestSellers.map(bs => bs.menuItem.id));
 const newItemIds = new Set(newItems.map(ni => ni.menuItem.id));
 
 const user = authUser as { email?: string };
@@ -109,10 +101,6 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     <!-- Tab bar -->
     <div class="admin-tabs" data-items-total={items.length}>
         <button class="admin-tab admin-tab-active" data-tab="menu-items">Menu Items</button>
-        <button class="admin-tab" data-tab="best-sellers">
-            ★ Best Sellers
-            {bestSellers.length > 0 && <span class="admin-tab-count">{bestSellers.length}</span>}
-        </button>
         <button class="admin-tab" data-tab="new-items">
             ✦ New Items
             {newItems.length > 0 && <span class="admin-tab-count">{newItems.length}</span>}
@@ -174,45 +162,6 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
                                 </tr>))}
                         </tbody>
                     </table>)}
-        </div>
-    </div>
-
-    <!-- Best sellers tab -->
-    <div id="tab-best-sellers" class="admin-tab-panel" hidden>
-        <div class="admin-table-wrap">
-            {bestSellers.length === 0 ? (
-                    <div class="admin-empty">No best sellers yet. Add one below.</div>) : (
-                    <table class="admin-table">
-                        <thead>
-                        <tr>
-                            <th class="admin-th-drag"></th>
-                            <th>Name</th>
-                            <th>Description</th>
-                            <th>Tag</th>
-                            <th>Actions</th>
-                        </tr>
-                        </thead>
-                        <tbody id="best-sellers-tbody">
-                        {bestSellers.map(({menuItem, tag}) => (
-                                <tr data-id={menuItem.id} draggable="true">
-                                    <td class="admin-td-drag"><span class="drag-handle">⠿</span></td>
-                                    <td class="admin-td-name">{menuItem.name}</td>
-                                    <td class="admin-td-desc">{menuItem.description || '—'}</td>
-                                    <td>
-                                        {tag ? <span class="admin-bs-tag">{tag}</span> : <span class="admin-no-image">—</span>}
-                                    </td>
-                                    <td class="admin-td-actions">
-                                        <div class="admin-td-actions-inner">
-                                            <button class="admin-btn-bs-edit" data-id={menuItem.id} data-name={menuItem.name} data-tag={tag ?? ''}>Edit Tag</button>
-                                            <button class="admin-btn-bs-remove" data-id={menuItem.id} data-name={menuItem.name}>Remove</button>
-                                        </div>
-                                    </td>
-                                </tr>))}
-                        </tbody>
-                    </table>)}
-        </div>
-        <div class="admin-bs-add-row">
-            <button class="btn-primary" id="open-bs-modal">+ Add Best Seller</button>
         </div>
     </div>
 
@@ -383,80 +332,6 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     </div>
 </div>
 
-<!-- Add Best Seller Modal -->
-<div class="admin-modal-overlay" id="bs-modal" hidden>
-    <div class="admin-modal admin-modal-sm">
-        <div class="admin-modal-header">
-            <h2 class="admin-modal-title">Add Best Seller</h2>
-            <button class="admin-modal-close" id="close-bs-modal">✕</button>
-        </div>
-        <form class="admin-modal-form" id="bs-form">
-            <div class="form-field">
-                <label for="bs-item-select">Menu Item *</label>
-                <select id="bs-item-select" name="id" required>
-                    <option value="">— Select an item —</option>
-                    {items.filter(i => !bestSellerIds.has(i.id)).map(item => (
-                        <option value={item.id}>{item.name}</option>
-                    ))}
-                </select>
-            </div>
-            <div class="form-field">
-                <label for="bs-tag">Tag <span class="admin-field-hint">(optional label, e.g. "Customer Favourite")</span></label>
-                <input id="bs-tag" name="tag" type="text" placeholder="e.g. Customer Favourite"/>
-            </div>
-            <div id="bs-form-error" class="admin-alert admin-alert-error" hidden></div>
-            <div class="admin-modal-actions">
-                <button type="button" class="admin-btn-cancel" id="cancel-bs-modal">Cancel</button>
-                <button type="submit" class="btn-primary" id="bs-submit-btn">Add</button>
-                <span class="modal-spinner" id="bs-spinner" hidden></span>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- Edit Best Seller Tag Modal -->
-<div class="admin-modal-overlay" id="bs-edit-modal" hidden>
-    <div class="admin-modal admin-modal-sm">
-        <div class="admin-modal-header">
-            <h2 class="admin-modal-title">Edit Tag</h2>
-            <button class="admin-modal-close" id="close-bs-edit-modal">✕</button>
-        </div>
-        <form class="admin-modal-form" id="bs-edit-form">
-            <input type="hidden" id="bs-edit-id"/>
-            <p class="admin-delete-confirm-text" style="margin-bottom:0.5rem">
-                Editing tag for <strong id="bs-edit-item-name"></strong>
-            </p>
-            <div class="form-field">
-                <label for="bs-edit-tag">Tag <span class="admin-field-hint">(optional label, e.g. "Customer Favourite")</span></label>
-                <input id="bs-edit-tag" name="tag" type="text" placeholder="e.g. Customer Favourite"/>
-            </div>
-            <div id="bs-edit-error" class="admin-alert admin-alert-error" hidden></div>
-            <div class="admin-modal-actions">
-                <button type="button" class="admin-btn-cancel" id="cancel-bs-edit-modal">Cancel</button>
-                <button type="submit" class="btn-primary" id="bs-edit-submit-btn">Save</button>
-                <span class="modal-spinner" id="bs-edit-spinner" hidden></span>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- Remove Best Seller Confirm Modal -->
-<div class="admin-modal-overlay" id="bs-remove-modal" hidden>
-    <div class="admin-modal admin-modal-sm">
-        <div class="admin-modal-header">
-            <h2 class="admin-modal-title">Remove Best Seller</h2>
-            <button class="admin-modal-close" id="close-bs-remove-modal">✕</button>
-        </div>
-        <p class="admin-delete-confirm-text">Remove <strong id="bs-remove-item-name"></strong> from best sellers?</p>
-        <div id="bs-remove-error" class="admin-alert admin-alert-error" hidden></div>
-        <div class="admin-modal-actions">
-            <button type="button" class="admin-btn-cancel" id="cancel-bs-remove-modal">Cancel</button>
-            <button type="button" class="admin-btn-delete-confirm" id="confirm-bs-remove">Remove</button>
-            <span class="modal-spinner" id="bs-remove-spinner" hidden></span>
-        </div>
-    </div>
-</div>
-
 <!-- Add New Item Modal -->
 <div class="admin-modal-overlay" id="ni-modal" hidden>
     <div class="admin-modal admin-modal-sm">
@@ -566,7 +441,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     }
 
     // Close on overlay click
-    ['add-modal', 'edit-modal', 'delete-modal', 'bs-modal', 'bs-edit-modal', 'bs-remove-modal', 'ni-modal', 'ni-edit-modal', 'ni-remove-modal'].forEach(id => {
+    ['add-modal', 'edit-modal', 'delete-modal', 'ni-modal', 'ni-edit-modal', 'ni-remove-modal'].forEach(id => {
         document.getElementById(id)?.addEventListener('click', (e) => {
             if (e.target === e.currentTarget) closeModal(id);
         });
@@ -575,7 +450,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     // Close on Escape key
     document.addEventListener('keydown', (e) => {
         if (e.key !== 'Escape') return;
-        ['add-modal', 'edit-modal', 'delete-modal', 'bs-modal', 'bs-edit-modal', 'bs-remove-modal', 'ni-modal', 'ni-edit-modal', 'ni-remove-modal'].forEach(id => {
+        ['add-modal', 'edit-modal', 'delete-modal', 'ni-modal', 'ni-edit-modal', 'ni-remove-modal'].forEach(id => {
             const el = document.getElementById(id);
             if (el && !el.hidden) closeModal(id);
         });
@@ -594,19 +469,14 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
             const target = tab.dataset.tab;
             tabs.forEach(t => t.classList.toggle('admin-tab-active', t === tab));
             document.getElementById('tab-menu-items')!.hidden = target !== 'menu-items';
-            document.getElementById('tab-best-sellers')!.hidden = target !== 'best-sellers';
             document.getElementById('tab-new-items')!.hidden = target !== 'new-items';
             if (target === 'menu-items') {
                 if (pageTitle) pageTitle.textContent = 'Menu Items';
                 if (pageSub) pageSub.textContent = `${totalItems} total item${totalItems !== 1 ? 's' : ''}`;
                 addItemBtn.hidden = false;
-            } else if (target === 'best-sellers') {
-                if (pageTitle) pageTitle.textContent = 'Best Sellers';
-                if (pageSub) pageSub.textContent = 'Featured items shown on the public menu';
-                addItemBtn.hidden = true;
             } else {
                 if (pageTitle) pageTitle.textContent = 'New Items';
-                if (pageSub) pageSub.textContent = 'Recently added items highlighted on the public menu';
+                if (pageSub) pageSub.textContent = 'Items featured in the current drop';
                 addItemBtn.hidden = true;
             }
         });
@@ -893,114 +763,6 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         }
     });
 
-    // ── Add Best Seller modal ──────────────────────────────────
-    document.getElementById('open-bs-modal')?.addEventListener('click', () => {
-        (document.getElementById('bs-form') as HTMLFormElement)?.reset();
-        clearError('bs-form-error');
-        openModal('bs-modal');
-    });
-    document.getElementById('close-bs-modal')?.addEventListener('click', () => closeModal('bs-modal'));
-    document.getElementById('cancel-bs-modal')?.addEventListener('click', () => closeModal('bs-modal'));
-
-    document.getElementById('bs-form')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        clearError('bs-form-error');
-        const form = e.target as HTMLFormElement;
-        const data = Object.fromEntries(new FormData(form));
-        const submitBtn = document.getElementById('bs-submit-btn') as HTMLButtonElement;
-        const spinner = document.getElementById('bs-spinner') as HTMLElement;
-        submitBtn.disabled = true;
-        spinner.hidden = false;
-
-        const res = await fetch('/api/v1/best-sellers', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ id: data.id, tag: data.tag }),
-        });
-
-        if (res.ok) {
-            location.reload();
-        } else {
-            const err = await res.json();
-            showError('bs-form-error', err.error ?? 'Something went wrong.');
-            submitBtn.disabled = false;
-            spinner.hidden = true;
-        }
-    });
-
-    // ── Edit Best Seller Tag modal ─────────────────────────────
-    document.querySelectorAll<HTMLButtonElement>('.admin-btn-bs-edit').forEach(btn => {
-        btn.addEventListener('click', () => {
-            (document.getElementById('bs-edit-id') as HTMLInputElement).value = btn.dataset.id ?? '';
-            (document.getElementById('bs-edit-tag') as HTMLInputElement).value = btn.dataset.tag ?? '';
-            const nameEl = document.getElementById('bs-edit-item-name');
-            if (nameEl) nameEl.textContent = btn.dataset.name ?? 'this item';
-            clearError('bs-edit-error');
-            openModal('bs-edit-modal');
-        });
-    });
-    document.getElementById('close-bs-edit-modal')?.addEventListener('click', () => closeModal('bs-edit-modal'));
-    document.getElementById('cancel-bs-edit-modal')?.addEventListener('click', () => closeModal('bs-edit-modal'));
-
-    document.getElementById('bs-edit-form')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        clearError('bs-edit-error');
-        const id = (document.getElementById('bs-edit-id') as HTMLInputElement).value;
-        const tag = (document.getElementById('bs-edit-tag') as HTMLInputElement).value;
-        const submitBtn = document.getElementById('bs-edit-submit-btn') as HTMLButtonElement;
-        const spinner = document.getElementById('bs-edit-spinner') as HTMLElement;
-        submitBtn.disabled = true;
-        spinner.hidden = false;
-
-        const res = await fetch(`/api/v1/best-sellers/${id}`, {
-            method: 'PATCH',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ tag }),
-        });
-
-        if (res.ok) {
-            location.reload();
-        } else {
-            const err = await res.json();
-            showError('bs-edit-error', err.error ?? 'Something went wrong.');
-            submitBtn.disabled = false;
-            spinner.hidden = true;
-        }
-    });
-
-    // ── Remove Best Seller modal ───────────────────────────────
-    let pendingBsRemoveId: string | null = null;
-
-    document.querySelectorAll<HTMLButtonElement>('.admin-btn-bs-remove').forEach(btn => {
-        btn.addEventListener('click', () => {
-            pendingBsRemoveId = btn.dataset.id ?? null;
-            const nameEl = document.getElementById('bs-remove-item-name');
-            if (nameEl) nameEl.textContent = btn.dataset.name ?? 'this item';
-            clearError('bs-remove-error');
-            openModal('bs-remove-modal');
-        });
-    });
-    document.getElementById('close-bs-remove-modal')?.addEventListener('click', () => closeModal('bs-remove-modal'));
-    document.getElementById('cancel-bs-remove-modal')?.addEventListener('click', () => closeModal('bs-remove-modal'));
-
-    document.getElementById('confirm-bs-remove')?.addEventListener('click', async () => {
-        if (!pendingBsRemoveId) return;
-        clearError('bs-remove-error');
-        const confirmBtn = document.getElementById('confirm-bs-remove') as HTMLButtonElement;
-        const spinner = document.getElementById('bs-remove-spinner') as HTMLElement;
-        confirmBtn.disabled = true;
-        spinner.hidden = false;
-        const res = await fetch(`/api/v1/best-sellers/${pendingBsRemoveId}`, {method: 'DELETE'});
-        if (res.ok) {
-            location.reload();
-        } else {
-            const err = await res.json();
-            showError('bs-remove-error', err.error ?? 'Could not remove best seller.');
-            confirmBtn.disabled = false;
-            spinner.hidden = true;
-        }
-    });
-
     // ── Add New Item modal ─────────────────────────────────────
     document.getElementById('open-ni-modal')?.addEventListener('click', () => {
         (document.getElementById('ni-form') as HTMLFormElement)?.reset();
@@ -1180,7 +942,6 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         });
     }
 
-    wireTableDragSort('best-sellers-tbody', '/api/v1/best-sellers');
     wireTableDragSort('new-items-tbody', '/api/v1/new-items');
 </script>
 
@@ -1481,7 +1242,6 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     }
 
     .admin-btn-edit,
-    .admin-btn-bs-edit,
     .admin-btn-ni-edit,
     .admin-btn-delete {
         font-size: 0.72rem;
@@ -1496,13 +1256,11 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     }
 
     .admin-btn-edit,
-    .admin-btn-bs-edit,
     .admin-btn-ni-edit {
         color: var(--text-primary);
     }
 
     .admin-btn-edit:hover,
-    .admin-btn-bs-edit:hover,
     .admin-btn-ni-edit:hover {
         background: var(--text-primary);
         color: var(--bg);
@@ -1638,7 +1396,6 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         border-bottom: 2px solid var(--text-primary);
     }
 
-    .admin-btn-bs-remove,
     .admin-btn-ni-remove {
         font-size: 0.72rem;
         font-weight: 600;
@@ -1652,7 +1409,6 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         transition: all 0.15s;
     }
 
-    .admin-btn-bs-remove:hover,
     .admin-btn-ni-remove:hover {
         background: #9A3A1A;
         color: var(--bg);

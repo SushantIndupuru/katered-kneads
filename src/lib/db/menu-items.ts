@@ -1,5 +1,5 @@
 import { createServerClient } from '../supabase.ts';
-import type { MenuItem } from '../../types/MenuItem.ts';
+import type { MenuItem } from '../../types/db-types.ts';
 
 export async function getMenuItems(): Promise<MenuItem[]> {
     const supabase = createServerClient();
@@ -11,13 +11,9 @@ export async function getMenuItems(): Promise<MenuItem[]> {
     });
 }
 
-export async function createMenuItem(data: {
-    id?: string;
-    name: string;
-    description: string;
-    tag?: string;
-    mystery?: boolean;
-}): Promise<MenuItem> {
+export async function createMenuItem(
+    data: Omit<MenuItem, 'id'>
+): Promise<MenuItem> {
     const supabase = createServerClient();
     const { data: item, error } = await supabase
         .from('menu_items')
@@ -25,7 +21,6 @@ export async function createMenuItem(data: {
             ...(data.id ? { id: data.id } : {}),
             name: data.name,
             description: data.description,
-            tag: data.tag ?? '',
             mystery: data.mystery ?? false,
         })
         .select()

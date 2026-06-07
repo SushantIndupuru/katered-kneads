@@ -1,10 +1,6 @@
 ---
-import Image from 'astro/components/Image.astro';
 import Layout from '../layouts/Layout.astro';
-import box from "../images/box.webp";
 export const prerender = true
-
-const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f78214d446f6be87ef75ef20bf04c7b33944d12f06092b0856af4a12be';
 ---
 
 <Layout
@@ -13,40 +9,51 @@ const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f7
   activePage="about"
 >
 
-  <!-- Page Hero -->
+  <!-- Page Header -->
   <section class="order-hero">
     <div class="container">
       <p class="eyebrow">Our Story</p>
       <h1 class="order-heading">About Us</h1>
-      <p class="order-sub">A student-run home bakery making the homemade cookies you've been missing since you got to college.</p>
+      <p class="order-sub">A student-run home bakery making the cookies you've been missing since you got to college.</p>
     </div>
   </section>
 
-  <!-- Who We Are (extended) -->
+  <!-- Origin Story -->
   <section class="section" id="who-we-are">
     <div class="container">
       <div class="about-split">
         <div class="about-text">
-          <p class="eyebrow">The People Behind the Kneads</p>
+          <p class="eyebrow">How It Started</p>
           <h2 class="section-heading">Made with love, not mixes</h2>
           <p>
             Katered Kneads started because we kept asking: why does so much "homemade" food taste like it came from a bag? We decided to do something about it.
           </p>
           <p>
-            Founded by siblings Ellyse and Jake — one obsessed with the kitchen, one with making it all run — every drop is a reflection of the care that only comes from people who genuinely love what they make.
+            We serve UC Berkeley and UC Davis through limited biweekly drops. We keep quantities deliberately small so every single bake gets the attention it deserves. When your order arrives, it was made for you — not sitting on a shelf.
           </p>
           <p>
-            We serve UC Berkeley and UC Davis through limited biweekly preorders. We keep quantities deliberately small so every single bake gets the attention it deserves. When your order arrives, it was made for you — not sitting on a shelf.
+            Every drop is different. The lineup rotates, new items show up, and classics come back when the season's right. That's the point — this isn't a chain. It's a bakery with a personality.
           </p>
         </div>
-        <div class="about-image">
-          <Image src={box} alt={"Close-up of handmade Katered Kneads baked goods"}></Image>
+        <div>
+          <div class="founders-grid">
+            <div class="founder-card">
+              <span class="eyebrow">Co-Founder</span>
+              <h3>Ellyse</h3>
+              <p>The one in the kitchen. Obsessed with getting every recipe exactly right — no shortcuts, no compromises, every single batch.</p>
+            </div>
+            <div class="founder-card">
+              <span class="eyebrow">Co-Founder</span>
+              <h3>Jake</h3>
+              <p>The one who makes it all run. From logistics to drops to keeping the SMS list stocked — the engine behind the operation.</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- Mission / Social Proof (dark section) -->
+  <!-- Mission / Values (dark section) -->
   <section class="section section-dark" id="mission">
     <div class="container">
       <div class="mission-inner">
@@ -97,30 +104,6 @@ const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f7
     </div>
   </section>
 
-  <!-- Contact -->
-  <section class="section" id="contact">
-    <div class="container">
-      <div class="section-header">
-        <p class="eyebrow">Get in Touch</p>
-        <h2 class="section-heading">Contact Us</h2>
-      </div>
-      <div class="contact-grid">
-        <div>
-          <p class="eyebrow" style="margin-bottom: 0.75rem;">Email</p>
-          <a href="mailto:kateredkneads@gmail.com" class="contact-link">kateredkneads@gmail.com</a>
-        </div>
-        <div>
-          <p class="eyebrow" style="margin-bottom: 0.75rem;">Instagram</p>
-          <a href="https://www.instagram.com/Katered_Kneads" target="_blank" rel="noopener noreferrer" class="contact-link">@Katered_Kneads</a>
-        </div>
-        <div>
-          <p class="eyebrow" style="margin-bottom: 0.75rem;">Campuses</p>
-          <p class="contact-detail">UC Berkeley &amp; UC Davis</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
   <!-- FAQ -->
   <section class="section" id="faq">
     <div class="container">
@@ -132,12 +115,24 @@ const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f7
 
         <div class="faq-item" role="listitem">
           <button class="faq-question" aria-expanded="false">
-            <span>How do preorders work?</span>
+            <span>How do drops work?</span>
             <span class="faq-toggle" aria-hidden="true">+</span>
           </button>
           <div class="faq-answer" role="region">
             <div class="faq-answer-inner">
-              Preorders open once every two weeks. When orders open, you'll have a limited window to visit our order page and select your items. We bake exactly what's been ordered, so quantities are limited. Join our SMS list on the order page to be notified the moment a drop opens.
+              Preorders open once every two weeks. When a drop goes live, you'll have a limited window to visit our order page and select your items. We bake exactly what's been ordered — so quantities are capped. Join our SMS list on the order page to be notified the moment a drop opens.
+            </div>
+          </div>
+        </div>
+
+        <div class="faq-item" role="listitem">
+          <button class="faq-question" aria-expanded="false">
+            <span>Does the menu change every drop?</span>
+            <span class="faq-toggle" aria-hidden="true">+</span>
+          </button>
+          <div class="faq-answer" role="region">
+            <div class="faq-answer-inner">
+              Yes — the lineup rotates. Some items appear regularly, others are seasonal or one-time specials. The <a href="/menu">menu page</a> shows our full catalog, and the <a href="/order">order page</a> shows what's in the current or upcoming drop.
             </div>
           </div>
         </div>
@@ -149,19 +144,7 @@ const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f7
           </button>
           <div class="faq-answer" role="region">
             <div class="faq-answer-inner">
-              We offer pickup at UC Berkeley and UC Davis. When you place an order, you'll select your campus. The exact pickup spot and time are confirmed with each drop.
-            </div>
-          </div>
-        </div>
-
-        <div class="faq-item" role="listitem">
-          <button class="faq-question" aria-expanded="false">
-            <span>What's on the menu each drop?</span>
-            <span class="faq-toggle" aria-hidden="true">+</span>
-          </button>
-          <div class="faq-answer" role="region">
-            <div class="faq-answer-inner">
-              We typically offer 3–4 different cookies or baked goods per drop. The menu is announced when preorders open — follow us on Instagram or join the SMS list to see what's dropping next.
+              We offer pickup at UC Berkeley and UC Davis. When you place an order you'll select your campus. The exact spot and time are confirmed with each drop.
             </div>
           </div>
         </div>
@@ -173,7 +156,7 @@ const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f7
           </button>
           <div class="faq-answer" role="region">
             <div class="faq-answer-inner">
-              Yes. Most of our bakes contain gluten (wheat flour), dairy (butter, milk, cream), and eggs. Everything is made in a home kitchen that also handles tree nuts, sesame, and other common allergens. Please get in touch before ordering if you have a severe allergy.
+              Yes. Most of our bakes contain gluten (wheat flour), dairy (butter, milk, cream), and eggs. Everything is made in a home kitchen that also handles tree nuts, sesame, and other common allergens. Please reach out before ordering if you have a severe allergy.
             </div>
           </div>
         </div>
@@ -194,10 +177,34 @@ const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f7
     </div>
   </section>
 
+  <!-- Contact -->
+  <section class="section section-tinted" id="contact">
+    <div class="container">
+      <div class="section-header">
+        <p class="eyebrow">Get in Touch</p>
+        <h2 class="section-heading">Contact Us</h2>
+      </div>
+      <div class="contact-grid">
+        <div>
+          <p class="eyebrow" style="margin-bottom:0.75rem;">Email</p>
+          <a href="mailto:kateredkneads@gmail.com" class="contact-link">kateredkneads@gmail.com</a>
+        </div>
+        <div>
+          <p class="eyebrow" style="margin-bottom:0.75rem;">Instagram</p>
+          <a href="https://www.instagram.com/Katered_Kneads" target="_blank" rel="noopener noreferrer" class="contact-link">@Katered_Kneads</a>
+        </div>
+        <div>
+          <p class="eyebrow" style="margin-bottom:0.75rem;">Campuses</p>
+          <p class="contact-detail">UC Berkeley &amp; UC Davis</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <script>
     document.querySelectorAll('.faq-question').forEach(button => {
       button.addEventListener('click', () => {
-        const item = button.closest('.faq-item');
+        const item   = button.closest('.faq-item');
         const isOpen = item?.classList.contains('open');
         document.querySelectorAll('.faq-item').forEach(i => {
           i.classList.remove('open');
@@ -212,4 +219,3 @@ const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f7
   </script>
 
 </Layout>
-

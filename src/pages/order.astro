@@ -1,24 +1,19 @@
 ---
 import Layout from '../layouts/Layout.astro';
+import { getNewItems } from '../lib/db';
 export const prerender = true
 
-// ──────────────────────────────────────────────────────────────────
-// CONFIGURE YOUR NEXT DROP HERE
-// Set ORDERS_CURRENTLY_OPEN = true when you open a preorder window.
-// ──────────────────────────────────────────────────────────────────
+// ── Drop Configuration ────────────────────────────────────────
+// Set ORDERS_CURRENTLY_OPEN = true when the preorder window is live.
 const ORDERS_CURRENTLY_OPEN = false;
-
-// Date/time when the NEXT preorder window opens (used for countdown)
-const NEXT_DROP_OPEN_STR  = '2026-06-07T10:00:00';
+const NEXT_DROP_OPEN_STR   = '2026-06-07T10:00:00';
 const NEXT_DROP_OPEN_LABEL = 'Saturday, June 7, 2026 at 10:00 AM';
+const ORDERS_CLOSE_LABEL   = 'June 8, 2026 at 11:59 PM';
+const DROP_NUMBER          = 7;
+const ORDER_LINK           = 'https://kateredkneads.square.site/shop/katering-now/LQ62D5N5VAEN2X4RSTCFQTVK';
+const CDN_URL              = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL;
 
-// Date/time when the CURRENT (or upcoming) window closes
-const ORDERS_CLOSE_LABEL = 'June 8, 2026 at 11:59 PM';
-
-// Square ordering link
-const ORDER_LINK = 'https://kateredkneads.square.site/shop/katering-now/LQ62D5N5VAEN2X4RSTCFQTVK';
-
-const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f78214d446f6be87ef75ef20bf04c7b33944d12f06092b0856af4a12be';
+const dropItems = await getNewItems();
 ---
 
 <Layout
@@ -27,12 +22,17 @@ const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f7
   activePage="order"
 >
 
-  <!-- Order Hero -->
+  <!-- Drop Header -->
   <section class="order-hero">
     <div class="container">
       <p class="eyebrow">Preorders</p>
-      <h1 class="order-heading">Place Your Order</h1>
-      <p class="order-sub">Handmade, limited-batch cookies — biweekly drops at UC Berkeley &amp; UC Davis.</p>
+      <h1 class="order-heading">Drop #{DROP_NUMBER}</h1>
+      <p class="order-sub">
+        {ORDERS_CURRENTLY_OPEN
+          ? `Orders are open now — closes ${ORDERS_CLOSE_LABEL}. Limited quantities per item.`
+          : `Next drop opens ${NEXT_DROP_OPEN_LABEL}. Limited quantities — first come, first served.`
+        }
+      </p>
     </div>
   </section>
 
@@ -43,8 +43,8 @@ const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f7
       {ORDERS_CURRENTLY_OPEN ? (
         <div class="status-panel status-open">
           <div class="status-badge status-badge-open">● Orders Open</div>
-          <h2 class="status-heading">Preorders are open!</h2>
-          <p class="status-text">Get your order in before the window closes. Limited quantities per item.</p>
+          <h2 class="status-heading">Preorders are live!</h2>
+          <p class="status-text">Get your order in before the window closes. Limited quantities per item — once they're gone, they're gone.</p>
           <p class="status-closes">Preorders close: <strong>{ORDERS_CLOSE_LABEL}</strong></p>
           <a href={ORDER_LINK} target="_blank" rel="noopener noreferrer" class="btn-primary">Order Now on Square →</a>
         </div>
@@ -79,19 +79,71 @@ const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f7
           <p class="status-cta-hint">Don't want to check back? <a href="#sms-signup">Join the SMS list ↓</a></p>
         </div>
       )}
+
     </div>
   </section>
 
+  <!-- Drop Items (shown when there are items in the DB) -->
+  {dropItems.length > 0 && (
+    <section class="section section-tinted" id="drop-items">
+      <div class="container">
+
+        <div class="section-header">
+          <p class="eyebrow">{ORDERS_CURRENTLY_OPEN ? `In This Drop` : `Drop Preview`}</p>
+          <h2 class="section-heading">
+            {ORDERS_CURRENTLY_OPEN ? `What's in Drop #${DROP_NUMBER}` : `Sneak Peek — Drop #${DROP_NUMBER}`}
+          </h2>
+          <p class="section-sub">
+            {ORDERS_CURRENTLY_OPEN
+              ? 'Order via Square to grab your picks. Quantities are limited — order early.'
+              : "A preview of what's baking for the next drop. Full details and pricing revealed when orders open."
+            }
+          </p>
+        </div>
+
+        <div class="product-grid">
+          {dropItems.map(item => (
+            <div class={`product-card${item.menuItem.mystery ? ' product-card-mystery' : ''}`}>
+              <div class="product-card-image">
+                {item.menuItem.mystery
+                  ? <div class="mystery-placeholder">?</div>
+                  : <img src={CDN_URL + item.menuItem.id} alt={item.menuItem.name} loading="lazy" />
+                }
+                <span class={`stock-badge ${ORDERS_CURRENTLY_OPEN ? 'stock-badge-available' : 'stock-badge-coming-soon'}`}>
+                  {ORDERS_CURRENTLY_OPEN ? 'Limited' : 'Coming Soon'}
+                </span>
+                {item.tag && <span class="cookie-tag">{item.tag}</span>}
+              </div>
+              <div class="product-card-body">
+                <h3>{item.menuItem.mystery ? '???' : item.menuItem.name}</h3>
+                <p>{item.menuItem.mystery ? 'Revealed when orders open.' : item.menuItem.description}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {ORDERS_CURRENTLY_OPEN && (
+          <div class="drop-cta">
+            <a href={ORDER_LINK} target="_blank" rel="noopener noreferrer" class="btn-primary">
+              Order Now on Square →
+            </a>
+          </div>
+        )}
+
+      </div>
+    </section>
+  )}
+
   <!-- SMS Sign-up (shown when orders are closed) -->
   {!ORDERS_CURRENTLY_OPEN && (
-    <section class="section section-tinted" id="sms-signup">
+    <section class="section" id="sms-signup">
       <div class="container">
         <div class="sms-block">
           <div class="sms-text">
             <p class="eyebrow">Never Miss a Drop</p>
             <h2 class="section-heading">Join the SMS List</h2>
             <p>
-              We text our list about 5 minutes before preorders open. Be first to grab your picks before quantities run out.
+              We text our list about 5 minutes before preorders open. Be first in before quantities sell out.
             </p>
             <ul class="sms-benefits">
               <li>Text notification ~5 min before orders open</li>
@@ -101,9 +153,6 @@ const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f7
           </div>
 
           <div class="sms-form-wrap">
-            {/* Replace the Formspree action URL with your own form endpoint.
-                Sign up for free at formspree.io to collect submissions by email,
-                then wire up Twilio or a similar service for SMS automation. */}
             <form
               class="sms-form"
               id="sms-form"
@@ -114,26 +163,12 @@ const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f7
 
               <div class="form-field">
                 <label for="sms-name">First Name</label>
-                <input
-                  type="text"
-                  id="sms-name"
-                  name="name"
-                  placeholder="Your first name"
-                  required
-                  autocomplete="given-name"
-                />
+                <input type="text" id="sms-name" name="name" placeholder="Your first name" required autocomplete="given-name" />
               </div>
 
               <div class="form-field">
                 <label for="sms-phone">Phone Number</label>
-                <input
-                  type="tel"
-                  id="sms-phone"
-                  name="phone"
-                  placeholder="+1 (555) 000-0000"
-                  required
-                  autocomplete="tel"
-                />
+                <input type="tel" id="sms-phone" name="phone" placeholder="+1 (555) 000-0000" required autocomplete="tel" />
               </div>
 
               <div class="form-field">
@@ -163,30 +198,24 @@ const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f7
     </section>
   )}
 
-  <!-- Back to menu CTA -->
+  <!-- Bottom Navigation -->
   <section class="section" id="back-to-menu">
     <div class="container order-page-links">
       <a href="/menu" class="order-page-link">← Browse the Menu</a>
-      <a href="/" class="order-page-link">How It Works →</a>
+      <a href="/about" class="order-page-link">About Us →</a>
     </div>
   </section>
 
   <script define:vars={{ NEXT_DROP_OPEN_STR }}>
-    // ── Countdown Timer ──────────────────────────────────────────────
+    // ── Countdown Timer ───────────────────────────────────────────
     var target = new Date(NEXT_DROP_OPEN_STR).getTime();
 
-    function pad(n) {
-      return String(n).padStart(2, '0');
-    }
+    function pad(n) { return String(n).padStart(2, '0'); }
 
     function updateCountdown() {
-      var now = Date.now();
+      var now  = Date.now();
       var diff = target - now;
-
-      if (diff <= 0) {
-        // Drop has arrived — reload so the page reflects the open state
-        return;
-      }
+      if (diff <= 0) return;
 
       var days    = Math.floor(diff / (1000 * 60 * 60 * 24));
       var hours   = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
@@ -209,15 +238,14 @@ const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f7
       setInterval(updateCountdown, 1000);
     }
 
-    // ── SMS Form ─────────────────────────────────────────────────────
-    var form = document.getElementById('sms-form');
+    // ── SMS Form ──────────────────────────────────────────────────
+    var form       = document.getElementById('sms-form');
     var successMsg = document.getElementById('form-success');
 
     if (form) {
       form.addEventListener('submit', function(e) {
         e.preventDefault();
         var data = new FormData(form);
-
         fetch(form.action, {
           method: 'POST',
           body: data,
@@ -229,9 +257,7 @@ const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f7
             if (successMsg) successMsg.hidden = false;
           }
         })
-        .catch(function(err) {
-          console.error('Form submission error:', err);
-        });
+        .catch(function(err) { console.error('Form submission error:', err); });
       });
     }
   </script>

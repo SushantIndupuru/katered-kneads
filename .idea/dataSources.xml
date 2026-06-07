@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="DataSourceManagerImpl" format="xml" multifile-model="true">
-    <data-source source="LOCAL" name="@db.gcbwkhyfhtsqewvwxbrz.supabase.co" uuid="f9447646-76dc-43b1-a40a-b67a1820dc8e">
+    <data-source source="LOCAL" name="postgres@aws-1-us-west-1.pooler.supabase.com" uuid="6deb273d-a5c3-4c97-acab-38f240e2c66f">
       <driver-ref>postgresql</driver-ref>
       <synchronize>true</synchronize>
       <jdbc-driver>org.postgresql.Driver</jdbc-driver>
-      <jdbc-url>jdbc:postgresql://db.gcbwkhyfhtsqewvwxbrz.supabase.co:5432/</jdbc-url>
+      <jdbc-url>jdbc:postgresql://aws-1-us-west-1.pooler.supabase.com/postgres</jdbc-url>
       <working-dir>$ProjectFileDir$</working-dir>
     </data-source>
   </component>

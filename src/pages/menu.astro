@@ -1,118 +1,147 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import type {MenuItem} from '../types/MenuItem';
-import {getBestSellers, getMenuItems, getNewItems} from "../lib/db";
+import type { MenuItem } from '../types/db-types.ts';
+import { getMenuItems, getNewItems } from '../lib/db';
 export const prerender = true
+
 const CDN_URL = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL;
 
-const CDN = 'https://dc0508f78214d446f6be.cdn6.editmysite.com/uploads/b/dc0508f78214d446f6be87ef75ef20bf04c7b33944d12f06092b0856af4a12be';
+const allItems = await getMenuItems();
+const newItems = await getNewItems();
 
+const newItemIds = new Set(newItems.map(n => n.menuItem.id));
 
-const bestsellers = await getBestSellers();
+function getItemDataTags(item: MenuItem): string {
+  return newItemIds.has(item.id) ? 'all this-drop' : 'all';
+}
 
-
-const nextDrop = await getNewItems();
-
-const gallery = await getMenuItems();
+function getItemBadge(item: MenuItem): { text: string; cls: string } | null {
+  if (item.mystery || !newItemIds.has(item.id)) return null;
+  return { text: 'This Drop', cls: 'stock-badge-available' };
+}
 ---
 
 <Layout
-        title="Menu — Katered Kneads"
-        description="Browse the Katered Kneads menu. Small-batch handmade cookies — the lineup rotates every biweekly drop."
-        activePage="menu"
+  title="Menu — Katered Kneads"
+  description="Browse the full Katered Kneads catalog. Small-batch handmade cookies — the lineup rotates every biweekly drop."
+  activePage="menu"
 >
 
-    <!-- Page Hero -->
-    <section class="order-hero">
-        <div class="container">
-            <p class="eyebrow">From the Kitchen</p>
-            <h1 class="order-heading">Our Menu</h1>
-            <p class="order-sub">The exact lineup rotates each drop. Follow us or join the SMS list to see what's coming
-                next.</p>
+  <!-- Page Header -->
+  <section class="order-hero">
+    <div class="container">
+      <p class="eyebrow">Our Catalog</p>
+      <h1 class="order-heading">The Menu</h1>
+      <p class="order-sub">
+        Every item we've ever offered — updated each drop. Not everything is available at every drop.
+        Check the <a href="/order" style="color:var(--text-primary);text-decoration:underline;text-underline-offset:2px;">order page</a> for what's live right now.
+      </p>
+    </div>
+  </section>
+
+  <!-- Catalog -->
+  <section class="section" id="catalog">
+    <div class="container">
+
+      <!-- Rotating-menu notice -->
+      <div class="menu-note">
+        <strong>Heads up:</strong> This is a living catalog — items rotate in and out each drop. Follow us on
+        <a href="https://www.instagram.com/Katered_Kneads" target="_blank" rel="noopener noreferrer">Instagram</a>
+        or <a href="/order#sms-signup">join the SMS list</a> to know exactly what's in the next drop.
+      </div>
+
+      <!-- Filter Tabs -->
+      <div class="filter-tabs" role="tablist" aria-label="Filter menu items">
+        <button class="filter-btn active" data-filter="all"        role="tab" aria-selected="true">All Items</button>
+        <button class="filter-btn"        data-filter="this-drop"  role="tab" aria-selected="false">This Drop</button>
+      </div>
+
+      <!-- Item Grid -->
+      {allItems.length > 0 ? (
+        <div class="product-grid" id="catalog-grid">
+
+          {allItems.map(item => {
+            const badge    = getItemBadge(item);
+            const dataTags = getItemDataTags(item);
+            return (
+              <div
+                class={`product-card${item.mystery ? ' product-card-mystery' : ''}`}
+                data-tags={dataTags}
+              >
+                <div class="product-card-image">
+                  {item.mystery
+                    ? <div class="mystery-placeholder">?</div>
+                    : <img src={CDN_URL + item.id} alt={item.name} loading="lazy" />
+                  }
+                  {badge && (
+                    <span class={`stock-badge ${badge.cls}`}>{badge.text}</span>
+                  )}
+                </div>
+                <div class="product-card-body">
+                  <h3>{item.mystery ? '???' : item.name}</h3>
+                  <p>{item.mystery ? 'Revealed when orders open.' : item.description}</p>
+                </div>
+              </div>
+            );
+          })}
+
+          <!-- Shown via JS when a filter returns zero results -->
+          <div class="catalog-empty" id="no-results" style="display:none;">
+            No items match this filter right now — check back after the next drop.
+          </div>
+
         </div>
-    </section>
-
-    <!-- Bestsellers -->
-    <section class="section" id="bestsellers">
-        <div class="container">
-            <div class="section-header">
-                <p class="eyebrow">Always a Hit</p>
-                <h2 class="section-heading">Our Bestsellers</h2>
-                <p class="section-sub">These are the bakes our customers keep coming back for. Some are drop regulars,
-                    some rotate — but they're always worth grabbing when they appear.</p>
-            </div>
-            <div class="cookie-grid">
-                {bestsellers.map(item => (
-                        <div class="cookie-card">
-                            <div class="cookie-card-image">
-                                <img src={CDN_URL+item.menuItem.id} alt={item.menuItem.name} loading="lazy"/>
-                                <span class="cookie-tag">{item.tag}</span>
-                            </div>
-                            <div class="cookie-card-body">
-                                <h3>{item.menuItem.name}</h3>
-                                <p>{item.menuItem.description}</p>
-                            </div>
-                        </div>
-                ))}
-            </div>
+      ) : (
+        <!-- Empty state when DB has no items yet -->
+        <div class="drop-placeholder">
+          <p class="eyebrow">Menu Coming Soon</p>
+          <p>Our catalog is being updated. Follow us on Instagram or join the SMS list to see what's dropping next.</p>
+          <div style="margin-top:1.5rem;">
+            <a href="/order#sms-signup" class="btn-primary">Join SMS List →</a>
+          </div>
         </div>
-    </section>
+      )}
 
-    <!-- This Drop's Preview -->
-    <section class="section section-tinted" id="this-drop">
-        <div class="container">
-            <div class="section-header">
-                <p class="eyebrow">Coming Up</p>
-                <h2 class="section-heading">Next Drop Preview</h2>
-                <p class="section-sub">A sneak peek at what's baking for the next drop. Full menu and pricing revealed
-                    when orders open.</p>
-            </div>
+      <div style="margin-top:3rem;display:flex;gap:1.5rem;flex-wrap:wrap;align-items:center;border-top:1px solid var(--accent);padding-top:2rem;">
+        <a href="/order" class="btn-primary">Place a Preorder →</a>
+        <a href="/order#sms-signup" class="btn-secondary">Join SMS List →</a>
+      </div>
 
-            <div class="cookie-grid">
-                {nextDrop.map(item => (
-                        <div class={`cookie-card${item.menuItem.mystery ? ' cookie-card-tease' : ''}`}>
-                            <div class={`cookie-card-image${item.menuItem.mystery ? ' cookie-card-image-mystery' : ''}`}>
-                                {item.menuItem.mystery
-                                    ?
-                                        <div class="mystery-placeholder">?</div>
-                                    : <img src={CDN_URL+item.menuItem.id} alt={item.menuItem.name} loading="lazy"/>
-                                }
-                                {item.tag && <span class="cookie-tag">{item.tag}</span>}
-                            </div>
-                            <div class="cookie-card-body">
-                                <h3>{item.menuItem.name}</h3>
-                                <p>{item.menuItem.description}</p>
-                            </div>
-                        </div>
-                ))}
-            </div>
-
-            <div class="cookie-cta">
-                <a href="/order" class="btn-primary">Place a Preorder →</a>
-            </div>
-        </div>
-    </section>
-
-    <!-- Photo Gallery -->
-    <section class="section" id="gallery">
-        <div class="container">
-            <div class="section-header">
-                <p class="eyebrow">Made by Hand</p>
-                <h2 class="section-heading">A look inside the kitchen</h2>
-                <p class="section-sub">Every batch made fresh. No shortcuts, no mixes — just real ingredients and
-                    genuine care.</p>
-            </div>
-            <div class="gallery-grid">
-                {gallery.map(item => {
-                        if (item.mystery) return;
-                       return (<figure class="gallery-item">
-                            <img src={CDN_URL+item.id} alt={item.name} loading="lazy"/>
-                            <figcaption>{item.name}</figcaption>
-                        </figure>)
-                })}
-            </div>
-        </div>
-    </section>
+    </div>
+  </section>
 
 </Layout>
 
+<script>
+  const filterBtns = document.querySelectorAll<HTMLButtonElement>('.filter-btn');
+  const cards      = document.querySelectorAll<HTMLElement>('.product-card');
+  const noResults  = document.getElementById('no-results');
+
+  filterBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const filter = btn.dataset.filter ?? 'all';
+
+      // Update active tab state
+      filterBtns.forEach(b => {
+        b.classList.remove('active');
+        b.setAttribute('aria-selected', 'false');
+      });
+      btn.classList.add('active');
+      btn.setAttribute('aria-selected', 'true');
+
+      // Show / hide cards
+      let visible = 0;
+      cards.forEach(card => {
+        const tags = card.dataset.tags ?? '';
+        const show = filter === 'all' || tags.split(' ').includes(filter);
+        card.style.display = show ? '' : 'none';
+        if (show) visible++;
+      });
+
+      // Empty state
+      if (noResults) {
+        noResults.style.display = visible === 0 ? 'block' : 'none';
+      }
+    });
+  });
+</script>
