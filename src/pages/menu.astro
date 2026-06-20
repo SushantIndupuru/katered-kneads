@@ -1,29 +1,24 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import type { MenuItem } from '../types/db-types.ts';
-import { getMenuItems, getNewItems } from '../lib/db';
-export const prerender = true
+import { getMenuItems, getCurrentDropItems } from '../lib/db';
 
 const CDN_URL = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL;
 
 const allItems = await getMenuItems();
-const newItems = await getNewItems();
+const dropItems = await getCurrentDropItems();
 
-const newItemIds = new Set(newItems.map(n => n.menuItem.id));
-
-function getItemDataTags(item: MenuItem): string {
-  return newItemIds.has(item.id) ? 'all this-drop' : 'all';
-}
+const dropItemIds = new Set(dropItems.map(d => d.menuItem.id));
 
 function getItemBadge(item: MenuItem): { text: string; cls: string } | null {
-  if (item.mystery || !newItemIds.has(item.id)) return null;
+  if (!dropItemIds.has(item.id)) return null;
   return { text: 'This Drop', cls: 'stock-badge-available' };
 }
 ---
 
 <Layout
-  title="Menu — Katered Kneads"
-  description="Browse the full Katered Kneads catalog. Small-batch handmade cookies — the lineup rotates every biweekly drop."
+  title="Our Treats — Katered Kneads"
+  description="Browse the full Katered Kneads lineup of small-batch handmade treats. The selection rotates every biweekly drop."
   activePage="menu"
 >
 
@@ -31,9 +26,9 @@ function getItemBadge(item: MenuItem): { text: string; cls: string } | null {
   <section class="order-hero">
     <div class="container">
       <p class="eyebrow">Our Catalog</p>
-      <h1 class="order-heading">The Menu</h1>
+      <h1 class="order-heading">Our Treats</h1>
       <p class="order-sub">
-        Every item we've ever offered — updated each drop. Not everything is available at every drop.
+        Every item we've featured in past drops. Not everything comes back at every drop.
         Check the <a href="/order" style="color:var(--text-primary);text-decoration:underline;text-underline-offset:2px;">order page</a> for what's live right now.
       </p>
     </div>
@@ -50,10 +45,10 @@ function getItemBadge(item: MenuItem): { text: string; cls: string } | null {
         or <a href="/order#sms-signup">join the SMS list</a> to know exactly what's in the next drop.
       </div>
 
-      <!-- Filter Tabs -->
-      <div class="filter-tabs" role="tablist" aria-label="Filter menu items">
-        <button class="filter-btn active" data-filter="all"        role="tab" aria-selected="true">All Items</button>
-        <button class="filter-btn"        data-filter="this-drop"  role="tab" aria-selected="false">This Drop</button>
+      <!-- Current drop CTA -->
+      <div class="menu-current-cta">
+        <span>Want to see what's available right now?</span>
+        <a href="/order" class="btn-primary">See the Current Drop →</a>
       </div>
 
       <!-- Item Grid -->
@@ -61,40 +56,28 @@ function getItemBadge(item: MenuItem): { text: string; cls: string } | null {
         <div class="product-grid" id="catalog-grid">
 
           {allItems.map(item => {
-            const badge    = getItemBadge(item);
-            const dataTags = getItemDataTags(item);
+            const badge = getItemBadge(item);
             return (
-              <div
-                class={`product-card${item.mystery ? ' product-card-mystery' : ''}`}
-                data-tags={dataTags}
-              >
+              <div class="product-card">
                 <div class="product-card-image">
-                  {item.mystery
-                    ? <div class="mystery-placeholder">?</div>
-                    : <img src={CDN_URL + item.id} alt={item.name} loading="lazy" />
-                  }
+                  <img src={CDN_URL + item.id} alt={item.name} loading="lazy" />
                   {badge && (
                     <span class={`stock-badge ${badge.cls}`}>{badge.text}</span>
                   )}
                 </div>
                 <div class="product-card-body">
-                  <h3>{item.mystery ? '???' : item.name}</h3>
-                  <p>{item.mystery ? 'Revealed when orders open.' : item.description}</p>
+                  <h3>{item.name}</h3>
+                  <p>{item.description}</p>
                 </div>
               </div>
             );
           })}
 
-          <!-- Shown via JS when a filter returns zero results -->
-          <div class="catalog-empty" id="no-results" style="display:none;">
-            No items match this filter right now — check back after the next drop.
-          </div>
-
         </div>
       ) : (
         <!-- Empty state when DB has no items yet -->
         <div class="drop-placeholder">
-          <p class="eyebrow">Menu Coming Soon</p>
+          <p class="eyebrow">Drops Coming Soon</p>
           <p>Our catalog is being updated. Follow us on Instagram or join the SMS list to see what's dropping next.</p>
           <div style="margin-top:1.5rem;">
             <a href="/order#sms-signup" class="btn-primary">Join SMS List →</a>
@@ -103,7 +86,7 @@ function getItemBadge(item: MenuItem): { text: string; cls: string } | null {
       )}
 
       <div style="margin-top:3rem;display:flex;gap:1.5rem;flex-wrap:wrap;align-items:center;border-top:1px solid var(--accent);padding-top:2rem;">
-        <a href="/order" class="btn-primary">Place a Preorder →</a>
+        <a href="/order" class="btn-primary">Place an Order →</a>
         <a href="/order#sms-signup" class="btn-secondary">Join SMS List →</a>
       </div>
 
@@ -111,37 +94,3 @@ function getItemBadge(item: MenuItem): { text: string; cls: string } | null {
   </section>
 
 </Layout>
-
-<script>
-  const filterBtns = document.querySelectorAll<HTMLButtonElement>('.filter-btn');
-  const cards      = document.querySelectorAll<HTMLElement>('.product-card');
-  const noResults  = document.getElementById('no-results');
-
-  filterBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      const filter = btn.dataset.filter ?? 'all';
-
-      // Update active tab state
-      filterBtns.forEach(b => {
-        b.classList.remove('active');
-        b.setAttribute('aria-selected', 'false');
-      });
-      btn.classList.add('active');
-      btn.setAttribute('aria-selected', 'true');
-
-      // Show / hide cards
-      let visible = 0;
-      cards.forEach(card => {
-        const tags = card.dataset.tags ?? '';
-        const show = filter === 'all' || tags.split(' ').includes(filter);
-        card.style.display = show ? '' : 'none';
-        if (show) visible++;
-      });
-
-      // Empty state
-      if (noResults) {
-        noResults.style.display = visible === 0 ? 'block' : 'none';
-      }
-    });
-  });
-</script>

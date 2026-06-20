@@ -3,20 +3,6 @@ import { json, getErrorMessage } from '../../../../lib/http';
 import { createMenuItem } from '../../../../lib/db/menu-items';
 import type {MenuItem} from "../../../../types/db-types.ts";
 
-// export const POST: APIRoute = async ({ request }) => {
-//     try {
-//         const { id, name, description, mystery } = await request.json();
-//         if (!name || !description) {
-//             return json({ error: 'Name and description are required' }, 400);
-//         }
-//         const item = await createMenuItem({ id, name, description, mystery });
-//         return json({ item }, 201);
-//     } catch (err) {
-//         return json({ error: getErrorMessage(err) }, 500);
-//     }
-// };
-
-
 export const POST: APIRoute = async ({ request }) => {
     try {
         const item:MenuItem = await request.json();

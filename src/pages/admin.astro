@@ -1,8 +1,8 @@
 ---
 import '../styles/global.css';
-import {getMenuItems, getNewItems} from '../lib/db';
+import {getMenuItems, getDrops, getCurrentDropId, getDropItemCounts, getDrop, getDropItems} from '../lib/db';
 import {createAnonClient} from '../lib/supabase';
-import type {MenuItem, SpecialMenuItem} from '../types/db-types.ts';
+import type {MenuItem, Drop, DropItemWithMenu} from '../types/db-types.ts';
 
 const token = Astro.cookies.get('sb-access-token')?.value;
 if (!token) return Astro.redirect('/admin/login');
@@ -16,7 +16,8 @@ if (authError || !authUser) {
 }
 
 let items: MenuItem[] = [];
-let newItems: SpecialMenuItem[] = [];
+let drops: Drop[] = [];
+let currentDropId: string | null = null;
 let fetchError = '';
 
 try {
@@ -26,12 +27,66 @@ try {
 }
 
 try {
-    newItems = await getNewItems();
+    drops = await getDrops();
 } catch (e) {
     // non-fatal
 }
 
-const newItemIds = new Set(newItems.map(ni => ni.menuItem.id));
+try {
+    currentDropId = await getCurrentDropId();
+} catch (e) {
+    // non-fatal
+}
+
+let dropItemCounts: Record<string, number> = {};
+try {
+    dropItemCounts = await getDropItemCounts();
+} catch (e) {
+    // non-fatal
+}
+
+const dropDateFmt = new Intl.DateTimeFormat('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric',
+    hour: 'numeric', minute: '2-digit',
+});
+const now = Date.now();
+
+const dropRows = drops.map(drop => {
+    const open = new Date(drop.openTime).getTime();
+    const close = new Date(drop.closeTime).getTime();
+    const status = now < open ? 'upcoming' : now <= close ? 'live' : 'closed';
+    return {
+        id: drop.id,
+        name: drop.name,
+        openLabel: dropDateFmt.format(new Date(drop.openTime)),
+        closeLabel: dropDateFmt.format(new Date(drop.closeTime)),
+        status,
+        isCurrent: drop.id === currentDropId,
+        itemCount: dropItemCounts[drop.id] ?? 0,
+        openTime: drop.openTime,
+        closeTime: drop.closeTime,
+        showCountdown: drop.showCountdown,
+    };
+});
+
+// ── Stock (current drop) ──────────────────────────────────────
+// For now this just reflects the total stock set on each drop item.
+// Ordering data (consumed / remaining) will be layered in later.
+const currentDrop: Drop | null = currentDropId ? await getDrop(currentDropId).catch(() => null) : null;
+let currentDropItems: DropItemWithMenu[] = [];
+if (currentDrop) {
+    try {
+        currentDropItems = await getDropItems(currentDrop.id);
+    } catch (e) {
+        // non-fatal
+    }
+}
+
+const stockRows = currentDropItems.map(item => ({
+    name: item.menuItem.name,
+    totalStock: item.initialStock,
+}));
+const stockTotal = stockRows.reduce((sum, r) => sum + r.totalStock, 0);
 
 const user = authUser as { email?: string };
 const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string;
@@ -101,10 +156,11 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     <!-- Tab bar -->
     <div class="admin-tabs" data-items-total={items.length}>
         <button class="admin-tab admin-tab-active" data-tab="menu-items">Menu Items</button>
-        <button class="admin-tab" data-tab="new-items">
-            ✦ New Items
-            {newItems.length > 0 && <span class="admin-tab-count">{newItems.length}</span>}
+        <button class="admin-tab" data-tab="drops">
+            Drops
+            {drops.length > 0 && <span class="admin-tab-count">{drops.length}</span>}
         </button>
+        <button class="admin-tab" data-tab="stock">Stock</button>
     </div>
 
     {fetchError && (
@@ -120,7 +176,6 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
                         <tr>
                             <th>Name</th>
                             <th>Description</th>
-                            <th>Mystery</th>
                             <th>Image</th>
                             <th>Actions</th>
                         </tr>
@@ -130,20 +185,11 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
                                 <tr data-id={item.id}>
                                     <td class="admin-td-name">{item.name}</td>
                                     <td class="admin-td-desc">{item.description || '—'}</td>
-                                    <td>
-                        <span class={`admin-mystery-badge ${item.mystery ? 'is-mystery' : ''}`}>
-                          {item.mystery ? 'Yes' : 'No'}
-                        </span>
-                                    </td>
                                     <td class="admin-td-image">
-                                        {item.mystery ? (
-                                            <span class="admin-no-image">—</span>
-                                        ) : (
-                                            <a href={storageUrl + item.id} target="_blank" class="admin-image-thumb-link"
-                                               title={storageUrl + item.id}>
-                                                <img src={storageUrl + item.id} alt={item.name} class="admin-image-thumb"/>
-                                            </a>
-                                        )}
+                                        <a href={storageUrl + item.id} target="_blank" class="admin-image-thumb-link"
+                                           title={storageUrl + item.id}>
+                                            <img src={storageUrl + item.id} alt={item.name} class="admin-image-thumb"/>
+                                        </a>
                                     </td>
                                     <td class="admin-td-actions">
                                         <div class="admin-td-actions-inner">
@@ -153,7 +199,6 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
                                                     data-name={item.name}
                                                     data-description={item.description}
                                                     data-image={storageUrl + item.id}
-                                                    data-mystery={String(item.mystery)}
                                             >Edit
                                             </button>
                                             <button class="admin-btn-delete" data-id={item.id}>Delete</button>
@@ -165,34 +210,53 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         </div>
     </div>
 
-    <!-- New items tab -->
-    <div id="tab-new-items" class="admin-tab-panel" hidden>
+    <!-- Drops tab -->
+    <div id="tab-drops" class="admin-tab-panel" hidden>
         <div class="admin-table-wrap">
-            {newItems.length === 0 ? (
-                    <div class="admin-empty">No new items yet. Add one below.</div>) : (
+            {drops.length === 0 ? (
+                    <div class="admin-empty">No drops yet. Create one below.</div>) : (
                     <table class="admin-table">
                         <thead>
                         <tr>
-                            <th class="admin-th-drag"></th>
                             <th>Name</th>
-                            <th>Description</th>
-                            <th>Tag</th>
+                            <th>Opens</th>
+                            <th>Closes</th>
+                            <th>Items</th>
+                            <th>Status</th>
+                            <th>Current</th>
                             <th>Actions</th>
                         </tr>
                         </thead>
-                        <tbody id="new-items-tbody">
-                        {newItems.map(({menuItem, tag}) => (
-                                <tr data-id={menuItem.id} draggable="true">
-                                    <td class="admin-td-drag"><span class="drag-handle">⠿</span></td>
-                                    <td class="admin-td-name">{menuItem.name}</td>
-                                    <td class="admin-td-desc">{menuItem.description || '—'}</td>
+                        <tbody>
+                        {dropRows.map(drop => (
+                                <tr data-id={drop.id} class={drop.isCurrent ? 'admin-drop-row-current' : ''}>
+                                    <td class="admin-td-name">{drop.name}</td>
+                                    <td class="admin-td-desc">{drop.openLabel}</td>
+                                    <td class="admin-td-desc">{drop.closeLabel}</td>
+                                    <td>{drop.itemCount}</td>
                                     <td>
-                                        {tag ? <span class="admin-bs-tag">{tag}</span> : <span class="admin-no-image">—</span>}
+                                        <span class={`admin-drop-status admin-drop-${drop.status}`}>{drop.status}</span>
+                                    </td>
+                                    <td>
+                                        {drop.isCurrent
+                                            ? <span class="admin-drop-current-badge">✦ Current</span>
+                                            : <span class="admin-no-image">—</span>}
                                     </td>
                                     <td class="admin-td-actions">
                                         <div class="admin-td-actions-inner">
-                                            <button class="admin-btn-ni-edit" data-id={menuItem.id} data-name={menuItem.name} data-tag={tag ?? ''}>Edit Tag</button>
-                                            <button class="admin-btn-ni-remove" data-id={menuItem.id} data-name={menuItem.name}>Remove</button>
+                                            {drop.isCurrent
+                                                ? <button class="admin-btn-unset-current" data-id={drop.id} data-name={drop.name}>Unset current</button>
+                                                : <button class="admin-btn-set-current" data-id={drop.id} data-name={drop.name}>Set as current</button>}
+                                            <button
+                                                class="admin-btn-drop-edit"
+                                                data-id={drop.id}
+                                                data-name={drop.name}
+                                                data-open={drop.openTime}
+                                                data-close={drop.closeTime}
+                                                data-current={String(drop.isCurrent)}
+                                                data-countdown={String(drop.showCountdown)}
+                                            >Edit</button>
+                                            <button class="admin-btn-drop-delete" data-id={drop.id} data-name={drop.name}>Delete</button>
                                         </div>
                                     </td>
                                 </tr>))}
@@ -200,8 +264,48 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
                     </table>)}
         </div>
         <div class="admin-bs-add-row">
-            <button class="btn-primary" id="open-ni-modal">+ Add New Item</button>
+            <button class="btn-primary" id="open-drop-modal">+ Create Drop</button>
         </div>
+    </div>
+
+    <!-- Stock tab -->
+    <div id="tab-stock" class="admin-tab-panel" hidden>
+        {!currentDrop ? (
+                <div class="admin-empty">No current drop set. Set a drop as current to manage its stock.</div>
+        ) : (
+                <>
+                    <div class="admin-stock-head">
+                        <div>
+                            <span class="admin-stock-drop-name">{currentDrop.name}</span>
+                            <span class="admin-stock-drop-sub">Current drop</span>
+                        </div>
+                        <div class="admin-stock-total">
+                            <span class="admin-stock-total-num">{stockTotal}</span>
+                            <span class="admin-stock-total-label">total stock</span>
+                        </div>
+                    </div>
+                    <div class="admin-table-wrap">
+                        {stockRows.length === 0 ? (
+                                <div class="admin-empty">This drop has no items yet. Add items to the drop to set stock.</div>
+                        ) : (
+                                <table class="admin-table">
+                                    <thead>
+                                    <tr>
+                                        <th>Item</th>
+                                        <th>Total Stock</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody>
+                                    {stockRows.map(row => (
+                                            <tr>
+                                                <td class="admin-td-name">{row.name}</td>
+                                                <td>{row.totalStock}</td>
+                                            </tr>))}
+                                    </tbody>
+                                </table>)}
+                    </div>
+                </>
+        )}
     </div>
 </main>
 
@@ -213,15 +317,6 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
             <button class="admin-modal-close" id="close-add-modal">✕</button>
         </div>
         <form class="admin-modal-form" id="add-form">
-            <div class="form-field admin-checkbox-field">
-                <label class="admin-checkbox-label">
-                    <input id="add-mystery" name="mystery" type="checkbox"/>
-                    <span>Mystery item <span class="admin-field-hint">(hidden on public menu until mystery is removed)</span></span>
-                </label>
-            </div>
-            <div id="add-mystery-notice" class="admin-mystery-notice" hidden>
-                <strong>Mystery mode:</strong> The name below is for your internal records only and will not be visible to customers until this item is no longer marked as mystery. The hint (if provided) appears on the public menu in place of a description.
-            </div>
             <div class="form-field">
                 <label for="add-name" id="add-name-label">Name *</label>
                 <input id="add-name" name="name" type="text" placeholder="e.g. Brown Butter Chocolate Chip" required/>
@@ -267,15 +362,6 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         </div>
         <form class="admin-modal-form" id="edit-form">
             <input type="hidden" id="edit-id" name="id"/>
-            <div class="form-field admin-checkbox-field">
-                <label class="admin-checkbox-label">
-                    <input id="edit-mystery" name="mystery" type="checkbox"/>
-                    <span>Mystery item <span class="admin-field-hint">(hidden on public menu until mystery is removed)</span></span>
-                </label>
-            </div>
-            <div id="edit-mystery-notice" class="admin-mystery-notice" hidden>
-                <strong>Mystery mode:</strong> The name below is for your internal records only and will not be visible to customers until this item is no longer marked as mystery. The hint (if provided) appears on the public menu in place of a description.
-            </div>
             <div class="form-field">
                 <label for="edit-name" id="edit-name-label">Name *</label>
                 <input id="edit-name" name="name" type="text" required/>
@@ -321,87 +407,148 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
             <h2 class="admin-modal-title">Delete Item</h2>
             <button class="admin-modal-close" id="close-delete-modal">✕</button>
         </div>
-        <p class="admin-delete-confirm-text">Are you sure you want to delete <strong id="delete-item-name"></strong>?
+        <p class="admin-delete-confirm-text" id="delete-standard-text">Are you sure you want to delete <strong id="delete-item-name"></strong>?
             This cannot be undone.</p>
+        <div id="delete-checking" class="admin-field-hint" hidden>Checking for drops using this item…</div>
+
+        <div id="delete-active-banner" class="admin-delete-active-banner" hidden>
+            ⚠ One of these drops is your CURRENTLY ACTIVE drop. Deleting it will take the live drop down immediately.
+        </div>
+
+        <div id="delete-drop-warning" class="admin-delete-danger" hidden>
+            <p class="admin-delete-danger-title">⚠ This will delete <span id="delete-drop-count"></span></p>
+            <p class="admin-delete-danger-body">
+                <strong id="delete-item-name-warn"></strong> belongs to the drop(s) below. Deleting it will
+                <strong>permanently delete each of these entire drops</strong> — including every other item in them.
+                This cannot be undone.
+            </p>
+            <ul class="admin-delete-drop-list" id="delete-drop-list"></ul>
+        </div>
         <div id="delete-form-error" class="admin-alert admin-alert-error" hidden></div>
         <div class="admin-modal-actions">
             <button type="button" class="admin-btn-cancel" id="cancel-delete-modal">Cancel</button>
-            <button type="button" class="admin-btn-delete-confirm" id="confirm-delete">Delete</button>
+            <button type="button" class="admin-btn-delete-confirm" id="confirm-delete" disabled>Delete</button>
             <span class="modal-spinner" id="delete-spinner" hidden></span>
         </div>
     </div>
 </div>
 
-<!-- Add New Item Modal -->
-<div class="admin-modal-overlay" id="ni-modal" hidden>
+<!-- Create Drop Modal -->
+<div class="admin-modal-overlay" id="drop-modal" hidden>
+    <div class="admin-modal admin-modal-lg">
+        <div class="admin-modal-header">
+            <h2 class="admin-modal-title" id="drop-modal-title">Create Drop</h2>
+            <button class="admin-modal-close" id="close-drop-modal">✕</button>
+        </div>
+        <form class="admin-modal-form" id="drop-form">
+            <input type="hidden" id="drop-id"/>
+            <div class="admin-form-row">
+                <div class="form-field">
+                    <label for="drop-name">Name *</label>
+                    <input id="drop-name" name="name" type="text" placeholder="e.g. Drop #8" required/>
+                </div>
+                <div class="form-field admin-checkbox-field drop-current-field">
+                    <label class="admin-checkbox-label">
+                        <input id="drop-set-current" name="setCurrent" type="checkbox"/>
+                        <span>Set as current drop</span>
+                    </label>
+                </div>
+            </div>
+            <div class="admin-form-row">
+                <div class="form-field">
+                    <label for="drop-open">Opens *</label>
+                    <input id="drop-open" name="openTime" type="datetime-local" required/>
+                </div>
+                <div class="form-field">
+                    <label for="drop-close">Closes *</label>
+                    <input id="drop-close" name="closeTime" type="datetime-local" required/>
+                </div>
+            </div>
+            <div class="form-field admin-checkbox-field" id="drop-countdown-field">
+                <label class="admin-checkbox-label">
+                    <input id="drop-show-countdown" name="showCountdown" type="checkbox"/>
+                    <span>Show countdown on the site before it opens <span class="admin-field-hint">(teaser the drop while orders are still closed)</span></span>
+                </label>
+                <p class="admin-field-hint drop-pastopen-note" id="drop-countdown-pastnote" hidden>Past opening time — orders are already open, so the countdown no longer applies.</p>
+            </div>
+            <div class="form-field">
+                <div class="drop-items-head">
+                    <label>Items <span class="admin-field-hint">(menu items in this drop — tick "preview" to show one as a sneak peek before opening)</span></label>
+                    <button type="button" class="admin-btn-add-item" id="open-drop-item-modal" disabled={items.length === 0}>+ Add item</button>
+                </div>
+                {items.length === 0 && (
+                    <p class="admin-field-hint">No menu items exist yet. Add menu items first.</p>
+                )}
+                <div class="drop-items-selected" id="drop-items-selected"></div>
+                <p class="drop-items-empty" id="drop-items-empty">No items added yet.</p>
+            </div>
+            <div id="drop-form-error" class="admin-alert admin-alert-error" hidden></div>
+            <div class="admin-modal-actions">
+                <button type="button" class="admin-btn-cancel" id="cancel-drop-modal">Cancel</button>
+                <button type="submit" class="btn-primary" id="drop-submit-btn">Create Drop</button>
+                <span class="modal-spinner" id="drop-spinner" hidden></span>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Add Drop Item Picker Modal -->
+<div class="admin-modal-overlay admin-modal-overlay-top" id="drop-item-modal" hidden>
     <div class="admin-modal admin-modal-sm">
         <div class="admin-modal-header">
-            <h2 class="admin-modal-title">Add New Item</h2>
-            <button class="admin-modal-close" id="close-ni-modal">✕</button>
+            <h2 class="admin-modal-title" id="drop-item-modal-title">Add Item to Drop</h2>
+            <button class="admin-modal-close" id="close-drop-item-modal">✕</button>
         </div>
-        <form class="admin-modal-form" id="ni-form">
+        <div class="admin-modal-form">
             <div class="form-field">
-                <label for="ni-item-select">Menu Item *</label>
-                <select id="ni-item-select" name="id" required>
+                <label for="drop-item-select">Menu Item *</label>
+                <select id="drop-item-select">
                     <option value="">— Select an item —</option>
-                    {items.filter(i => !newItemIds.has(i.id)).map(item => (
-                        <option value={item.id}>{item.name}</option>
+                    {items.map(item => (
+                        <option value={item.id} data-name={item.name}>
+                            {item.name}
+                        </option>
                     ))}
                 </select>
             </div>
             <div class="form-field">
-                <label for="ni-tag">Tag <span class="admin-field-hint">(optional label, e.g. "Just Added")</span></label>
-                <input id="ni-tag" name="tag" type="text" placeholder="e.g. Just Added"/>
+                <label for="drop-item-stock-input">Initial stock *</label>
+                <input id="drop-item-stock-input" type="number" min="0" step="1" value="1"/>
             </div>
-            <div id="ni-form-error" class="admin-alert admin-alert-error" hidden></div>
-            <div class="admin-modal-actions">
-                <button type="button" class="admin-btn-cancel" id="cancel-ni-modal">Cancel</button>
-                <button type="submit" class="btn-primary" id="ni-submit-btn">Add</button>
-                <span class="modal-spinner" id="ni-spinner" hidden></span>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- Edit New Item Tag Modal -->
-<div class="admin-modal-overlay" id="ni-edit-modal" hidden>
-    <div class="admin-modal admin-modal-sm">
-        <div class="admin-modal-header">
-            <h2 class="admin-modal-title">Edit Tag</h2>
-            <button class="admin-modal-close" id="close-ni-edit-modal">✕</button>
-        </div>
-        <form class="admin-modal-form" id="ni-edit-form">
-            <input type="hidden" id="ni-edit-id"/>
-            <p class="admin-delete-confirm-text" style="margin-bottom:0.5rem">
-                Editing tag for <strong id="ni-edit-item-name"></strong>
-            </p>
             <div class="form-field">
-                <label for="ni-edit-tag">Tag <span class="admin-field-hint">(optional label, e.g. "Just Added")</span></label>
-                <input id="ni-edit-tag" name="tag" type="text" placeholder="e.g. Just Added"/>
+                <label for="drop-item-tag-input">Tag <span class="admin-field-hint">(optional label, e.g. "Fan Favorite")</span></label>
+                <input id="drop-item-tag-input" type="text" placeholder="e.g. Fan Favorite"/>
             </div>
-            <div id="ni-edit-error" class="admin-alert admin-alert-error" hidden></div>
+            <div class="form-field admin-checkbox-field" id="drop-item-preview-field">
+                <label class="admin-checkbox-label">
+                    <input id="drop-item-preview-input" type="checkbox"/>
+                    <span>Show as preview before the drop opens</span>
+                </label>
+                <p class="admin-field-hint drop-pastopen-note" id="drop-item-preview-pastnote" hidden>Past opening time — orders are already open, so previews no longer apply.</p>
+            </div>
+            <div id="drop-item-error" class="admin-alert admin-alert-error" hidden></div>
             <div class="admin-modal-actions">
-                <button type="button" class="admin-btn-cancel" id="cancel-ni-edit-modal">Cancel</button>
-                <button type="submit" class="btn-primary" id="ni-edit-submit-btn">Save</button>
-                <span class="modal-spinner" id="ni-edit-spinner" hidden></span>
+                <button type="button" class="admin-btn-cancel" id="cancel-drop-item-modal">Cancel</button>
+                <button type="button" class="btn-primary" id="confirm-drop-item">Add</button>
             </div>
-        </form>
+        </div>
     </div>
 </div>
 
-<!-- Remove New Item Confirm Modal -->
-<div class="admin-modal-overlay" id="ni-remove-modal" hidden>
+<!-- Delete Drop Confirm Modal -->
+<div class="admin-modal-overlay" id="drop-delete-modal" hidden>
     <div class="admin-modal admin-modal-sm">
         <div class="admin-modal-header">
-            <h2 class="admin-modal-title">Remove New Item</h2>
-            <button class="admin-modal-close" id="close-ni-remove-modal">✕</button>
+            <h2 class="admin-modal-title">Delete Drop</h2>
+            <button class="admin-modal-close" id="close-drop-delete-modal">✕</button>
         </div>
-        <p class="admin-delete-confirm-text">Remove <strong id="ni-remove-item-name"></strong> from new items?</p>
-        <div id="ni-remove-error" class="admin-alert admin-alert-error" hidden></div>
+        <p class="admin-delete-confirm-text">Are you sure you want to delete <strong id="drop-delete-name"></strong>?
+            This also removes its items and cannot be undone.</p>
+        <div id="drop-delete-error" class="admin-alert admin-alert-error" hidden></div>
         <div class="admin-modal-actions">
-            <button type="button" class="admin-btn-cancel" id="cancel-ni-remove-modal">Cancel</button>
-            <button type="button" class="admin-btn-delete-confirm" id="confirm-ni-remove">Remove</button>
-            <span class="modal-spinner" id="ni-remove-spinner" hidden></span>
+            <button type="button" class="admin-btn-cancel" id="cancel-drop-delete-modal">Cancel</button>
+            <button type="button" class="admin-btn-delete-confirm" id="confirm-drop-delete">Delete</button>
+            <span class="modal-spinner" id="drop-delete-spinner" hidden></span>
         </div>
     </div>
 </div>
@@ -441,7 +588,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     }
 
     // Close on overlay click
-    ['add-modal', 'edit-modal', 'delete-modal', 'ni-modal', 'ni-edit-modal', 'ni-remove-modal'].forEach(id => {
+    ['add-modal', 'edit-modal', 'delete-modal', 'drop-modal', 'drop-delete-modal'].forEach(id => {
         document.getElementById(id)?.addEventListener('click', (e) => {
             if (e.target === e.currentTarget) closeModal(id);
         });
@@ -450,7 +597,13 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     // Close on Escape key
     document.addEventListener('keydown', (e) => {
         if (e.key !== 'Escape') return;
-        ['add-modal', 'edit-modal', 'delete-modal', 'ni-modal', 'ni-edit-modal', 'ni-remove-modal'].forEach(id => {
+        // Close the topmost (drop item picker) first if it's open, without closing its parent.
+        const picker = document.getElementById('drop-item-modal');
+        if (picker && !picker.hidden) {
+            picker.hidden = true;
+            return;
+        }
+        ['add-modal', 'edit-modal', 'delete-modal', 'drop-modal', 'drop-delete-modal'].forEach(id => {
             const el = document.getElementById(id);
             if (el && !el.hidden) closeModal(id);
         });
@@ -464,23 +617,42 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     const tabBar = document.querySelector<HTMLElement>('.admin-tabs');
     const totalItems = parseInt(tabBar?.dataset.itemsTotal ?? '0', 10);
 
+    const ACTIVE_TAB_KEY = 'admin-active-tab';
+
+    function activateTab(target: string | undefined) {
+        if (!target) return;
+        tabs.forEach(t => t.classList.toggle('admin-tab-active', t.dataset.tab === target));
+        document.getElementById('tab-menu-items')!.hidden = target !== 'menu-items';
+        document.getElementById('tab-drops')!.hidden = target !== 'drops';
+        document.getElementById('tab-stock')!.hidden = target !== 'stock';
+        if (target === 'menu-items') {
+            if (pageTitle) pageTitle.textContent = 'Menu Items';
+            if (pageSub) pageSub.textContent = `${totalItems} total item${totalItems !== 1 ? 's' : ''}`;
+            addItemBtn.hidden = false;
+        } else if (target === 'stock') {
+            if (pageTitle) pageTitle.textContent = 'Stock';
+            if (pageSub) pageSub.textContent = 'Total stock for the current drop';
+            addItemBtn.hidden = true;
+        } else {
+            if (pageTitle) pageTitle.textContent = 'Drops';
+            if (pageSub) pageSub.textContent = 'Biweekly order windows';
+            addItemBtn.hidden = true;
+        }
+    }
+
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {
             const target = tab.dataset.tab;
-            tabs.forEach(t => t.classList.toggle('admin-tab-active', t === tab));
-            document.getElementById('tab-menu-items')!.hidden = target !== 'menu-items';
-            document.getElementById('tab-new-items')!.hidden = target !== 'new-items';
-            if (target === 'menu-items') {
-                if (pageTitle) pageTitle.textContent = 'Menu Items';
-                if (pageSub) pageSub.textContent = `${totalItems} total item${totalItems !== 1 ? 's' : ''}`;
-                addItemBtn.hidden = false;
-            } else {
-                if (pageTitle) pageTitle.textContent = 'New Items';
-                if (pageSub) pageSub.textContent = 'Items featured in the current drop';
-                addItemBtn.hidden = true;
-            }
+            try { sessionStorage.setItem(ACTIVE_TAB_KEY, target ?? ''); } catch {}
+            activateTab(target);
         });
     });
+
+    // Restore the last-active tab after a reload (drop actions reload the page).
+    try {
+        const saved = sessionStorage.getItem(ACTIVE_TAB_KEY);
+        if (saved && saved !== 'menu-items') activateTab(saved);
+    } catch {}
 
     // ── File → base64 helper ───────────────────────────────────
     function readFileAsDataURL(file: File): Promise<string> {
@@ -551,56 +723,10 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     wireUploadInput('add-image', 'add-upload-label', 'add-image-label-text', 'add-image-preview', 'add-image-preview-img', 'add-image-remove');
     wireUploadInput('edit-image', 'edit-upload-label', 'edit-image-label-text', 'edit-image-preview', 'edit-image-preview-img', 'edit-image-remove');
 
-    // ── Mystery toggle ─────────────────────────────────────────
-    function applyMysteryState(prefix: string, isMystery: boolean) {
-        const notice = document.getElementById(`${prefix}-mystery-notice`);
-        const nameLabel = document.getElementById(`${prefix}-name-label`);
-        const descLabel = document.getElementById(`${prefix}-description-label`);
-        const descTextarea = document.getElementById(`${prefix}-description`) as HTMLTextAreaElement | null;
-        const imageField = document.getElementById(`${prefix}-image-field`);
-        const currentImageWrap = document.getElementById(`${prefix}-current-image-wrap`);
-
-        if (notice) notice.hidden = !isMystery;
-        if (imageField) imageField.hidden = isMystery;
-        if (currentImageWrap) currentImageWrap.hidden = isMystery;
-
-        if (nameLabel) {
-            nameLabel.innerHTML = isMystery
-                ? 'Name * <span class="admin-field-hint">(internal only — not shown to customers)</span>'
-                : 'Name *';
-        }
-
-        if (isMystery) {
-            if (descLabel) descLabel.textContent = 'Hint (optional)';
-            if (descTextarea) {
-                descTextarea.placeholder = 'Optional hint shown to customers on the public menu…';
-                descTextarea.required = false;
-            }
-        } else {
-            if (descLabel) descLabel.textContent = 'Description *';
-            if (descTextarea) {
-                descTextarea.placeholder = 'A brief description of the item…';
-                descTextarea.required = true;
-            }
-        }
-    }
-
-    function wireMysteryToggle(prefix: string) {
-        const checkbox = document.getElementById(`${prefix}-mystery`) as HTMLInputElement | null;
-        if (!checkbox) return;
-        checkbox.addEventListener('change', () => applyMysteryState(prefix, checkbox.checked));
-        // apply initial state
-        applyMysteryState(prefix, checkbox.checked);
-    }
-
-    wireMysteryToggle('add');
-    wireMysteryToggle('edit');
-
     // ── Add modal ──────────────────────────────────────────────
     document.getElementById('open-add-modal')?.addEventListener('click', () => {
         (document.getElementById('add-form') as HTMLFormElement)?.reset();
         resetUploadField('add-image', 'add-image-label-text', 'add-image-preview', 'add-image-preview-img');
-        applyMysteryState('add', false);
         clearError('add-form-error');
         openModal('add-modal');
     });
@@ -641,7 +767,6 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
             id: uuid,
             name: data.name,
             description: data.description,
-            mystery: 'mystery' in data && data.mystery === 'on',
         };
 
         const res = await fetch('/api/v1/menu', {
@@ -661,7 +786,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     // ── Edit modal ─────────────────────────────────────────────
     document.querySelectorAll<HTMLButtonElement>('.admin-btn-edit').forEach(btn => {
         btn.addEventListener('click', () => {
-            const {id, name, description, image, mystery} = btn.dataset;
+            const {id, name, description, image} = btn.dataset;
             (document.getElementById('edit-id') as HTMLInputElement).value = id ?? '';
             (document.getElementById('edit-name') as HTMLInputElement).value = name ?? '';
             (document.getElementById('edit-description') as HTMLTextAreaElement).value = description ?? '';
@@ -673,8 +798,6 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
             // Reset the file upload field
             resetUploadField('edit-image', 'edit-image-label-text', 'edit-image-preview', 'edit-image-preview-img');
 
-            (document.getElementById('edit-mystery') as HTMLInputElement).checked = mystery === 'true';
-            applyMysteryState('edit', mystery === 'true');
             clearError('edit-form-error');
             openModal('edit-modal');
         });
@@ -711,7 +834,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         }
 
         const payload = {
-            name: data.name, description: data.description, mystery: 'mystery' in data && data.mystery === 'on',
+            name: data.name, description: data.description,
         };
 
         const res = await fetch(`/api/v1/menu/${id}`, {
@@ -730,16 +853,79 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
 
     // ── Delete modal ───────────────────────────────────────────
     let pendingDeleteId: string | null = null;
+    let pendingDeleteForce = false;
 
     document.querySelectorAll<HTMLButtonElement>('.admin-btn-delete').forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', async () => {
             pendingDeleteId = btn.dataset.id ?? null;
+            pendingDeleteForce = false;
             const row = btn.closest('tr');
             const name = row?.querySelector('.admin-td-name')?.textContent ?? 'this item';
+
             const nameEl = document.getElementById('delete-item-name');
             if (nameEl) nameEl.textContent = name;
+
+            const standardText = document.getElementById('delete-standard-text') as HTMLElement;
+            const checking = document.getElementById('delete-checking') as HTMLElement;
+            const warning = document.getElementById('delete-drop-warning') as HTMLElement;
+            const activeBanner = document.getElementById('delete-active-banner') as HTMLElement;
+            const confirmBtn = document.getElementById('confirm-delete') as HTMLButtonElement;
+
             clearError('delete-form-error');
+            // Reset to a "checking" state while we look up drop usage.
+            standardText.hidden = true;
+            warning.hidden = true;
+            activeBanner.hidden = true;
+            checking.hidden = false;
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = 'Delete';
+            confirmBtn.classList.remove('admin-btn-delete-confirm-active');
             openModal('delete-modal');
+
+            if (!pendingDeleteId) return;
+
+            try {
+                const res = await fetch(`/api/v1/menu/${pendingDeleteId}`);
+                const data = await res.json();
+                const drops: {id: string; name: string; isCurrent?: boolean}[] = data.drops ?? [];
+                checking.hidden = true;
+
+                if (drops.length > 0) {
+                    pendingDeleteForce = true;
+                    const hasActive = drops.some(d => d.isCurrent);
+                    const count = `${drops.length} drop${drops.length !== 1 ? 's' : ''}`;
+                    (document.getElementById('delete-item-name-warn') as HTMLElement).textContent = name;
+                    (document.getElementById('delete-drop-count') as HTMLElement).textContent = count;
+                    const list = document.getElementById('delete-drop-list') as HTMLElement;
+                    list.innerHTML = '';
+                    drops.forEach(d => {
+                        const li = document.createElement('li');
+                        const nameSpan = document.createElement('span');
+                        nameSpan.className = 'admin-delete-drop-name';
+                        nameSpan.textContent = d.name;
+                        li.appendChild(nameSpan);
+                        if (d.isCurrent) {
+                            li.classList.add('admin-delete-drop-active');
+                            const badge = document.createElement('span');
+                            badge.className = 'admin-delete-active-tag';
+                            badge.textContent = 'ACTIVE';
+                            li.appendChild(badge);
+                        }
+                        list.appendChild(li);
+                    });
+                    warning.hidden = false;
+                    activeBanner.hidden = !hasActive;
+                    confirmBtn.textContent = hasActive ? 'Delete ACTIVE drop & item' : 'Delete item & drops';
+                    if (hasActive) confirmBtn.classList.add('admin-btn-delete-confirm-active');
+                } else {
+                    standardText.hidden = false;
+                }
+                confirmBtn.disabled = false;
+            } catch {
+                checking.hidden = true;
+                standardText.hidden = false;
+                confirmBtn.disabled = false;
+            }
         });
     });
     document.getElementById('close-delete-modal')?.addEventListener('click', () => closeModal('delete-modal'));
@@ -752,7 +938,8 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         const spinner = document.getElementById('delete-spinner') as HTMLElement;
         confirmBtn.disabled = true;
         spinner.hidden = false;
-        const res = await fetch(`/api/v1/menu/${pendingDeleteId}`, {method: 'DELETE'});
+        const url = `/api/v1/menu/${pendingDeleteId}${pendingDeleteForce ? '?force=true' : ''}`;
+        const res = await fetch(url, {method: 'DELETE'});
         if (res.ok) {
             location.reload();
         } else {
@@ -763,186 +950,377 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         }
     });
 
-    // ── Add New Item modal ─────────────────────────────────────
-    document.getElementById('open-ni-modal')?.addEventListener('click', () => {
-        (document.getElementById('ni-form') as HTMLFormElement)?.reset();
-        clearError('ni-form-error');
-        openModal('ni-modal');
-    });
-    document.getElementById('close-ni-modal')?.addEventListener('click', () => closeModal('ni-modal'));
-    document.getElementById('cancel-ni-modal')?.addEventListener('click', () => closeModal('ni-modal'));
+    // ── Create Drop modal ──────────────────────────────────────
+    const dropItemsContainer = document.getElementById('drop-items-selected');
+    const dropItemsEmpty = document.getElementById('drop-items-empty');
+    const dropItemSelect = document.getElementById('drop-item-select') as HTMLSelectElement | null;
+    const dropItemStockInput = document.getElementById('drop-item-stock-input') as HTMLInputElement | null;
+    const dropItemTagInput = document.getElementById('drop-item-tag-input') as HTMLInputElement | null;
+    const dropItemPreviewInput = document.getElementById('drop-item-preview-input') as HTMLInputElement | null;
 
-    document.getElementById('ni-form')?.addEventListener('submit', async (e) => {
+    function selectedDropItemIds(): Set<string> {
+        return new Set(
+            Array.from(dropItemsContainer?.querySelectorAll<HTMLElement>('.drop-selected-row') ?? [])
+                .map(row => row.dataset.id as string),
+        );
+    }
+
+    function refreshDropItemsEmpty() {
+        const hasRows = (dropItemsContainer?.querySelectorAll('.drop-selected-row').length ?? 0) > 0;
+        if (dropItemsEmpty) dropItemsEmpty.hidden = hasRows;
+    }
+
+    function refreshDropItemSelectOptions() {
+        if (!dropItemSelect) return;
+        const used = selectedDropItemIds();
+        Array.from(dropItemSelect.options).forEach(opt => {
+            if (!opt.value) return;
+            opt.disabled = used.has(opt.value);
+        });
+        dropItemSelect.value = '';
+    }
+
+    // The row currently being edited via the picker modal (null = adding a new one).
+    let editingDropRow: HTMLElement | null = null;
+    const dropItemModalTitle = document.getElementById('drop-item-modal-title');
+    const confirmDropItemBtn = document.getElementById('confirm-drop-item');
+
+    function fillDropRow(row: HTMLElement, name: string, stock: number, preview: boolean, tag: string) {
+        row.dataset.stock = String(stock);
+        row.dataset.preview = preview ? 'true' : 'false';
+        row.dataset.tag = tag;
+        const nameEl = row.querySelector('.drop-selected-name') as HTMLElement;
+        nameEl.textContent = name;
+        const stockEl = row.querySelector('.drop-selected-stock') as HTMLElement;
+        stockEl.textContent = `${stock} in stock`;
+        const tagEl = row.querySelector('.drop-selected-tag') as HTMLElement;
+        tagEl.textContent = tag;
+        tagEl.hidden = !tag;
+        const previewEl = row.querySelector('.drop-selected-preview') as HTMLElement;
+        previewEl.hidden = !preview;
+    }
+
+    function addSelectedDropItem(id: string, name: string, stock: number, preview = false, tag = '') {
+        if (!dropItemsContainer) return;
+        const row = document.createElement('div');
+        row.className = 'drop-selected-row';
+        row.dataset.id = id;
+        row.innerHTML = `
+            <span class="drop-selected-name"></span>
+            <div class="drop-selected-right">
+                <span class="drop-selected-tag"></span>
+                <span class="drop-selected-preview" title="Shown as a preview before the drop opens">★ preview</span>
+                <span class="drop-selected-stock"></span>
+                <button type="button" class="drop-selected-edit" title="Edit">Edit</button>
+                <button type="button" class="drop-selected-remove" title="Remove">Remove</button>
+            </div>`;
+        fillDropRow(row, name, stock, preview, tag);
+        row.querySelector('.drop-selected-edit')?.addEventListener('click', () => openDropItemEdit(row));
+        row.querySelector('.drop-selected-remove')?.addEventListener('click', () => {
+            row.remove();
+            refreshDropItemsEmpty();
+        });
+        dropItemsContainer.appendChild(row);
+        refreshDropItemsEmpty();
+    }
+
+    function closeDropItemModal() {
+        const el = document.getElementById('drop-item-modal');
+        if (el) el.hidden = true;
+        editingDropRow = null;
+        if (dropItemSelect) dropItemSelect.disabled = false;
+    }
+
+    document.getElementById('open-drop-item-modal')?.addEventListener('click', () => {
+        editingDropRow = null;
+        clearError('drop-item-error');
+        if (dropItemSelect) dropItemSelect.disabled = false;
+        refreshDropItemSelectOptions();
+        updatePreOpenVisibility();
+        if (dropItemStockInput) dropItemStockInput.value = '1';
+        if (dropItemTagInput) dropItemTagInput.value = '';
+        if (dropItemPreviewInput) dropItemPreviewInput.checked = false;
+        if (dropItemModalTitle) dropItemModalTitle.textContent = 'Add Item to Drop';
+        if (confirmDropItemBtn) confirmDropItemBtn.textContent = 'Add';
+        const el = document.getElementById('drop-item-modal');
+        if (el) el.hidden = false;
+        dropItemSelect?.focus();
+    });
+
+    function openDropItemEdit(row: HTMLElement) {
+        editingDropRow = row;
+        clearError('drop-item-error');
+        // The item itself is fixed while editing — lock the select to it.
+        if (dropItemSelect) {
+            Array.from(dropItemSelect.options).forEach(o => { o.disabled = false; });
+            dropItemSelect.value = row.dataset.id ?? '';
+            dropItemSelect.disabled = true;
+        }
+        if (dropItemStockInput) dropItemStockInput.value = row.dataset.stock ?? '1';
+        if (dropItemTagInput) dropItemTagInput.value = row.dataset.tag ?? '';
+        if (dropItemPreviewInput) dropItemPreviewInput.checked = row.dataset.preview === 'true';
+        updatePreOpenVisibility();
+        if (dropItemModalTitle) dropItemModalTitle.textContent = 'Edit Item';
+        if (confirmDropItemBtn) confirmDropItemBtn.textContent = 'Save';
+        const el = document.getElementById('drop-item-modal');
+        if (el) el.hidden = false;
+    }
+
+    document.getElementById('close-drop-item-modal')?.addEventListener('click', closeDropItemModal);
+    document.getElementById('cancel-drop-item-modal')?.addEventListener('click', closeDropItemModal);
+    document.getElementById('drop-item-modal')?.addEventListener('click', (e) => {
+        if (e.target === e.currentTarget) closeDropItemModal();
+    });
+
+    document.getElementById('confirm-drop-item')?.addEventListener('click', () => {
+        clearError('drop-item-error');
+        const opt = dropItemSelect?.selectedOptions[0];
+        if (!opt || !opt.value) {
+            showError('drop-item-error', 'Please select a menu item.');
+            return;
+        }
+        const stock = Number(dropItemStockInput?.value);
+        if (!Number.isInteger(stock) || stock < 0) {
+            showError('drop-item-error', 'Stock must be a non-negative whole number.');
+            return;
+        }
+        const preview = dropItemPreviewInput?.checked ?? false;
+        const tag = dropItemTagInput?.value.trim() ?? '';
+
+        if (editingDropRow) {
+            fillDropRow(editingDropRow, opt.dataset.name ?? opt.textContent ?? '', stock, preview, tag);
+        } else {
+            addSelectedDropItem(opt.value, opt.dataset.name ?? opt.textContent ?? '', stock, preview, tag);
+        }
+        closeDropItemModal();
+    });
+
+    const dropIdField = document.getElementById('drop-id') as HTMLInputElement | null;
+    const dropModalTitle = document.getElementById('drop-modal-title');
+    const dropSubmitBtn = document.getElementById('drop-submit-btn');
+    const dropOpenInput = document.getElementById('drop-open') as HTMLInputElement | null;
+    const dropCountdownField = document.getElementById('drop-countdown-field');
+    const dropItemPreviewField = document.getElementById('drop-item-preview-field');
+
+    // The countdown teaser and per-item preview only apply before a drop opens.
+    // Once the open time has passed the drop is live, so hide those controls.
+    function dropOpenIsPast(): boolean {
+        const v = dropOpenInput?.value;
+        if (!v) return false;
+        const t = new Date(v).getTime();
+        return !Number.isNaN(t) && t <= Date.now();
+    }
+
+    function updatePreOpenVisibility() {
+        const past = dropOpenIsPast();
+        const cd = document.getElementById('drop-show-countdown') as HTMLInputElement | null;
+        if (cd) {
+            cd.disabled = past;
+            if (past) cd.checked = false;
+        }
+        if (dropItemPreviewInput) dropItemPreviewInput.disabled = past;
+        if (dropCountdownField) dropCountdownField.classList.toggle('admin-field-disabled', past);
+        if (dropItemPreviewField) dropItemPreviewField.classList.toggle('admin-field-disabled', past);
+        const cdNote = document.getElementById('drop-countdown-pastnote');
+        if (cdNote) cdNote.hidden = !past;
+        const pvNote = document.getElementById('drop-item-preview-pastnote');
+        if (pvNote) pvNote.hidden = !past;
+    }
+
+    dropOpenInput?.addEventListener('input', updatePreOpenVisibility);
+
+    function isoToLocalInput(iso: string): string {
+        const d = new Date(iso);
+        const pad = (n: number) => String(n).padStart(2, '0');
+        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    document.getElementById('open-drop-modal')?.addEventListener('click', () => {
+        (document.getElementById('drop-form') as HTMLFormElement)?.reset();
+        if (dropIdField) dropIdField.value = '';
+        if (dropModalTitle) dropModalTitle.textContent = 'Create Drop';
+        if (dropSubmitBtn) dropSubmitBtn.textContent = 'Create Drop';
+        if (dropItemsContainer) dropItemsContainer.innerHTML = '';
+        refreshDropItemsEmpty();
+        updatePreOpenVisibility();
+        clearError('drop-form-error');
+        openModal('drop-modal');
+    });
+    document.getElementById('close-drop-modal')?.addEventListener('click', () => closeModal('drop-modal'));
+    document.getElementById('cancel-drop-modal')?.addEventListener('click', () => closeModal('drop-modal'));
+
+    document.querySelectorAll<HTMLButtonElement>('.admin-btn-drop-edit').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const {id, name, open, close, current, countdown} = btn.dataset;
+            (document.getElementById('drop-form') as HTMLFormElement)?.reset();
+            if (dropIdField) dropIdField.value = id ?? '';
+            if (dropModalTitle) dropModalTitle.textContent = 'Edit Drop';
+            if (dropSubmitBtn) dropSubmitBtn.textContent = 'Save Changes';
+            (document.getElementById('drop-name') as HTMLInputElement).value = name ?? '';
+            (document.getElementById('drop-open') as HTMLInputElement).value = open ? isoToLocalInput(open) : '';
+            (document.getElementById('drop-close') as HTMLInputElement).value = close ? isoToLocalInput(close) : '';
+            (document.getElementById('drop-set-current') as HTMLInputElement).checked = current === 'true';
+            (document.getElementById('drop-show-countdown') as HTMLInputElement).checked = countdown === 'true';
+            if (dropItemsContainer) dropItemsContainer.innerHTML = '';
+            refreshDropItemsEmpty();
+            updatePreOpenVisibility();
+            clearError('drop-form-error');
+            openModal('drop-modal');
+
+            try {
+                const res = await fetch(`/api/v1/drops/${id}`);
+                if (res.ok) {
+                    const {items} = await res.json();
+                    (items ?? []).forEach((it: {menuItem: {id: string; name: string}; initialStock: number; preview: boolean; tag: string}) => {
+                        addSelectedDropItem(it.menuItem.id, it.menuItem.name, it.initialStock, it.preview, it.tag);
+                    });
+                } else {
+                    showError('drop-form-error', 'Could not load this drop\u2019s items.');
+                }
+            } catch {
+                showError('drop-form-error', 'Could not load this drop\u2019s items.');
+            }
+        });
+    });
+
+    document.getElementById('drop-form')?.addEventListener('submit', async (e) => {
         e.preventDefault();
-        clearError('ni-form-error');
+        clearError('drop-form-error');
         const form = e.target as HTMLFormElement;
-        const data = Object.fromEntries(new FormData(form));
-        const submitBtn = document.getElementById('ni-submit-btn') as HTMLButtonElement;
-        const spinner = document.getElementById('ni-spinner') as HTMLElement;
+        const data = Object.fromEntries(new FormData(form)) as Record<string, string>;
+        const submitBtn = document.getElementById('drop-submit-btn') as HTMLButtonElement;
+        const spinner = document.getElementById('drop-spinner') as HTMLElement;
+        const id = dropIdField?.value ?? '';
+
+        if (data.openTime && data.closeTime && new Date(data.closeTime) <= new Date(data.openTime)) {
+            showError('drop-form-error', 'Close time must be after open time.');
+            return;
+        }
+
+        const dropItems = Array.from(dropItemsContainer?.querySelectorAll<HTMLElement>('.drop-selected-row') ?? [])
+            .map(row => ({
+                menuItemId: row.dataset.id as string,
+                initialStock: Number(row.dataset.stock),
+                preview: row.dataset.preview === 'true',
+                tag: row.dataset.tag ?? '',
+            }));
+
         submitBtn.disabled = true;
         spinner.hidden = false;
 
-        const res = await fetch('/api/v1/new-items', {
-            method: 'POST',
+        const res = await fetch(id ? `/api/v1/drops/${id}` : '/api/v1/drops', {
+            method: id ? 'PATCH' : 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ id: data.id, tag: data.tag }),
+            body: JSON.stringify({
+                name: data.name,
+                openTime: data.openTime,
+                closeTime: data.closeTime,
+                setCurrent: data.setCurrent === 'on',
+                showCountdown: data.showCountdown === 'on',
+                items: dropItems,
+            }),
         });
 
         if (res.ok) {
             location.reload();
         } else {
             const err = await res.json();
-            showError('ni-form-error', err.error ?? 'Something went wrong.');
+            showError('drop-form-error', err.error ?? 'Something went wrong.');
             submitBtn.disabled = false;
             spinner.hidden = true;
         }
     });
 
-    // ── Edit New Item Tag modal ────────────────────────────────
-    document.querySelectorAll<HTMLButtonElement>('.admin-btn-ni-edit').forEach(btn => {
+    // ── Delete drop ────────────────────────────────────────────
+    let pendingDropDeleteId: string | null = null;
+    document.querySelectorAll<HTMLButtonElement>('.admin-btn-drop-delete').forEach(btn => {
         btn.addEventListener('click', () => {
-            (document.getElementById('ni-edit-id') as HTMLInputElement).value = btn.dataset.id ?? '';
-            (document.getElementById('ni-edit-tag') as HTMLInputElement).value = btn.dataset.tag ?? '';
-            const nameEl = document.getElementById('ni-edit-item-name');
-            if (nameEl) nameEl.textContent = btn.dataset.name ?? 'this item';
-            clearError('ni-edit-error');
-            openModal('ni-edit-modal');
+            pendingDropDeleteId = btn.dataset.id ?? null;
+            const nameEl = document.getElementById('drop-delete-name');
+            if (nameEl) nameEl.textContent = btn.dataset.name ?? 'this drop';
+            clearError('drop-delete-error');
+            openModal('drop-delete-modal');
         });
     });
-    document.getElementById('close-ni-edit-modal')?.addEventListener('click', () => closeModal('ni-edit-modal'));
-    document.getElementById('cancel-ni-edit-modal')?.addEventListener('click', () => closeModal('ni-edit-modal'));
+    document.getElementById('close-drop-delete-modal')?.addEventListener('click', () => closeModal('drop-delete-modal'));
+    document.getElementById('cancel-drop-delete-modal')?.addEventListener('click', () => closeModal('drop-delete-modal'));
 
-    document.getElementById('ni-edit-form')?.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        clearError('ni-edit-error');
-        const id = (document.getElementById('ni-edit-id') as HTMLInputElement).value;
-        const tag = (document.getElementById('ni-edit-tag') as HTMLInputElement).value;
-        const submitBtn = document.getElementById('ni-edit-submit-btn') as HTMLButtonElement;
-        const spinner = document.getElementById('ni-edit-spinner') as HTMLElement;
-        submitBtn.disabled = true;
-        spinner.hidden = false;
-
-        const res = await fetch(`/api/v1/new-items/${id}`, {
-            method: 'PATCH',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ tag }),
-        });
-
-        if (res.ok) {
-            location.reload();
-        } else {
-            const err = await res.json();
-            showError('ni-edit-error', err.error ?? 'Something went wrong.');
-            submitBtn.disabled = false;
-            spinner.hidden = true;
-        }
-    });
-
-    // ── Remove New Item modal ──────────────────────────────────
-    let pendingNiRemoveId: string | null = null;
-
-    document.querySelectorAll<HTMLButtonElement>('.admin-btn-ni-remove').forEach(btn => {
-        btn.addEventListener('click', () => {
-            pendingNiRemoveId = btn.dataset.id ?? null;
-            const nameEl = document.getElementById('ni-remove-item-name');
-            if (nameEl) nameEl.textContent = btn.dataset.name ?? 'this item';
-            clearError('ni-remove-error');
-            openModal('ni-remove-modal');
-        });
-    });
-    document.getElementById('close-ni-remove-modal')?.addEventListener('click', () => closeModal('ni-remove-modal'));
-    document.getElementById('cancel-ni-remove-modal')?.addEventListener('click', () => closeModal('ni-remove-modal'));
-
-    document.getElementById('confirm-ni-remove')?.addEventListener('click', async () => {
-        if (!pendingNiRemoveId) return;
-        clearError('ni-remove-error');
-        const confirmBtn = document.getElementById('confirm-ni-remove') as HTMLButtonElement;
-        const spinner = document.getElementById('ni-remove-spinner') as HTMLElement;
+    document.getElementById('confirm-drop-delete')?.addEventListener('click', async () => {
+        if (!pendingDropDeleteId) return;
+        clearError('drop-delete-error');
+        const confirmBtn = document.getElementById('confirm-drop-delete') as HTMLButtonElement;
+        const spinner = document.getElementById('drop-delete-spinner') as HTMLElement;
         confirmBtn.disabled = true;
         spinner.hidden = false;
-        const res = await fetch(`/api/v1/new-items/${pendingNiRemoveId}`, {method: 'DELETE'});
+        const res = await fetch(`/api/v1/drops/${pendingDropDeleteId}`, {method: 'DELETE'});
         if (res.ok) {
             location.reload();
         } else {
             const err = await res.json();
-            showError('ni-remove-error', err.error ?? 'Could not remove new item.');
+            showError('drop-delete-error', err.error ?? 'Could not delete drop.');
             confirmBtn.disabled = false;
             spinner.hidden = true;
         }
     });
 
-    // ── Drag-to-reorder ────────────────────────────────────────
-    function wireTableDragSort(tbodyId: string, reorderUrl: string) {
-        const tbody = document.getElementById(tbodyId);
-        if (!tbody) return;
-
-        let dragSrc: HTMLTableRowElement | null = null;
-
-        tbody.addEventListener('dragstart', (e: DragEvent) => {
-            const row = (e.target as HTMLElement).closest('tr') as HTMLTableRowElement | null;
-            if (!row) return;
-            dragSrc = row;
-            row.classList.add('dragging');
-            if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
-        });
-
-        tbody.addEventListener('dragend', () => {
-            tbody.querySelectorAll<HTMLTableRowElement>('tr').forEach(r => {
-                r.classList.remove('dragging', 'drag-over-top', 'drag-over-bottom');
-            });
-            dragSrc = null;
-        });
-
-        tbody.addEventListener('dragover', (e: DragEvent) => {
-            e.preventDefault();
-            if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-            const row = (e.target as HTMLElement).closest('tr') as HTMLTableRowElement | null;
-            if (!row || row === dragSrc) return;
-            tbody.querySelectorAll<HTMLTableRowElement>('tr').forEach(r => {
-                r.classList.remove('drag-over-top', 'drag-over-bottom');
-            });
-            const rect = row.getBoundingClientRect();
-            const isTop = e.clientY < rect.top + rect.height / 2;
-            row.classList.add(isTop ? 'drag-over-top' : 'drag-over-bottom');
-        });
-
-        tbody.addEventListener('dragleave', (e: DragEvent) => {
-            const row = (e.target as HTMLElement).closest('tr') as HTMLTableRowElement | null;
-            if (row) row.classList.remove('drag-over-top', 'drag-over-bottom');
-        });
-
-        tbody.addEventListener('drop', async (e: DragEvent) => {
-            e.preventDefault();
-            const row = (e.target as HTMLElement).closest('tr') as HTMLTableRowElement | null;
-            tbody.querySelectorAll<HTMLTableRowElement>('tr').forEach(r => {
-                r.classList.remove('drag-over-top', 'drag-over-bottom');
-            });
-            if (!row || !dragSrc || row === dragSrc) return;
-
-            const rect = row.getBoundingClientRect();
-            const isTop = e.clientY < rect.top + rect.height / 2;
-            tbody.insertBefore(dragSrc, isTop ? row : row.nextSibling);
-
-            const ids = Array.from(tbody.querySelectorAll<HTMLTableRowElement>('tr[data-id]'))
-                .map(r => r.dataset.id as string);
-
+    // ── Set current drop ───────────────────────────────────────
+    document.querySelectorAll<HTMLButtonElement>('.admin-btn-set-current').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const id = btn.dataset.id;
+            if (!id) return;
+            btn.disabled = true;
+            const original = btn.textContent;
+            btn.textContent = 'Saving…';
             try {
-                const res = await fetch(reorderUrl, {
+                const res = await fetch('/api/v1/drops/current', {
                     method: 'PUT',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ids}),
+                    body: JSON.stringify({id}),
                 });
-                if (!res.ok) {
+                if (res.ok) {
+                    location.reload();
+                } else {
                     const err = await res.json();
-                    console.error('Reorder failed:', err.error ?? 'Unknown error');
+                    console.error('Set current drop failed:', err.error ?? 'Unknown error');
+                    btn.disabled = false;
+                    btn.textContent = original;
                 }
             } catch (err) {
-                console.error('Reorder request failed:', err);
+                console.error('Set current drop request failed:', err);
+                btn.disabled = false;
+                btn.textContent = original;
             }
         });
-    }
+    });
 
-    wireTableDragSort('new-items-tbody', '/api/v1/new-items');
+    // ── Unset current drop ─────────────────────────────────────
+    document.querySelectorAll<HTMLButtonElement>('.admin-btn-unset-current').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            btn.disabled = true;
+            const original = btn.textContent;
+            btn.textContent = 'Saving…';
+            try {
+                const res = await fetch('/api/v1/drops/current', {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({id: null}),
+                });
+                if (res.ok) {
+                    location.reload();
+                } else {
+                    const err = await res.json();
+                    console.error('Unset current drop failed:', err.error ?? 'Unknown error');
+                    btn.disabled = false;
+                    btn.textContent = original;
+                }
+            } catch (err) {
+                console.error('Unset current drop request failed:', err);
+                btn.disabled = false;
+                btn.textContent = original;
+            }
+        });
+    });
+
 </script>
 
 <style>
@@ -1202,17 +1580,6 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         white-space: nowrap;
     }
 
-    .admin-mystery-badge {
-        font-size: 0.7rem;
-        font-weight: 600;
-        letter-spacing: 0.06em;
-        color: var(--text-muted);
-    }
-
-    .admin-mystery-badge.is-mystery {
-        color: #9A4A2A;
-    }
-
     .admin-image-thumb-link {
         display: inline-block;
         line-height: 0;
@@ -1358,6 +1725,400 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         white-space: nowrap;
     }
 
+    /* ── Drop status ─────────────────────────────────────────── */
+    .admin-drop-status {
+        display: inline-block;
+        font-size: 0.63rem;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        padding: 0.2rem 0.55rem;
+        border: 1px solid var(--accent);
+        color: var(--text-muted);
+        white-space: nowrap;
+    }
+
+    .admin-drop-live {
+        background: #EEF6EE;
+        border-color: #9CC79C;
+        color: #2F6A2F;
+    }
+
+    .admin-drop-upcoming {
+        background: #FFF8F0;
+        border-color: #E8C49A;
+        color: #7A4A1A;
+    }
+
+    .admin-drop-closed {
+        background: #F3EDE5;
+        border-color: var(--accent);
+        color: var(--text-muted);
+    }
+
+    .admin-drop-current-badge {
+        display: inline-block;
+        font-size: 0.63rem;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        background: var(--text-primary);
+        color: var(--bg);
+        padding: 0.2rem 0.55rem;
+        white-space: nowrap;
+    }
+
+    .admin-drop-row-current td {
+        background: #FBF6EE;
+    }
+
+    .admin-btn-set-current {
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 0.35rem 0.75rem;
+        border: 1px solid var(--accent);
+        background: none;
+        color: var(--text-primary);
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.15s;
+    }
+
+    .admin-btn-set-current:hover {
+        background: var(--text-primary);
+        color: var(--bg);
+        border-color: var(--text-primary);
+    }
+
+    .admin-btn-set-current:disabled {
+        opacity: 0.6;
+        cursor: default;
+    }
+
+    .admin-field-disabled .admin-checkbox-label {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .drop-pastopen-note {
+        margin-top: 0.4rem;
+        color: #9A3A1A;
+    }
+
+    .admin-btn-unset-current {
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 0.35rem 0.75rem;
+        border: 1px solid var(--accent);
+        background: none;
+        color: var(--text-secondary, #8a7d6b);
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.15s;
+    }
+
+    .admin-btn-unset-current:hover {
+        background: #b3261e;
+        color: #fff;
+        border-color: #b3261e;
+    }
+
+    .admin-btn-unset-current:disabled {
+        opacity: 0.6;
+        cursor: default;
+    }
+
+    .admin-btn-drop-edit,
+    .admin-btn-drop-delete {
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 0.35rem 0.75rem;
+        border: 1px solid var(--accent);
+        background: none;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.15s;
+    }
+
+    .admin-btn-drop-edit {
+        color: var(--text-primary);
+    }
+
+    .admin-btn-drop-edit:hover {
+        background: var(--text-primary);
+        color: var(--bg);
+        border-color: var(--text-primary);
+    }
+
+    .admin-btn-drop-delete {
+        color: #9A3A1A;
+        border-color: #E8C4B4;
+    }
+
+    .admin-btn-drop-delete:hover {
+        background: #9A3A1A;
+        color: var(--bg);
+        border-color: #9A3A1A;
+    }
+
+    .admin-modal-form input[type="datetime-local"] {
+        width: 100%;
+        padding: 0.8rem 1rem;
+        border: 1px solid var(--accent);
+        background: var(--bg);
+        color: var(--text-primary);
+        font-family: 'DM Sans', sans-serif;
+        font-size: 0.9rem;
+        outline: none;
+        transition: border-color 0.2s ease;
+        border-radius: 0;
+    }
+
+    .admin-modal-form input[type="datetime-local"]:focus {
+        border-color: var(--text-primary);
+    }
+
+    .admin-modal-form input[type="number"] {
+        width: 100%;
+        padding: 0.8rem 1rem;
+        border: 1px solid var(--accent);
+        background: var(--bg);
+        color: var(--text-primary);
+        font-family: 'DM Sans', sans-serif;
+        font-size: 0.9rem;
+        outline: none;
+        transition: border-color 0.2s ease;
+        border-radius: 0;
+    }
+
+    .admin-modal-form input[type="number"]:focus {
+        border-color: var(--text-primary);
+    }
+
+    /* ── Drop items picker ───────────────────────────────────── */
+    .drop-current-field {
+        align-self: end;
+        padding-bottom: 0.85rem;
+    }
+
+    .drop-items-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-bottom: 0.6rem;
+    }
+
+    .admin-btn-add-item {
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 0.4rem 0.8rem;
+        border: 1px solid var(--text-primary);
+        background: none;
+        color: var(--text-primary);
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.15s;
+    }
+
+    .admin-btn-add-item:hover:not(:disabled) {
+        background: var(--text-primary);
+        color: var(--bg);
+    }
+
+    .admin-btn-add-item:disabled {
+        opacity: 0.4;
+        cursor: default;
+        border-color: var(--accent);
+    }
+
+    .drop-items-selected {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+    }
+
+    .drop-items-selected:empty {
+        display: none;
+    }
+
+    /* Rows are injected via JS, so these selectors are global to apply to them. */
+    :global(.drop-selected-row) {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 0.7rem 0.9rem;
+        border: 1px solid var(--accent);
+        border-bottom: none;
+        background: var(--bg);
+    }
+
+    :global(.drop-selected-row:last-child) {
+        border-bottom: 1px solid var(--accent);
+    }
+
+    :global(.drop-selected-name) {
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: var(--text-primary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+    }
+
+    :global(.drop-selected-right) {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        flex-shrink: 0;
+    }
+
+    :global(.drop-selected-stock) {
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        white-space: nowrap;
+    }
+
+    :global(.drop-selected-tag) {
+        font-size: 0.68rem;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--text-primary);
+        background: var(--accent);
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        white-space: nowrap;
+    }
+
+    :global(.drop-selected-preview) {
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: #6b4e16;
+        background: #f5e6b8;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+        white-space: nowrap;
+    }
+
+    :global(.drop-selected-edit),
+    :global(.drop-selected-remove) {
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 0.35rem 0.75rem;
+        border: 1px solid var(--accent);
+        background: none;
+        cursor: pointer;
+        transition: all 0.15s;
+        white-space: nowrap;
+    }
+
+    :global(.drop-selected-edit) {
+        color: var(--text-primary);
+    }
+
+    :global(.drop-selected-edit:hover) {
+        background: var(--text-primary);
+        color: var(--bg);
+        border-color: var(--text-primary);
+    }
+
+    :global(.drop-selected-remove) {
+        color: #9A3A1A;
+        border-color: #E8C4B4;
+    }
+
+    :global(.drop-selected-remove:hover) {
+        background: #9A3A1A;
+        color: var(--bg);
+        border-color: #9A3A1A;
+    }
+
+    /* ── Stock tab ─────────────────────────────────────────────── */
+    .admin-stock-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+        margin-bottom: 1.25rem;
+    }
+
+    .admin-stock-drop-name {
+        display: block;
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 1.4rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .admin-stock-drop-sub {
+        display: block;
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+    }
+
+    .admin-stock-total {
+        display: flex;
+        align-items: baseline;
+        gap: 0.45rem;
+        padding: 0.6rem 1.1rem;
+        border: 1px solid var(--accent);
+        background: var(--bg);
+    }
+
+    .admin-stock-total-num {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 1.6rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .admin-stock-total-label {
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+    }
+
+    .drop-items-empty {
+        font-size: 0.82rem;
+        color: var(--text-muted);
+        padding: 1.1rem;
+        text-align: center;
+        border: 1px dashed var(--accent);
+        background: var(--bg);
+    }
+
+    .drop-items-empty[hidden] {
+        display: none;
+    }
+
+    .admin-modal-overlay-top {
+        z-index: 220;
+    }
+
     /* ── Drag-to-reorder ─────────────────────────────────────── */
     .admin-th-drag {
         width: 2rem;
@@ -1482,6 +2243,10 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         max-width: 420px;
     }
 
+    .admin-modal-lg {
+        max-width: 720px;
+    }
+
     .admin-modal-header {
         display: flex;
         align-items: center;
@@ -1589,21 +2354,6 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
 
     .admin-checkbox-label input[type="checkbox"]:checked::before {
         transform: scale(1);
-    }
-
-    /* ── Mystery notice ───────────────────────────────────────── */
-    .admin-mystery-notice {
-        background: #FFF8F0;
-        border: 1px solid #E8C49A;
-        color: #7A4A1A;
-        font-size: 0.82rem;
-        line-height: 1.6;
-        padding: 0.75rem 1rem;
-        border-radius: 2px;
-    }
-
-    .admin-mystery-notice strong {
-        font-weight: 600;
     }
 
     .admin-field-hint {
@@ -1733,6 +2483,96 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
 
     .admin-delete-confirm-text strong {
         color: var(--text-primary);
+    }
+
+    .admin-delete-danger {
+        background: #FDF0EE;
+        border: 1px solid #D9836A;
+        border-left: 4px solid #9A3A1A;
+        padding: 1rem 1.1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .admin-delete-danger-title {
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: #9A3A1A;
+        letter-spacing: 0.01em;
+        margin-bottom: 0.5rem;
+    }
+
+    .admin-delete-danger-body {
+        font-size: 0.85rem;
+        color: #7A2E14;
+        line-height: 1.6;
+    }
+
+    .admin-delete-danger-body strong {
+        color: #9A3A1A;
+    }
+
+    /* These list items are created in JS, so they don't get Astro's scoped
+       attribute — the rules must be :global to apply to them. */
+    :global(.admin-delete-drop-list) {
+        margin: 0.7rem 0 0;
+        padding-left: 0;
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+    }
+
+    :global(.admin-delete-drop-list li) {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.85rem;
+        line-height: 1.5;
+        color: #7A2E14;
+    }
+
+    :global(.admin-delete-drop-list li)::before {
+        content: "•";
+        color: #9A3A1A;
+        flex-shrink: 0;
+    }
+
+    :global(.admin-delete-drop-active .admin-delete-drop-name) {
+        font-weight: 700;
+    }
+
+    :global(.admin-delete-active-tag) {
+        display: inline-block;
+        font-size: 0.6rem;
+        font-weight: 700;
+        letter-spacing: 0.12em;
+        background: #9A3A1A;
+        color: #fff;
+        padding: 0.12rem 0.45rem;
+        flex-shrink: 0;
+    }
+
+    .admin-delete-active-banner {
+        background: #9A3A1A;
+        color: #fff;
+        font-size: 0.85rem;
+        font-weight: 600;
+        line-height: 1.55;
+        padding: 0.85rem 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .admin-btn-delete-confirm-active {
+        animation: delete-pulse 1.4s ease-in-out infinite;
+    }
+
+    @keyframes delete-pulse {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(154, 58, 26, 0.5); }
+        50% { box-shadow: 0 0 0 5px rgba(154, 58, 26, 0); }
+    }
+
+    #delete-checking {
+        margin-bottom: 1.5rem;
     }
 
     /* ── Loading spinner ──────────────────────────────────────── */

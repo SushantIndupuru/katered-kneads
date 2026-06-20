@@ -5,10 +5,7 @@ export async function getMenuItems(): Promise<MenuItem[]> {
     const supabase = createServerClient();
     const { data: items, error } = await supabase.from('menu_items').select();
     if (error) throw error;
-    return ((items as MenuItem[]) ?? []).sort((a, b) => {
-        if (a.mystery !== b.mystery) return a.mystery ? -1 : 1;
-        return a.name.localeCompare(b.name);
-    });
+    return ((items as MenuItem[]) ?? []).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 export async function createMenuItem(
@@ -18,10 +15,8 @@ export async function createMenuItem(
     const { data: item, error } = await supabase
         .from('menu_items')
         .insert({
-            ...(data.id ? { id: data.id } : {}),
             name: data.name,
             description: data.description,
-            mystery: data.mystery ?? false,
         })
         .select()
         .single();

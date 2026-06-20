@@ -1,36 +1,57 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import { getNewItems } from '../lib/db';
-export const prerender = true
+import { getCurrentDrop, getDropItems } from '../lib/db';
+
+const currentDrop = await getCurrentDrop();
+const dropItems = currentDrop ? await getDropItems(currentDrop.id) : [];
 
 // ── Drop Configuration ────────────────────────────────────────
-// Set ORDERS_CURRENTLY_OPEN = true when the preorder window is live.
-const ORDERS_CURRENTLY_OPEN = false;
-const NEXT_DROP_OPEN_STR   = '2026-06-07T10:00:00';
-const NEXT_DROP_OPEN_LABEL = 'Saturday, June 7, 2026 at 10:00 AM';
-const ORDERS_CLOSE_LABEL   = 'June 8, 2026 at 11:59 PM';
-const DROP_NUMBER          = 7;
+const DATE_LABEL_OPTS = {
+  weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+  hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles',
+} as const;
+function formatDropDate(iso: string): string {
+  return new Date(iso).toLocaleString('en-US', DATE_LABEL_OPTS);
+}
+
+const now = Date.now();
+const openMs  = currentDrop ? new Date(currentDrop.openTime).getTime()  : null;
+const closeMs = currentDrop ? new Date(currentDrop.closeTime).getTime() : null;
+
+// Orders are open when we're inside the current drop's [open, close) window.
+const ORDERS_CURRENTLY_OPEN = openMs !== null && closeMs !== null && now >= openMs && now < closeMs;
+const BEFORE_OPEN = openMs !== null && now < openMs;
+// The countdown teaser only shows before open AND when the admin enabled it.
+const SHOW_COUNTDOWN = BEFORE_OPEN && (currentDrop?.showCountdown ?? false);
+
+// When open, show everything in the drop; before open, only the preview picks.
+const displayItems = ORDERS_CURRENTLY_OPEN ? dropItems : dropItems.filter(i => i.preview);
+
+const NEXT_DROP_OPEN_STR   = currentDrop?.openTime ?? null;
+const NEXT_DROP_OPEN_LABEL = currentDrop ? formatDropDate(currentDrop.openTime) : 'TBA';
+const ORDERS_CLOSE_LABEL   = currentDrop ? formatDropDate(currentDrop.closeTime) : 'TBA';
+const DROP_NAME            = currentDrop?.name ?? 'Next Drop';
 const ORDER_LINK           = 'https://kateredkneads.square.site/shop/katering-now/LQ62D5N5VAEN2X4RSTCFQTVK';
 const CDN_URL              = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL;
-
-const dropItems = await getNewItems();
 ---
 
 <Layout
-  title="Preorder — Katered Kneads"
-  description="Place a preorder for handmade cookies delivered to UC Berkeley or UC Davis. Preorders open every two weeks."
+  title="Order — Katered Kneads"
+  description="Order handmade cookies delivered to UC Berkeley or UC Davis. Ordering is open only during each drop window — about every two weeks."
   activePage="order"
 >
 
   <!-- Drop Header -->
   <section class="order-hero">
     <div class="container">
-      <p class="eyebrow">Preorders</p>
-      <h1 class="order-heading">Drop #{DROP_NUMBER}</h1>
+      <p class="eyebrow">Orders</p>
+      <h1 class="order-heading">{DROP_NAME}</h1>
       <p class="order-sub">
         {ORDERS_CURRENTLY_OPEN
           ? `Orders are open now — closes ${ORDERS_CLOSE_LABEL}. Limited quantities per item.`
-          : `Next drop opens ${NEXT_DROP_OPEN_LABEL}. Limited quantities — first come, first served.`
+          : SHOW_COUNTDOWN
+            ? `Next drop opens ${NEXT_DROP_OPEN_LABEL}. Limited quantities — first come, first served.`
+            : `Orders are currently closed. Check back soon — or join the SMS list below to get notified.`
         }
       </p>
     </div>
@@ -43,14 +64,14 @@ const dropItems = await getNewItems();
       {ORDERS_CURRENTLY_OPEN ? (
         <div class="status-panel status-open">
           <div class="status-badge status-badge-open">● Orders Open</div>
-          <h2 class="status-heading">Preorders are live!</h2>
+          <h2 class="status-heading">Ordering is live!</h2>
           <p class="status-text">Get your order in before the window closes. Limited quantities per item — once they're gone, they're gone.</p>
-          <p class="status-closes">Preorders close: <strong>{ORDERS_CLOSE_LABEL}</strong></p>
+          <p class="status-closes">Orders close: <strong>{ORDERS_CLOSE_LABEL}</strong></p>
           <a href={ORDER_LINK} target="_blank" rel="noopener noreferrer" class="btn-primary">Order Now on Square →</a>
         </div>
-      ) : (
+      ) : SHOW_COUNTDOWN ? (
         <div class="status-panel status-closed">
-          <div class="status-badge status-badge-closed">● Preorders Closed</div>
+          <div class="status-badge status-badge-closed">● Orders Closed</div>
           <h2 class="status-heading">Next drop opens in</h2>
           <p class="status-date">{NEXT_DROP_OPEN_LABEL}</p>
 
@@ -78,20 +99,27 @@ const dropItems = await getNewItems();
 
           <p class="status-cta-hint">Don't want to check back? <a href="#sms-signup">Join the SMS list ↓</a></p>
         </div>
+      ) : (
+        <div class="status-panel status-closed">
+          <div class="status-badge status-badge-closed">● Orders Closed</div>
+          <h2 class="status-heading">Orders are currently closed</h2>
+          <p class="status-text">There's no open ordering window right now. Join the SMS list to get a text the moment the next drop goes live.</p>
+          <p class="status-cta-hint"><a href="#sms-signup">Join the SMS list ↓</a></p>
+        </div>
       )}
 
     </div>
   </section>
 
-  <!-- Drop Items (shown when there are items in the DB) -->
-  {dropItems.length > 0 && (
+  <!-- Drop Items (shown when there are items to display) -->
+  {displayItems.length > 0 && (
     <section class="section section-tinted" id="drop-items">
       <div class="container">
 
         <div class="section-header">
           <p class="eyebrow">{ORDERS_CURRENTLY_OPEN ? `In This Drop` : `Drop Preview`}</p>
           <h2 class="section-heading">
-            {ORDERS_CURRENTLY_OPEN ? `What's in Drop #${DROP_NUMBER}` : `Sneak Peek — Drop #${DROP_NUMBER}`}
+            {ORDERS_CURRENTLY_OPEN ? `What's in ${DROP_NAME}` : `Sneak Peek — ${DROP_NAME}`}
           </h2>
           <p class="section-sub">
             {ORDERS_CURRENTLY_OPEN
@@ -102,21 +130,18 @@ const dropItems = await getNewItems();
         </div>
 
         <div class="product-grid">
-          {dropItems.map(item => (
-            <div class={`product-card${item.menuItem.mystery ? ' product-card-mystery' : ''}`}>
+          {displayItems.map(item => (
+            <div class="product-card">
               <div class="product-card-image">
-                {item.menuItem.mystery
-                  ? <div class="mystery-placeholder">?</div>
-                  : <img src={CDN_URL + item.menuItem.id} alt={item.menuItem.name} loading="lazy" />
-                }
+                <img src={CDN_URL + item.menuItem.id} alt={item.menuItem.name} loading="lazy" />
                 <span class={`stock-badge ${ORDERS_CURRENTLY_OPEN ? 'stock-badge-available' : 'stock-badge-coming-soon'}`}>
                   {ORDERS_CURRENTLY_OPEN ? 'Limited' : 'Coming Soon'}
                 </span>
                 {item.tag && <span class="cookie-tag">{item.tag}</span>}
               </div>
               <div class="product-card-body">
-                <h3>{item.menuItem.mystery ? '???' : item.menuItem.name}</h3>
-                <p>{item.menuItem.mystery ? 'Revealed when orders open.' : item.menuItem.description}</p>
+                <h3>{item.menuItem.name}</h3>
+                <p>{item.menuItem.description}</p>
               </div>
             </div>
           ))}
@@ -143,7 +168,7 @@ const dropItems = await getNewItems();
             <p class="eyebrow">Never Miss a Drop</p>
             <h2 class="section-heading">Join the SMS List</h2>
             <p>
-              We text our list about 5 minutes before preorders open. Be first in before quantities sell out.
+              We text our list about 5 minutes before orders open. Be first in before quantities sell out.
             </p>
             <ul class="sms-benefits">
               <li>Text notification ~5 min before orders open</li>
@@ -206,16 +231,21 @@ const dropItems = await getNewItems();
     </div>
   </section>
 
-  <script define:vars={{ NEXT_DROP_OPEN_STR }}>
+  <script define:vars={{ NEXT_DROP_OPEN_STR, ORDERS_CLOSE_STR: currentDrop?.closeTime ?? null, ORDERS_CURRENTLY_OPEN }}>
     // ── Countdown Timer ───────────────────────────────────────────
-    var target = new Date(NEXT_DROP_OPEN_STR).getTime();
+    var target = NEXT_DROP_OPEN_STR ? new Date(NEXT_DROP_OPEN_STR).getTime() : NaN;
 
     function pad(n) { return String(n).padStart(2, '0'); }
 
     function updateCountdown() {
+      if (!target || isNaN(target)) return;
       var now  = Date.now();
       var diff = target - now;
-      if (diff <= 0) return;
+      // Window just opened — reload so the server re-renders the open state.
+      if (diff <= 0) {
+        window.location.reload();
+        return;
+      }
 
       var days    = Math.floor(diff / (1000 * 60 * 60 * 24));
       var hours   = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
@@ -236,6 +266,15 @@ const dropItems = await getNewItems();
     if (document.getElementById('cd-days')) {
       updateCountdown();
       setInterval(updateCountdown, 1000);
+    }
+
+    // While orders are open, reload once the close time passes so the
+    // server re-renders the closed state and next countdown.
+    if (ORDERS_CURRENTLY_OPEN && ORDERS_CLOSE_STR) {
+      var closeMs = new Date(ORDERS_CLOSE_STR).getTime();
+      setInterval(function () {
+        if (Date.now() >= closeMs) window.location.reload();
+      }, 1000);
     }
 
     // ── SMS Form ──────────────────────────────────────────────────

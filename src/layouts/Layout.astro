@@ -9,7 +9,7 @@ export interface Props {
 
 const {
   title = "Katered Kneads - Handmade Campus Cookies",
-  description = "Handmade, 100% scratch cookies delivered biweekly to UC Berkeley and UC Davis. Limited preorders open every two weeks.",
+  description = "Handmade, 100% scratch cookies delivered biweekly to UC Berkeley and UC Davis. Limited orders open every two weeks.",
   activePage = ""
 } = Astro.props;
 ---
@@ -31,7 +31,7 @@ const {
       <button class="mobile-nav-close" id="mobile-nav-close" aria-label="Close menu">✕</button>
       <a href="/" class="mobile-link">Home</a>
       <a href="/about" class="mobile-link">About</a>
-      <a href="/menu" class="mobile-link">Menu</a>
+      <a href="/menu" class="mobile-link">Our Treats</a>
       <a href="/order" class="mobile-link">Order</a>
     </div>
 
@@ -42,7 +42,7 @@ const {
 
         <nav class="nav-links" aria-label="Primary navigation">
           <a href="/about" class={activePage === 'about' ? 'nav-active' : ''}>About</a>
-          <a href="/menu" class={activePage === 'menu' ? 'nav-active' : ''}>Menu</a>
+          <a href="/menu" class={activePage === 'menu' ? 'nav-active' : ''}>Our Treats</a>
           <a href="/order" class={activePage === 'order' ? 'nav-active' : ''}>Order</a>
         </nav>
 
@@ -71,7 +71,7 @@ const {
       <div class="footer-inner">
         <div class="footer-newsletter">
           <p class="footer-newsletter-heading">Stay in the loop.</p>
-          <p class="footer-newsletter-sub">Follow us on Instagram for drop announcements and behind-the-scenes baking. Or join our SMS list to be texted the moment preorders open.</p>
+          <p class="footer-newsletter-sub">Follow us on Instagram for drop announcements and behind-the-scenes baking. Or join our SMS list to be texted the moment orders open.</p>
           <div class="footer-cta-row">
             <a href="https://www.instagram.com/Katered_Kneads" target="_blank" rel="noopener noreferrer" class="cta-link">Instagram @Katered_Kneads →</a>
             <a href="/order#sms-signup" class="cta-link">Join SMS List →</a>

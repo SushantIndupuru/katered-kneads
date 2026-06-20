@@ -1,13 +1,7 @@
 export interface MenuItem {
   id: string;
-  mystery: boolean;
   name: string;
   description: string;
-}
-
-export interface SpecialMenuItem {
-  menuItem: MenuItem;
-  tag: string;
 }
 
 export interface Drop {
@@ -15,6 +9,7 @@ export interface Drop {
   name: string;
   openTime: string;
   closeTime: string;
+  showCountdown: boolean;
 }
 
 export interface DropItem {
@@ -22,4 +17,15 @@ export interface DropItem {
   menuItemId: string;
   initialStock: number;
   consumedStock: number;
+  preview: boolean;
+  tag: string;
+}
+
+// A drop item joined with its menu item, ready for display.
+export interface DropItemWithMenu {
+  menuItem: MenuItem;
+  initialStock: number;
+  consumedStock: number;
+  preview: boolean;
+  tag: string;
 }
