@@ -22,10 +22,11 @@ const closeMs = currentDrop ? new Date(currentDrop.closeTime).getTime() : null;
 
 const ORDERS_CURRENTLY_OPEN = openMs !== null && closeMs !== null && now >= openMs && now < closeMs;
 const BEFORE_OPEN = openMs !== null && now < openMs;
-const SHOW_COUNTDOWN = BEFORE_OPEN && (currentDrop?.showCountdown ?? false);
+// An active drop always shows its countdown before it opens.
+const SHOW_COUNTDOWN = BEFORE_OPEN;
 
 // Show the drop bar / upcoming section only when there's something to announce:
-// either orders are live, or the admin enabled the countdown teaser.
+// either orders are live, or there's an upcoming drop counting down.
 const SHOW_DROP = ORDERS_CURRENTLY_OPEN || SHOW_COUNTDOWN;
 const displayItems = ORDERS_CURRENTLY_OPEN ? dropItems : dropItems.filter(i => i.preview);
 
@@ -42,7 +43,7 @@ const CDN_URL              = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL;
     <div class={`drop-bar${ORDERS_CURRENTLY_OPEN ? ' drop-bar-open' : ''}`}>
       {ORDERS_CURRENTLY_OPEN
         ? <span>● Orders are <strong>OPEN NOW</strong> — closes {ORDERS_CLOSE_LABEL} <a href="/order">Order Now →</a></span>
-        : <span>{DROP_NAME} opens <strong>{NEXT_DROP_OPEN_LABEL}</strong> <a href="/order">Get Notified →</a></span>
+        : <span>{DROP_NAME} opens <strong>{NEXT_DROP_OPEN_LABEL}</strong> <a href="/order">See Details →</a></span>
       }
     </div>
   )}
@@ -119,10 +120,7 @@ const CDN_URL              = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL;
       ) : (
         <div class="drop-placeholder">
           <p class="eyebrow">Menu Dropping Soon</p>
-          <p>Items for {DROP_NAME} will be revealed when orders open. Join the SMS list to be the first to know.</p>
-          <div style="margin-top: 1.5rem;">
-            <a href="/order#sms-signup" class="btn-primary">Join SMS List →</a>
-          </div>
+          <p>Items for {DROP_NAME} will be revealed when orders open. Check back soon to be the first to know.</p>
         </div>
       )}
 
@@ -150,7 +148,7 @@ const CDN_URL              = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL;
           <div class="how-step-number">01</div>
           <div class="how-step-content">
             <h3>Watch for the Drop</h3>
-            <p>Orders open once every two weeks. <a href="/order#sms-signup">Join our SMS list</a> to get a text ~5 minutes before orders go live.</p>
+            <p>Orders open once every two weeks. Follow us on <a href="https://www.instagram.com/Katered_Kneads" target="_blank" rel="noopener noreferrer">Instagram</a> to know the moment orders go live.</p>
           </div>
         </div>
         <div class="how-step">
@@ -163,15 +161,15 @@ const CDN_URL              = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL;
         <div class="how-step">
           <div class="how-step-number">03</div>
           <div class="how-step-content">
-            <h3>Choose Your Campus</h3>
-            <p>Select pickup at UC Davis or UC Berkeley. Exact location and time confirmed with each drop.</p>
+            <h3>Check Out</h3>
+            <p>Each drop has its own pickup spot. Place your order and the exact address is sent to your email and shown on your confirmation.</p>
           </div>
         </div>
         <div class="how-step">
           <div class="how-step-number">04</div>
           <div class="how-step-content">
             <h3>Pick Up Fresh</h3>
-            <p>Grab your freshly baked order on campus. Baked to order — never sitting on a shelf.</p>
+            <p>Grab your freshly baked order at the drop's pickup spot. Baked to order — never sitting on a shelf.</p>
           </div>
         </div>
       </div>

@@ -1,0 +1,228 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { getOrderByCheckoutSession } from '../../lib/db';
+import { finalizeOrderIfPaid } from '../../lib/fulfillment';
+
+const sessionId = Astro.url.searchParams.get('session_id');
+// We retry a couple of times client-side; cap it so we never loop forever.
+const attempt = Number(Astro.url.searchParams.get('attempt') ?? '0') || 0;
+
+let order = null;
+if (sessionId) {
+  try {
+    // Don't depend on the webhook — confirm with Stripe and finalize the order
+    // here too (idempotent). This is what unsticks the success page.
+    const result = await finalizeOrderIfPaid(sessionId);
+    order = result.order;
+  } catch (err) {
+    console.error('Failed to finalize/load order for success page:', err);
+    try {
+      order = await getOrderByCheckoutSession(sessionId);
+    } catch {}
+  }
+}
+
+const paid = order?.status === 'paid' || order?.status === 'fulfilled';
+// Orders are only created once paid, so a missing order right after returning
+// from Stripe usually means the payment is still settling (e.g. async payment
+// methods). Keep waiting for a few tries before giving up.
+const processing = !paid && attempt < 3 && !!sessionId;
+
+function money(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+const PICKUP_FMT = new Intl.DateTimeFormat('en-US', {
+  weekday: 'long', month: 'long', day: 'numeric',
+  hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles',
+});
+const pickupTimeLabel = order?.pickupTime ? PICKUP_FMT.format(new Date(order.pickupTime)) : null;
+---
+
+<Layout
+  title="Order Confirmed — Katered Kneads"
+  description="Your Katered Kneads order is confirmed."
+  activePage="order"
+>
+  <section class="section order-success-section">
+    <div class="container">
+      {paid && order ? (
+        <div class="success-panel">
+          <div class="success-check" aria-hidden="true">✓</div>
+          <h1 class="success-heading">Order confirmed!</h1>
+          <p class="success-sub">Thanks, {order.customerName}. We've emailed your receipt and pickup code to <strong>{order.customerEmail}</strong>.</p>
+
+          <div class="pickup-code-box">
+            <p class="pickup-code-label">Your Pickup Code</p>
+            <p class="pickup-code">{order.pickupCode}</p>
+          </div>
+
+          <p class="success-instructions">
+            Bring this code with you{pickupTimeLabel ? ` on ${pickupTimeLabel}` : ' on pickup day'}{order.pickupLocation ? ` in ${order.pickupLocation}` : ''}.
+          </p>
+
+          {(order.pickupAddress || pickupTimeLabel) && (
+            <div class="pickup-address-box">
+              {pickupTimeLabel && (
+                <>
+                  <p class="pickup-address-label">Pickup Time</p>
+                  <p class="pickup-address">{pickupTimeLabel}</p>
+                </>
+              )}
+              {order.pickupAddress && (
+                <>
+                  <p class="pickup-address-label">Pickup Address</p>
+                  <p class="pickup-address">{order.pickupAddress}</p>
+                </>
+              )}
+            </div>
+          )}
+
+          <div class="success-summary">
+            <h2>Order Summary</h2>
+            <ul class="success-lines">
+              {order.items.map(i => (
+                <li>
+                  <span>{i.quantity}× {i.nameSnapshot}</span>
+                  <span>{money(i.unitPriceCents * i.quantity)}</span>
+                </li>
+              ))}
+            </ul>
+            {order.tipCents > 0 && (
+              <>
+                <div class="success-subtotal">
+                  <span>Subtotal</span>
+                  <span>{money(order.subtotalCents)}</span>
+                </div>
+                <div class="success-subtotal">
+                  <span>Tip</span>
+                  <span>{money(order.tipCents)}</span>
+                </div>
+              </>
+            )}
+            <div class="success-total">
+              <span>Total</span>
+              <span>{money(order.subtotalCents + order.tipCents)}</span>
+            </div>
+          </div>
+
+          <a href="/menu" class="btn-primary">Back to the Menu →</a>
+        </div>
+      ) : processing ? (
+        <div class="success-panel" id="processing-panel" data-session={sessionId}>
+          <div class="success-check success-check-pending" aria-hidden="true">…</div>
+          <h1 class="success-heading">Finishing up your order</h1>
+          <p class="success-sub">Your payment went through! We're generating your pickup code now — this only takes a moment. Your confirmation email is on its way.</p>
+          <p class="success-instructions">This page will refresh automatically.</p>
+        </div>
+      ) : (
+        <div class="success-panel">
+          <div class="success-check success-check-error" aria-hidden="true">!</div>
+          <h1 class="success-heading">We couldn't find that order</h1>
+          <p class="success-sub">If you were charged, your confirmation email will still arrive with your pickup code. Otherwise, please try ordering again.</p>
+          <a href="/order" class="btn-primary">Back to Ordering →</a>
+        </div>
+      )}
+    </div>
+  </section>
+
+  <script is:inline define:vars={{ attempt, paid }}>
+    window.__ORDER_PAID__ = paid;
+    // While the payment settles, retry a few times by reloading with an
+    // incrementing attempt counter, then give up gracefully.
+    var panel = document.getElementById('processing-panel');
+    if (panel) {
+      setTimeout(function () {
+        var url = new URL(window.location.href);
+        url.searchParams.set('attempt', String((attempt || 0) + 1));
+        window.location.replace(url.toString());
+      }, 2500);
+    }
+  </script>
+
+  <script>
+    import { clearCart } from '../../lib/cart';
+    // Order placed successfully — empty the cart so it doesn't linger.
+    if ((window as any).__ORDER_PAID__) clearCart();
+  </script>
+
+  <style>
+    .order-success-section { min-height: 60vh; display: flex; align-items: center; }
+    .success-panel {
+      max-width: 540px;
+      margin: 0 auto;
+      text-align: center;
+    }
+    .success-check {
+      width: 64px;
+      height: 64px;
+      line-height: 64px;
+      border-radius: 50%;
+      background: #1f8a4c;
+      color: #fff;
+      font-size: 2rem;
+      margin: 0 auto 1.25rem;
+    }
+    .success-check-pending { background: #b8932f; }
+    .success-check-error { background: #b00020; }
+    .success-heading { margin: 0 0 0.5rem; }
+    .success-sub { color: #6b6257; margin: 0 0 1.5rem; }
+    .pickup-code-box {
+      background: var(--color-surface, #f6f2ec);
+      border-radius: 14px;
+      padding: 1.5rem;
+      margin: 0 auto 1.25rem;
+    }
+    .pickup-code-label {
+      margin: 0 0 0.25rem;
+      font-size: 0.8rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #8a7a66;
+    }
+    .pickup-code {
+      margin: 0;
+      font-size: 2.5rem;
+      font-weight: 700;
+      letter-spacing: 0.18em;
+    }
+    .success-instructions { margin: 0 0 1.25rem; }
+    .pickup-address-box {
+      background: var(--color-surface, #f6f2ec);
+      border-radius: 14px;
+      padding: 1.25rem;
+      margin: 0 auto 2rem;
+    }
+    .pickup-address-label {
+      margin: 0 0 0.25rem;
+      font-size: 0.8rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #8a7a66;
+    }
+    .pickup-address-label:not(:first-child) { margin-top: 1rem; }
+    .pickup-address { margin: 0; font-size: 1.15rem; font-weight: 600; white-space: pre-line; }
+    .success-summary {
+      text-align: left;
+      border-top: 1px solid var(--color-border, #e4ddd2);
+      padding-top: 1.25rem;
+      margin-bottom: 2rem;
+    }
+    .success-summary h2 { font-size: 1.1rem; margin: 0 0 0.75rem; }
+    .success-lines { list-style: none; padding: 0; margin: 0 0 0.75rem; }
+    .success-lines li { display: flex; justify-content: space-between; padding: 0.35rem 0; }
+    .success-subtotal {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.2rem 0;
+      color: #6b6257;
+    }
+    .success-total {
+      display: flex;
+      justify-content: space-between;
+      font-weight: 700;
+      border-top: 1px solid var(--color-border, #e4ddd2);
+      padding-top: 0.75rem;
+    }
+  </style>
+</Layout>

@@ -1,6 +1,6 @@
 ---
 import '../styles/global.css';
-import {getMenuItems, getDrops, getCurrentDropId, getDropItemCounts, getDrop, getDropItems} from '../lib/db';
+import {getMenuItems, getActiveDrop, getArchivedDrops, getDropItemCounts, getDropItems} from '../lib/db';
 import {createAnonClient} from '../lib/supabase';
 import type {MenuItem, Drop, DropItemWithMenu} from '../types/db-types.ts';
 
@@ -16,8 +16,8 @@ if (authError || !authUser) {
 }
 
 let items: MenuItem[] = [];
-let drops: Drop[] = [];
-let currentDropId: string | null = null;
+let activeDrop: Drop | null = null;
+let olderDrops: Drop[] = [];
 let fetchError = '';
 
 try {
@@ -27,13 +27,13 @@ try {
 }
 
 try {
-    drops = await getDrops();
+    activeDrop = await getActiveDrop();
 } catch (e) {
     // non-fatal
 }
 
 try {
-    currentDropId = await getCurrentDropId();
+    olderDrops = await getArchivedDrops();
 } catch (e) {
     // non-fatal
 }
@@ -51,42 +51,39 @@ const dropDateFmt = new Intl.DateTimeFormat('en-US', {
 });
 const now = Date.now();
 
-const dropRows = drops.map(drop => {
+type DropStatus = 'draft' | 'upcoming' | 'live' | 'closed';
+function dropStatus(drop: Drop): DropStatus {
+    if (!drop.announcedAt) return 'draft';
     const open = new Date(drop.openTime).getTime();
     const close = new Date(drop.closeTime).getTime();
-    const status = now < open ? 'upcoming' : now <= close ? 'live' : 'closed';
-    return {
-        id: drop.id,
-        name: drop.name,
-        openLabel: dropDateFmt.format(new Date(drop.openTime)),
-        closeLabel: dropDateFmt.format(new Date(drop.closeTime)),
-        status,
-        isCurrent: drop.id === currentDropId,
-        itemCount: dropItemCounts[drop.id] ?? 0,
-        openTime: drop.openTime,
-        closeTime: drop.closeTime,
-        showCountdown: drop.showCountdown,
-    };
-});
+    if (now < open) return 'upcoming';
+    if (now < close) return 'live';
+    return 'closed';
+}
+const STATUS_LABEL: Record<DropStatus, string> = {
+    draft: 'Draft', upcoming: 'Announced', live: 'Live', closed: 'Closed',
+};
 
-// ── Stock (current drop) ──────────────────────────────────────
-// For now this just reflects the total stock set on each drop item.
-// Ordering data (consumed / remaining) will be layered in later.
-const currentDrop: Drop | null = currentDropId ? await getDrop(currentDropId).catch(() => null) : null;
-let currentDropItems: DropItemWithMenu[] = [];
-if (currentDrop) {
+// ── Active drop ───────────────────────────────────────────────
+let activeDropItems: DropItemWithMenu[] = [];
+if (activeDrop) {
     try {
-        currentDropItems = await getDropItems(currentDrop.id);
+        activeDropItems = await getDropItems(activeDrop.id);
     } catch (e) {
         // non-fatal
     }
 }
+const activeStatus: DropStatus | null = activeDrop ? dropStatus(activeDrop) : null;
 
-const stockRows = currentDropItems.map(item => ({
-    name: item.menuItem.name,
-    totalStock: item.initialStock,
+const olderRows = olderDrops.map(drop => ({
+    id: drop.id,
+    name: drop.name,
+    openLabel: dropDateFmt.format(new Date(drop.openTime)),
+    closeLabel: dropDateFmt.format(new Date(drop.closeTime)),
+    itemCount: dropItemCounts[drop.id] ?? 0,
+    openTime: drop.openTime,
+    closeTime: drop.closeTime,
 }));
-const stockTotal = stockRows.reduce((sum, r) => sum + r.totalStock, 0);
 
 const user = authUser as { email?: string };
 const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string;
@@ -122,6 +119,25 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
             </svg>
             Dashboard
         </a>
+        <a href="/admin/stock" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                <line x1="12" y1="22.08" x2="12" y2="12"/>
+            </svg>
+            Stock
+        </a>
+        <a href="/admin/pos" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="3" width="20" height="14" rx="2"/>
+                <line x1="2" y1="9" x2="22" y2="9"/>
+                <line x1="8" y1="21" x2="16" y2="21"/>
+                <line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+            Point of Sale
+        </a>
         <a href="/menu" target="_blank" class="admin-nav-link">
             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
                  stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -156,11 +172,8 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     <!-- Tab bar -->
     <div class="admin-tabs" data-items-total={items.length}>
         <button class="admin-tab admin-tab-active" data-tab="menu-items">Menu Items</button>
-        <button class="admin-tab" data-tab="drops">
-            Drops
-            {drops.length > 0 && <span class="admin-tab-count">{drops.length}</span>}
-        </button>
-        <button class="admin-tab" data-tab="stock">Stock</button>
+        <button class="admin-tab" data-tab="drops">Drops</button>
+        <button class="admin-tab" data-tab="orders">Orders</button>
     </div>
 
     {fetchError && (
@@ -176,6 +189,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
                         <tr>
                             <th>Name</th>
                             <th>Description</th>
+                            <th>Price</th>
                             <th>Image</th>
                             <th>Actions</th>
                         </tr>
@@ -185,6 +199,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
                                 <tr data-id={item.id}>
                                     <td class="admin-td-name">{item.name}</td>
                                     <td class="admin-td-desc">{item.description || '—'}</td>
+                                    <td class="admin-td-price">${item.price.toFixed(2)}</td>
                                     <td class="admin-td-image">
                                         <a href={storageUrl + item.id} target="_blank" class="admin-image-thumb-link"
                                            title={storageUrl + item.id}>
@@ -198,6 +213,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
                                                     data-id={item.id}
                                                     data-name={item.name}
                                                     data-description={item.description}
+                                                    data-price={item.price}
                                                     data-image={storageUrl + item.id}
                                             >Edit
                                             </button>
@@ -212,100 +228,264 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
 
     <!-- Drops tab -->
     <div id="tab-drops" class="admin-tab-panel" hidden>
-        <div class="admin-table-wrap">
-            {drops.length === 0 ? (
-                    <div class="admin-empty">No drops yet. Create one below.</div>) : (
-                    <table class="admin-table">
-                        <thead>
-                        <tr>
-                            <th>Name</th>
-                            <th>Opens</th>
-                            <th>Closes</th>
-                            <th>Items</th>
-                            <th>Status</th>
-                            <th>Current</th>
-                            <th>Actions</th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        {dropRows.map(drop => (
-                                <tr data-id={drop.id} class={drop.isCurrent ? 'admin-drop-row-current' : ''}>
-                                    <td class="admin-td-name">{drop.name}</td>
-                                    <td class="admin-td-desc">{drop.openLabel}</td>
-                                    <td class="admin-td-desc">{drop.closeLabel}</td>
-                                    <td>{drop.itemCount}</td>
-                                    <td>
-                                        <span class={`admin-drop-status admin-drop-${drop.status}`}>{drop.status}</span>
-                                    </td>
-                                    <td>
-                                        {drop.isCurrent
-                                            ? <span class="admin-drop-current-badge">✦ Current</span>
-                                            : <span class="admin-no-image">—</span>}
-                                    </td>
-                                    <td class="admin-td-actions">
-                                        <div class="admin-td-actions-inner">
-                                            {drop.isCurrent
-                                                ? <button class="admin-btn-unset-current" data-id={drop.id} data-name={drop.name}>Unset current</button>
-                                                : <button class="admin-btn-set-current" data-id={drop.id} data-name={drop.name}>Set as current</button>}
-                                            <button
-                                                class="admin-btn-drop-edit"
-                                                data-id={drop.id}
-                                                data-name={drop.name}
-                                                data-open={drop.openTime}
-                                                data-close={drop.closeTime}
-                                                data-current={String(drop.isCurrent)}
-                                                data-countdown={String(drop.showCountdown)}
-                                            >Edit</button>
-                                            <button class="admin-btn-drop-delete" data-id={drop.id} data-name={drop.name}>Delete</button>
-                                        </div>
-                                    </td>
-                                </tr>))}
-                        </tbody>
-                    </table>)}
-        </div>
-        <div class="admin-bs-add-row">
-            <button class="btn-primary" id="open-drop-modal">+ Create Drop</button>
-        </div>
-    </div>
-
-    <!-- Stock tab -->
-    <div id="tab-stock" class="admin-tab-panel" hidden>
-        {!currentDrop ? (
-                <div class="admin-empty">No current drop set. Set a drop as current to manage its stock.</div>
-        ) : (
-                <>
-                    <div class="admin-stock-head">
-                        <div>
-                            <span class="admin-stock-drop-name">{currentDrop.name}</span>
-                            <span class="admin-stock-drop-sub">Current drop</span>
+        {activeDrop && activeStatus ? (
+                <div class="drop-detail">
+                    <div class="drop-detail-head">
+                        <div class="drop-detail-meta">
+                            <span class={`admin-drop-status admin-drop-${activeStatus}`}>{STATUS_LABEL[activeStatus]}</span>
+                            <h2 class="drop-detail-name">{activeDrop.name}</h2>
+                            <p class="drop-detail-schedule">
+                                Opens {dropDateFmt.format(new Date(activeDrop.openTime))}
+                                <span class="drop-detail-sep">·</span>
+                                Closes {dropDateFmt.format(new Date(activeDrop.closeTime))}
+                                {activeDrop.pickupTime && (
+                                    <>
+                                        <span class="drop-detail-sep">·</span>
+                                        Pickup {dropDateFmt.format(new Date(activeDrop.pickupTime))}
+                                    </>
+                                )}
+                            </p>
                         </div>
-                        <div class="admin-stock-total">
-                            <span class="admin-stock-total-num">{stockTotal}</span>
-                            <span class="admin-stock-total-label">total stock</span>
+                        <div class="drop-detail-actions">
+                            {activeStatus === 'draft' && (
+                                    <button class="btn-primary admin-btn-announce" data-id={activeDrop.id}>Announce drop</button>)}
+                            {activeStatus === 'upcoming' && (
+                                    <button class="admin-btn-unannounce" data-id={activeDrop.id}>Unannounce</button>)}
+                            {activeStatus !== 'closed' && (
+                                    <button
+                                            class="admin-btn-drop-edit"
+                                            data-id={activeDrop.id}
+                                            data-name={activeDrop.name}
+                                            data-open={activeDrop.openTime}
+                                            data-close={activeDrop.closeTime}
+                                    >Edit</button>)}
+                            {activeStatus === 'draft' && (
+                                    <button class="admin-btn-drop-delete" data-id={activeDrop.id} data-name={activeDrop.name}>Delete</button>)}
+                            {activeStatus === 'closed' && (
+                                    <button class="btn-primary admin-btn-archive" data-id={activeDrop.id} data-name={activeDrop.name}>Archive &amp; finish</button>)}
                         </div>
                     </div>
+
+                    {(activeStatus === 'upcoming' || activeStatus === 'live') && (
+                            <div class="drop-detail-countdown"
+                                 data-target={activeStatus === 'live' ? activeDrop.closeTime : activeDrop.openTime}>
+                                <span class="drop-cd-label">{activeStatus === 'live' ? 'Closes in' : 'Opens in'}</span>
+                                <span class="drop-cd-clock" id="drop-cd-clock">--:--:--</span>
+                            </div>)}
+
+                    {activeStatus === 'draft' && (
+                            <div class="admin-alert admin-alert-info">
+                                This drop is a private draft. Announce it to start the public countdown and reveal preview items.
+                            </div>)}
+
                     <div class="admin-table-wrap">
-                        {stockRows.length === 0 ? (
-                                <div class="admin-empty">This drop has no items yet. Add items to the drop to set stock.</div>
+                        {activeDropItems.length === 0 ? (
+                                <div class="admin-empty">No items in this drop yet. Use “Edit items” to add some.</div>
                         ) : (
                                 <table class="admin-table">
                                     <thead>
                                     <tr>
                                         <th>Item</th>
-                                        <th>Total Stock</th>
+                                        <th>Online stock</th>
+                                        <th>In-person stock</th>
+                                        <th>Preview</th>
+                                        <th>Tag</th>
                                     </tr>
                                     </thead>
                                     <tbody>
-                                    {stockRows.map(row => (
+                                    {activeDropItems.map(item => (
                                             <tr>
-                                                <td class="admin-td-name">{row.name}</td>
-                                                <td>{row.totalStock}</td>
+                                                <td class="admin-td-name">{item.menuItem.name}</td>
+                                                <td>{item.initialStock}</td>
+                                                <td>{item.inPersonStock > 0
+                                                    ? item.inPersonStock
+                                                    : <span class="admin-no-image">—</span>}</td>
+                                                <td>{item.preview
+                                                    ? <span class="drop-selected-preview">★ preview</span>
+                                                    : <span class="admin-no-image">—</span>}</td>
+                                                <td>{item.tag
+                                                    ? <span class="admin-bs-tag">{item.tag}</span>
+                                                    : <span class="admin-no-image">—</span>}</td>
                                             </tr>))}
                                     </tbody>
                                 </table>)}
                     </div>
-                </>
+                    <div class="admin-bs-add-row">
+                        <button
+                                class="btn-primary admin-btn-drop-edit"
+                                data-id={activeDrop.id}
+                                data-name={activeDrop.name}
+                                data-open={activeDrop.openTime}
+                                data-close={activeDrop.closeTime}
+                        >Edit items</button>
+                    </div>
+                </div>
+        ) : (
+                <div class="drop-detail-empty">
+                    <div class="admin-empty">No active drop right now. Create one to start scheduling your next drop.</div>
+                    <div class="admin-bs-add-row">
+                        <button class="btn-primary" id="open-drop-modal">+ Create Drop</button>
+                    </div>
+                </div>
         )}
+
+        <!-- Older drops -->
+        <div class="drop-older-section">
+            <h3 class="drop-older-title">Older drops</h3>
+            <div class="admin-table-wrap">
+                {olderRows.length === 0 ? (
+                        <div class="admin-empty">No past drops yet.</div>
+                ) : (
+                        <table class="admin-table">
+                            <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Opened</th>
+                                <th>Closed</th>
+                                <th>Items</th>
+                                <th>Actions</th>
+                            </tr>
+                            </thead>
+                            <tbody>
+                            {olderRows.map(drop => (
+                                    <tr data-id={drop.id}>
+                                        <td class="admin-td-name">{drop.name}</td>
+                                        <td class="admin-td-desc">{drop.openLabel}</td>
+                                        <td class="admin-td-desc">{drop.closeLabel}</td>
+                                        <td>{drop.itemCount}</td>
+                                        <td class="admin-td-actions">
+                                            <div class="admin-td-actions-inner">
+                                                <button
+                                                        class="admin-btn-drop-edit"
+                                                        data-id={drop.id}
+                                                        data-name={drop.name}
+                                                        data-open={drop.openTime}
+                                                        data-close={drop.closeTime}
+                                                >View</button>
+                                                <button class="admin-btn-drop-delete" data-id={drop.id} data-name={drop.name}>Delete</button>
+                                            </div>
+                                        </td>
+                                    </tr>))}
+                            </tbody>
+                        </table>)}
+            </div>
+        </div>
+    </div>
+
+    <!-- Orders tab -->
+    <div id="tab-orders" class="admin-tab-panel" hidden data-archived-drops={JSON.stringify(olderDrops.map(d => ({id: d.id, name: d.name})))}>
+        <!-- Online orders -->
+        <div class="orders-section">
+            <div class="orders-section-head">
+                <h3 class="orders-section-title">Online orders</h3>
+                <span class="orders-section-count" id="orders-online-count"></span>
+            </div>
+            <p class="orders-section-sub">Paid through the website — customers pick up with a code.</p>
+            <div id="orders-loading" class="admin-empty">Loading orders…</div>
+            <div id="orders-error" class="admin-alert admin-alert-error" hidden></div>
+            <div class="admin-table-wrap" id="orders-table-wrap" hidden>
+                <table class="admin-table">
+                    <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Code</th>
+                        <th>Customer</th>
+                        <th>Pickup</th>
+                        <th>Items</th>
+                        <th>Total</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                    </thead>
+                    <tbody id="orders-tbody"></tbody>
+                </table>
+            </div>
+            <div id="orders-empty" class="admin-empty" hidden>No online orders yet.</div>
+        </div>
+
+        <!-- In-person sales -->
+        <div class="orders-section">
+            <div class="orders-section-head">
+                <h3 class="orders-section-title">In-person sales</h3>
+                <span class="orders-section-count" id="inperson-count"></span>
+            </div>
+            <p class="orders-section-sub">Walk-up sales taken at the counter through the Point of Sale.</p>
+            <div id="inperson-loading" class="admin-empty">Loading in-person sales…</div>
+            <div id="inperson-error" class="admin-alert admin-alert-error" hidden></div>
+            <div class="admin-table-wrap" id="inperson-table-wrap" hidden>
+                <table class="admin-table">
+                    <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Items</th>
+                        <th>Total</th>
+                        <th>Reference</th>
+                    </tr>
+                    </thead>
+                    <tbody id="inperson-tbody"></tbody>
+                </table>
+            </div>
+            <div id="inperson-empty" class="admin-empty" hidden>No in-person sales yet.</div>
+        </div>
+
+        <!-- Archived orders (from archived drops) -->
+        <details class="orders-archived" id="orders-archived" hidden>
+            <summary class="orders-archived-summary">
+                <span class="orders-archived-title">Archived</span>
+                <span class="orders-section-count" id="orders-archived-count"></span>
+                <span class="orders-archived-sub">Orders and sales from archived drops.</span>
+            </summary>
+
+            <!-- Archived online orders -->
+            <div class="orders-section">
+                <div class="orders-section-head">
+                    <h3 class="orders-section-title">Online orders</h3>
+                    <span class="orders-section-count" id="orders-archived-online-count"></span>
+                </div>
+                <div class="admin-table-wrap" id="orders-archived-table-wrap" hidden>
+                    <table class="admin-table">
+                        <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Drop</th>
+                            <th>Code</th>
+                            <th>Customer</th>
+                            <th>Pickup</th>
+                            <th>Items</th>
+                            <th>Total</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                        </thead>
+                        <tbody id="orders-archived-tbody"></tbody>
+                    </table>
+                </div>
+                <div id="orders-archived-empty" class="admin-empty" hidden>No archived online orders.</div>
+            </div>
+
+            <!-- Archived in-person sales -->
+            <div class="orders-section">
+                <div class="orders-section-head">
+                    <h3 class="orders-section-title">In-person sales</h3>
+                    <span class="orders-section-count" id="inperson-archived-count"></span>
+                </div>
+                <div class="admin-table-wrap" id="inperson-archived-table-wrap" hidden>
+                    <table class="admin-table">
+                        <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Drop</th>
+                            <th>Items</th>
+                            <th>Total</th>
+                            <th>Reference</th>
+                        </tr>
+                        </thead>
+                        <tbody id="inperson-archived-tbody"></tbody>
+                    </table>
+                </div>
+                <div id="inperson-archived-empty" class="admin-empty" hidden>No archived in-person sales.</div>
+            </div>
+        </details>
     </div>
 </main>
 
@@ -325,6 +505,10 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
                 <label for="add-description" id="add-description-label">Description *</label>
                 <textarea id="add-description" name="description" rows="3"
                           placeholder="A brief description of the item…" required></textarea>
+            </div>
+            <div class="form-field">
+                <label for="add-price">Price (USD) *</label>
+                <input id="add-price" name="price" type="number" min="0" step="0.01" placeholder="0.00" required/>
             </div>
             <div class="form-field" id="add-image-field">
                 <label for="add-image">Image</label>
@@ -369,6 +553,10 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
             <div class="form-field" id="edit-description-field">
                 <label for="edit-description" id="edit-description-label">Description *</label>
                 <textarea id="edit-description" name="description" rows="3" required></textarea>
+            </div>
+            <div class="form-field">
+                <label for="edit-price">Price (USD) *</label>
+                <input id="edit-price" name="price" type="number" min="0" step="0.01" required/>
             </div>
             <div class="form-field" id="edit-image-field">
                 <label for="edit-image">Image</label>
@@ -442,17 +630,9 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         </div>
         <form class="admin-modal-form" id="drop-form">
             <input type="hidden" id="drop-id"/>
-            <div class="admin-form-row">
-                <div class="form-field">
-                    <label for="drop-name">Name *</label>
-                    <input id="drop-name" name="name" type="text" placeholder="e.g. Drop #8" required/>
-                </div>
-                <div class="form-field admin-checkbox-field drop-current-field">
-                    <label class="admin-checkbox-label">
-                        <input id="drop-set-current" name="setCurrent" type="checkbox"/>
-                        <span>Set as current drop</span>
-                    </label>
-                </div>
+            <div class="form-field">
+                <label for="drop-name">Name *</label>
+                <input id="drop-name" name="name" type="text" placeholder="e.g. Drop #8" required/>
             </div>
             <div class="admin-form-row">
                 <div class="form-field">
@@ -464,12 +644,17 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
                     <input id="drop-close" name="closeTime" type="datetime-local" required/>
                 </div>
             </div>
-            <div class="form-field admin-checkbox-field" id="drop-countdown-field">
-                <label class="admin-checkbox-label">
-                    <input id="drop-show-countdown" name="showCountdown" type="checkbox"/>
-                    <span>Show countdown on the site before it opens <span class="admin-field-hint">(teaser the drop while orders are still closed)</span></span>
-                </label>
-                <p class="admin-field-hint drop-pastopen-note" id="drop-countdown-pastnote" hidden>Past opening time — orders are already open, so the countdown no longer applies.</p>
+            <div class="form-field">
+                <label for="drop-pickup">Pickup date &amp; time <span class="admin-field-hint">(when the actual drop/pickup happens — can be after ordering closes)</span></label>
+                <input id="drop-pickup" name="pickupTime" type="datetime-local"/>
+            </div>
+            <div class="form-field">
+                <label for="drop-location-name">Pickup area <span class="admin-field-hint">(shown publicly before payment — keep it general, e.g. "Downtown Davis")</span></label>
+                <input id="drop-location-name" name="locationName" type="text" placeholder="e.g. Downtown Davis"/>
+            </div>
+            <div class="form-field">
+                <label for="drop-location-address">Exact address <span class="admin-field-hint">(private — only revealed to a customer after they pay)</span></label>
+                <textarea id="drop-location-address" name="locationAddress" rows="2" placeholder="e.g. 123 Main St, Davis, CA 95616"></textarea>
             </div>
             <div class="form-field">
                 <div class="drop-items-head">
@@ -511,10 +696,17 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
                     ))}
                 </select>
             </div>
-            <div class="form-field">
-                <label for="drop-item-stock-input">Initial stock *</label>
-                <input id="drop-item-stock-input" type="number" min="0" step="1" value="1"/>
+            <div class="admin-form-row">
+                <div class="form-field">
+                    <label for="drop-item-stock-input">Online stock *</label>
+                    <input id="drop-item-stock-input" type="number" min="0" step="1" value="1"/>
+                </div>
+                <div class="form-field">
+                    <label for="drop-item-inperson-input">In-person stock</label>
+                    <input id="drop-item-inperson-input" type="number" min="0" step="1" value="0"/>
+                </div>
             </div>
+            <p class="admin-field-hint">Online stock sells on the website; in-person stock is a separate pool you sell and track by hand.</p>
             <div class="form-field">
                 <label for="drop-item-tag-input">Tag <span class="admin-field-hint">(optional label, e.g. "Fan Favorite")</span></label>
                 <input id="drop-item-tag-input" type="text" placeholder="e.g. Fan Favorite"/>
@@ -549,6 +741,24 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
             <button type="button" class="admin-btn-cancel" id="cancel-drop-delete-modal">Cancel</button>
             <button type="button" class="admin-btn-delete-confirm" id="confirm-drop-delete">Delete</button>
             <span class="modal-spinner" id="drop-delete-spinner" hidden></span>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Order Confirm Modal -->
+<div class="admin-modal-overlay" id="order-delete-modal" hidden>
+    <div class="admin-modal admin-modal-sm">
+        <div class="admin-modal-header">
+            <h2 class="admin-modal-title">Delete Order</h2>
+            <button class="admin-modal-close" id="close-order-delete-modal">✕</button>
+        </div>
+        <p class="admin-delete-confirm-text">Are you sure you want to delete order <strong id="order-delete-name"></strong>?
+            Its items will be returned to the drop's stock. This cannot be undone.</p>
+        <div id="order-delete-error" class="admin-alert admin-alert-error" hidden></div>
+        <div class="admin-modal-actions">
+            <button type="button" class="admin-btn-cancel" id="cancel-order-delete-modal">Cancel</button>
+            <button type="button" class="admin-btn-delete-confirm" id="confirm-order-delete">Delete</button>
+            <span class="modal-spinner" id="order-delete-spinner" hidden></span>
         </div>
     </div>
 </div>
@@ -588,7 +798,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     }
 
     // Close on overlay click
-    ['add-modal', 'edit-modal', 'delete-modal', 'drop-modal', 'drop-delete-modal'].forEach(id => {
+    ['add-modal', 'edit-modal', 'delete-modal', 'drop-modal', 'drop-delete-modal', 'order-delete-modal'].forEach(id => {
         document.getElementById(id)?.addEventListener('click', (e) => {
             if (e.target === e.currentTarget) closeModal(id);
         });
@@ -603,7 +813,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
             picker.hidden = true;
             return;
         }
-        ['add-modal', 'edit-modal', 'delete-modal', 'drop-modal', 'drop-delete-modal'].forEach(id => {
+        ['add-modal', 'edit-modal', 'delete-modal', 'drop-modal', 'drop-delete-modal', 'order-delete-modal'].forEach(id => {
             const el = document.getElementById(id);
             if (el && !el.hidden) closeModal(id);
         });
@@ -624,21 +834,232 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         tabs.forEach(t => t.classList.toggle('admin-tab-active', t.dataset.tab === target));
         document.getElementById('tab-menu-items')!.hidden = target !== 'menu-items';
         document.getElementById('tab-drops')!.hidden = target !== 'drops';
-        document.getElementById('tab-stock')!.hidden = target !== 'stock';
+        document.getElementById('tab-orders')!.hidden = target !== 'orders';
         if (target === 'menu-items') {
             if (pageTitle) pageTitle.textContent = 'Menu Items';
             if (pageSub) pageSub.textContent = `${totalItems} total item${totalItems !== 1 ? 's' : ''}`;
             addItemBtn.hidden = false;
-        } else if (target === 'stock') {
-            if (pageTitle) pageTitle.textContent = 'Stock';
-            if (pageSub) pageSub.textContent = 'Total stock for the current drop';
+        } else if (target === 'orders') {
+            if (pageTitle) pageTitle.textContent = 'Orders';
+            if (pageSub) pageSub.textContent = 'Online orders and in-person sales';
             addItemBtn.hidden = true;
+            loadOrders();
+            loadInPersonSales();
         } else {
             if (pageTitle) pageTitle.textContent = 'Drops';
             if (pageSub) pageSub.textContent = 'Biweekly order windows';
             addItemBtn.hidden = true;
         }
     }
+
+    // ── Archived-drop lookup (orders/sales tied to these are filed away) ──
+    const archivedDropList: { id: string; name: string }[] = (() => {
+        try { return JSON.parse(document.getElementById('tab-orders')?.dataset.archivedDrops || '[]'); }
+        catch { return []; }
+    })();
+    const archivedDropNames = new Map<string, string>(archivedDropList.map(d => [d.id, d.name]));
+    const isArchivedDrop = (dropId: string | null | undefined) => dropId != null && archivedDropNames.has(dropId);
+
+    const ordersFmt = new Intl.DateTimeFormat('en-US', {
+        month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    });
+    const ordersEsc = (s: string) => s.replace(/[&<>"]/g, c =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] ?? c));
+
+    let archivedOnlineCount = 0;
+    let archivedInPersonCount = 0;
+    function refreshArchivedVisibility() {
+        const wrap = document.getElementById('orders-archived');
+        if (!wrap) return;
+        const total = archivedOnlineCount + archivedInPersonCount;
+        (wrap as HTMLDetailsElement).hidden = total === 0;
+        const countEl = document.getElementById('orders-archived-count');
+        if (countEl) countEl.textContent = total ? `${total}` : '';
+    }
+
+    // ── Orders (lazy-loaded on first tab open) ─────────────────
+    let ordersLoaded = false;
+    async function loadOrders() {
+        if (ordersLoaded) return;
+        ordersLoaded = true;
+        const loading = document.getElementById('orders-loading')!;
+        const errorEl = document.getElementById('orders-error')!;
+        const tableWrap = document.getElementById('orders-table-wrap')!;
+        const tbody = document.getElementById('orders-tbody')!;
+        const emptyEl = document.getElementById('orders-empty')!;
+        const archTableWrap = document.getElementById('orders-archived-table-wrap')!;
+        const archTbody = document.getElementById('orders-archived-tbody')!;
+        const archEmptyEl = document.getElementById('orders-archived-empty')!;
+
+        try {
+            const res = await fetch('/api/v1/orders');
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error ?? 'Failed to load orders');
+
+            loading.hidden = true;
+            const allOrders = data.orders ?? [];
+            const orders = allOrders.filter((o: any) => !isArchivedDrop(o.dropId));
+            const archived = allOrders.filter((o: any) => isArchivedDrop(o.dropId));
+
+            const renderRow = (o: any, withDrop: boolean) => {
+                const itemsLabel = (o.items ?? [])
+                    .map((i: any) => `${i.quantity}× ${ordersEsc(i.nameSnapshot)}`).join(', ');
+                const tipCents = o.tipCents ?? 0;
+                const total = '$' + ((o.subtotalCents + tipCents) / 100).toFixed(2)
+                    + (tipCents > 0 ? `<br><span class="admin-field-hint">incl. $${(tipCents / 100).toFixed(2)} tip</span>` : '');
+                const label = o.pickupCode ? ordersEsc(o.pickupCode) : ordersEsc(o.customerName);
+                const dropCell = withDrop
+                    ? `<td class="admin-td-desc">${ordersEsc(archivedDropNames.get(o.dropId) ?? '—')}</td>`
+                    : '';
+                return `<tr>
+                    <td class="admin-td-desc">${ordersFmt.format(new Date(o.createdAt))}</td>
+                    ${dropCell}
+                    <td class="admin-td-name">${o.pickupCode ? ordersEsc(o.pickupCode) : '—'}</td>
+                    <td>${ordersEsc(o.customerName)}<br><span class="admin-field-hint">${ordersEsc(o.customerEmail)}</span></td>
+                    <td>${ordersEsc(o.pickupLocation || '—')}</td>
+                    <td class="admin-td-desc">${itemsLabel}</td>
+                    <td>${total}</td>
+                    <td><span class="admin-drop-status admin-order-${o.status}">${o.status}</span></td>
+                    <td class="admin-td-actions">
+                        <button class="admin-btn-order-delete" data-id="${ordersEsc(o.id)}" data-label="${label}">Delete</button>
+                    </td>
+                </tr>`;
+            };
+
+            const countEl = document.getElementById('orders-online-count');
+            if (countEl) countEl.textContent = orders.length ? `${orders.length}` : '';
+            if (orders.length === 0) {
+                emptyEl.hidden = false;
+            } else {
+                tbody.innerHTML = orders.map((o: any) => renderRow(o, false)).join('');
+                tableWrap.hidden = false;
+            }
+
+            archivedOnlineCount = archived.length;
+            const archCountEl = document.getElementById('orders-archived-online-count');
+            if (archCountEl) archCountEl.textContent = archived.length ? `${archived.length}` : '';
+            if (archived.length === 0) {
+                archEmptyEl.hidden = false;
+            } else {
+                archTbody.innerHTML = archived.map((o: any) => renderRow(o, true)).join('');
+                archTableWrap.hidden = false;
+            }
+            refreshArchivedVisibility();
+        } catch (err) {
+            loading.hidden = true;
+            errorEl.textContent = err instanceof Error ? err.message : 'Failed to load orders';
+            errorEl.hidden = false;
+        }
+    }
+
+    // ── In-person sales (lazy-loaded on first tab open) ────────
+    let inPersonLoaded = false;
+    async function loadInPersonSales() {
+        if (inPersonLoaded) return;
+        inPersonLoaded = true;
+        const loading = document.getElementById('inperson-loading')!;
+        const errorEl = document.getElementById('inperson-error')!;
+        const tableWrap = document.getElementById('inperson-table-wrap')!;
+        const tbody = document.getElementById('inperson-tbody')!;
+        const emptyEl = document.getElementById('inperson-empty')!;
+        const archTableWrap = document.getElementById('inperson-archived-table-wrap')!;
+        const archTbody = document.getElementById('inperson-archived-tbody')!;
+        const archEmptyEl = document.getElementById('inperson-archived-empty')!;
+
+        try {
+            const res = await fetch('/api/v1/orders/in-person');
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error ?? 'Failed to load in-person sales');
+
+            loading.hidden = true;
+            const allSales = data.sales ?? [];
+            const sales = allSales.filter((s: any) => !isArchivedDrop(s.dropId));
+            const archived = allSales.filter((s: any) => isArchivedDrop(s.dropId));
+
+            const renderRow = (s: any, withDrop: boolean) => {
+                const itemsLabel = (s.items ?? [])
+                    .map((i: any) => `${i.quantity}× ${ordersEsc(i.nameSnapshot || 'Item')}`).join(', ');
+                const tipCents = s.tipCents ?? 0;
+                const total = '$' + ((s.subtotalCents + tipCents) / 100).toFixed(2)
+                    + (tipCents > 0 ? `<br><span class="admin-field-hint">incl. $${(tipCents / 100).toFixed(2)} tip</span>` : '');
+                const ref = s.stripePaymentIntentId ? ordersEsc(s.stripePaymentIntentId.slice(-8)) : '—';
+                const dropCell = withDrop
+                    ? `<td class="admin-td-desc">${ordersEsc(archivedDropNames.get(s.dropId) ?? '—')}</td>`
+                    : '';
+                return `<tr>
+                    <td class="admin-td-desc">${ordersFmt.format(new Date(s.createdAt))}</td>
+                    ${dropCell}
+                    <td class="admin-td-desc">${itemsLabel || '—'}</td>
+                    <td>${total}</td>
+                    <td><span class="admin-field-hint">${ref}</span></td>
+                </tr>`;
+            };
+
+            const countEl = document.getElementById('inperson-count');
+            if (countEl) countEl.textContent = sales.length ? `${sales.length}` : '';
+            if (sales.length === 0) {
+                emptyEl.hidden = false;
+            } else {
+                tbody.innerHTML = sales.map((s: any) => renderRow(s, false)).join('');
+                tableWrap.hidden = false;
+            }
+
+            archivedInPersonCount = archived.length;
+            const archCountEl = document.getElementById('inperson-archived-count');
+            if (archCountEl) archCountEl.textContent = archived.length ? `${archived.length}` : '';
+            if (archived.length === 0) {
+                archEmptyEl.hidden = false;
+            } else {
+                archTbody.innerHTML = archived.map((s: any) => renderRow(s, true)).join('');
+                archTableWrap.hidden = false;
+            }
+            refreshArchivedVisibility();
+        } catch (err) {
+            loading.hidden = true;
+            errorEl.textContent = err instanceof Error ? err.message : 'Failed to load in-person sales';
+            errorEl.hidden = false;
+        }
+    }
+
+    // ── Delete order (reverts stock) ───────────────────────────
+    let pendingOrderDeleteId: string | null = null;
+    const onOrderDeleteClick = (e: Event) => {
+        const btn = (e.target as HTMLElement).closest('.admin-btn-order-delete') as HTMLButtonElement | null;
+        if (!btn) return;
+        pendingOrderDeleteId = btn.dataset.id ?? null;
+        const nameEl = document.getElementById('order-delete-name');
+        if (nameEl) nameEl.textContent = btn.dataset.label ?? 'this order';
+        clearError('order-delete-error');
+        openModal('order-delete-modal');
+    };
+    document.getElementById('orders-tbody')?.addEventListener('click', onOrderDeleteClick);
+    document.getElementById('orders-archived-tbody')?.addEventListener('click', onOrderDeleteClick);
+    document.getElementById('close-order-delete-modal')?.addEventListener('click', () => closeModal('order-delete-modal'));
+    document.getElementById('cancel-order-delete-modal')?.addEventListener('click', () => closeModal('order-delete-modal'));
+
+    document.getElementById('confirm-order-delete')?.addEventListener('click', async () => {
+        if (!pendingOrderDeleteId) return;
+        clearError('order-delete-error');
+        const confirmBtn = document.getElementById('confirm-order-delete') as HTMLButtonElement;
+        const spinner = document.getElementById('order-delete-spinner') as HTMLElement;
+        confirmBtn.disabled = true;
+        spinner.hidden = false;
+        try {
+            const res = await fetch(`/api/v1/orders/${pendingOrderDeleteId}`, {method: 'DELETE'});
+            if (res.ok) {
+                location.reload();
+            } else {
+                const err = await res.json();
+                showError('order-delete-error', err.error ?? 'Could not delete order.');
+                confirmBtn.disabled = false;
+                spinner.hidden = true;
+            }
+        } catch {
+            showError('order-delete-error', 'Could not delete order.');
+            confirmBtn.disabled = false;
+            spinner.hidden = true;
+        }
+    });
 
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {
@@ -651,7 +1072,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     // Restore the last-active tab after a reload (drop actions reload the page).
     try {
         const saved = sessionStorage.getItem(ACTIVE_TAB_KEY);
-        if (saved && saved !== 'menu-items') activateTab(saved);
+        if (saved && ['drops', 'stock', 'orders'].includes(saved)) activateTab(saved);
     } catch {}
 
     // ── File → base64 helper ───────────────────────────────────
@@ -761,12 +1182,13 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
             spinner.hidden = true;
             return;
         }
-        const {uuid} = await uploadRes.json();
+        const {id: uuid} = await uploadRes.json();
 
         const payload = {
             id: uuid,
             name: data.name,
             description: data.description,
+            price: Number(data.price) || 0,
         };
 
         const res = await fetch('/api/v1/menu', {
@@ -786,10 +1208,11 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     // ── Edit modal ─────────────────────────────────────────────
     document.querySelectorAll<HTMLButtonElement>('.admin-btn-edit').forEach(btn => {
         btn.addEventListener('click', () => {
-            const {id, name, description, image} = btn.dataset;
+            const {id, name, description, price, image} = btn.dataset;
             (document.getElementById('edit-id') as HTMLInputElement).value = id ?? '';
             (document.getElementById('edit-name') as HTMLInputElement).value = name ?? '';
             (document.getElementById('edit-description') as HTMLTextAreaElement).value = description ?? '';
+            (document.getElementById('edit-price') as HTMLInputElement).value = price ?? '0';
 
             // Always show the current image (url = storageUrl + id)
             const currentImg = document.getElementById('edit-current-image-img') as HTMLImageElement;
@@ -834,7 +1257,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         }
 
         const payload = {
-            name: data.name, description: data.description,
+            name: data.name, description: data.description, price: Number(data.price) || 0,
         };
 
         const res = await fetch(`/api/v1/menu/${id}`, {
@@ -955,6 +1378,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     const dropItemsEmpty = document.getElementById('drop-items-empty');
     const dropItemSelect = document.getElementById('drop-item-select') as HTMLSelectElement | null;
     const dropItemStockInput = document.getElementById('drop-item-stock-input') as HTMLInputElement | null;
+    const dropItemInPersonInput = document.getElementById('drop-item-inperson-input') as HTMLInputElement | null;
     const dropItemTagInput = document.getElementById('drop-item-tag-input') as HTMLInputElement | null;
     const dropItemPreviewInput = document.getElementById('drop-item-preview-input') as HTMLInputElement | null;
 
@@ -985,14 +1409,15 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     const dropItemModalTitle = document.getElementById('drop-item-modal-title');
     const confirmDropItemBtn = document.getElementById('confirm-drop-item');
 
-    function fillDropRow(row: HTMLElement, name: string, stock: number, preview: boolean, tag: string) {
+    function fillDropRow(row: HTMLElement, name: string, stock: number, preview: boolean, tag: string, inPerson: number) {
         row.dataset.stock = String(stock);
+        row.dataset.inperson = String(inPerson);
         row.dataset.preview = preview ? 'true' : 'false';
         row.dataset.tag = tag;
         const nameEl = row.querySelector('.drop-selected-name') as HTMLElement;
         nameEl.textContent = name;
         const stockEl = row.querySelector('.drop-selected-stock') as HTMLElement;
-        stockEl.textContent = `${stock} in stock`;
+        stockEl.textContent = inPerson > 0 ? `${stock} online · ${inPerson} in-person` : `${stock} online`;
         const tagEl = row.querySelector('.drop-selected-tag') as HTMLElement;
         tagEl.textContent = tag;
         tagEl.hidden = !tag;
@@ -1000,7 +1425,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         previewEl.hidden = !preview;
     }
 
-    function addSelectedDropItem(id: string, name: string, stock: number, preview = false, tag = '') {
+    function addSelectedDropItem(id: string, name: string, stock: number, preview = false, tag = '', inPerson = 0) {
         if (!dropItemsContainer) return;
         const row = document.createElement('div');
         row.className = 'drop-selected-row';
@@ -1014,7 +1439,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
                 <button type="button" class="drop-selected-edit" title="Edit">Edit</button>
                 <button type="button" class="drop-selected-remove" title="Remove">Remove</button>
             </div>`;
-        fillDropRow(row, name, stock, preview, tag);
+        fillDropRow(row, name, stock, preview, tag, inPerson);
         row.querySelector('.drop-selected-edit')?.addEventListener('click', () => openDropItemEdit(row));
         row.querySelector('.drop-selected-remove')?.addEventListener('click', () => {
             row.remove();
@@ -1038,6 +1463,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         refreshDropItemSelectOptions();
         updatePreOpenVisibility();
         if (dropItemStockInput) dropItemStockInput.value = '1';
+        if (dropItemInPersonInput) dropItemInPersonInput.value = '0';
         if (dropItemTagInput) dropItemTagInput.value = '';
         if (dropItemPreviewInput) dropItemPreviewInput.checked = false;
         if (dropItemModalTitle) dropItemModalTitle.textContent = 'Add Item to Drop';
@@ -1057,6 +1483,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
             dropItemSelect.disabled = true;
         }
         if (dropItemStockInput) dropItemStockInput.value = row.dataset.stock ?? '1';
+        if (dropItemInPersonInput) dropItemInPersonInput.value = row.dataset.inperson ?? '0';
         if (dropItemTagInput) dropItemTagInput.value = row.dataset.tag ?? '';
         if (dropItemPreviewInput) dropItemPreviewInput.checked = row.dataset.preview === 'true';
         updatePreOpenVisibility();
@@ -1081,16 +1508,21 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         }
         const stock = Number(dropItemStockInput?.value);
         if (!Number.isInteger(stock) || stock < 0) {
-            showError('drop-item-error', 'Stock must be a non-negative whole number.');
+            showError('drop-item-error', 'Online stock must be a non-negative whole number.');
+            return;
+        }
+        const inPerson = Number(dropItemInPersonInput?.value);
+        if (!Number.isInteger(inPerson) || inPerson < 0) {
+            showError('drop-item-error', 'In-person stock must be a non-negative whole number.');
             return;
         }
         const preview = dropItemPreviewInput?.checked ?? false;
         const tag = dropItemTagInput?.value.trim() ?? '';
 
         if (editingDropRow) {
-            fillDropRow(editingDropRow, opt.dataset.name ?? opt.textContent ?? '', stock, preview, tag);
+            fillDropRow(editingDropRow, opt.dataset.name ?? opt.textContent ?? '', stock, preview, tag, inPerson);
         } else {
-            addSelectedDropItem(opt.value, opt.dataset.name ?? opt.textContent ?? '', stock, preview, tag);
+            addSelectedDropItem(opt.value, opt.dataset.name ?? opt.textContent ?? '', stock, preview, tag, inPerson);
         }
         closeDropItemModal();
     });
@@ -1099,11 +1531,10 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     const dropModalTitle = document.getElementById('drop-modal-title');
     const dropSubmitBtn = document.getElementById('drop-submit-btn');
     const dropOpenInput = document.getElementById('drop-open') as HTMLInputElement | null;
-    const dropCountdownField = document.getElementById('drop-countdown-field');
     const dropItemPreviewField = document.getElementById('drop-item-preview-field');
 
-    // The countdown teaser and per-item preview only apply before a drop opens.
-    // Once the open time has passed the drop is live, so hide those controls.
+    // The per-item preview only applies before a drop opens.
+    // Once the open time has passed the drop is live, so hide that control.
     function dropOpenIsPast(): boolean {
         const v = dropOpenInput?.value;
         if (!v) return false;
@@ -1113,16 +1544,8 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
 
     function updatePreOpenVisibility() {
         const past = dropOpenIsPast();
-        const cd = document.getElementById('drop-show-countdown') as HTMLInputElement | null;
-        if (cd) {
-            cd.disabled = past;
-            if (past) cd.checked = false;
-        }
         if (dropItemPreviewInput) dropItemPreviewInput.disabled = past;
-        if (dropCountdownField) dropCountdownField.classList.toggle('admin-field-disabled', past);
         if (dropItemPreviewField) dropItemPreviewField.classList.toggle('admin-field-disabled', past);
-        const cdNote = document.getElementById('drop-countdown-pastnote');
-        if (cdNote) cdNote.hidden = !past;
         const pvNote = document.getElementById('drop-item-preview-pastnote');
         if (pvNote) pvNote.hidden = !past;
     }
@@ -1151,7 +1574,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
 
     document.querySelectorAll<HTMLButtonElement>('.admin-btn-drop-edit').forEach(btn => {
         btn.addEventListener('click', async () => {
-            const {id, name, open, close, current, countdown} = btn.dataset;
+            const {id, name, open, close} = btn.dataset;
             (document.getElementById('drop-form') as HTMLFormElement)?.reset();
             if (dropIdField) dropIdField.value = id ?? '';
             if (dropModalTitle) dropModalTitle.textContent = 'Edit Drop';
@@ -1159,8 +1582,6 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
             (document.getElementById('drop-name') as HTMLInputElement).value = name ?? '';
             (document.getElementById('drop-open') as HTMLInputElement).value = open ? isoToLocalInput(open) : '';
             (document.getElementById('drop-close') as HTMLInputElement).value = close ? isoToLocalInput(close) : '';
-            (document.getElementById('drop-set-current') as HTMLInputElement).checked = current === 'true';
-            (document.getElementById('drop-show-countdown') as HTMLInputElement).checked = countdown === 'true';
             if (dropItemsContainer) dropItemsContainer.innerHTML = '';
             refreshDropItemsEmpty();
             updatePreOpenVisibility();
@@ -1170,9 +1591,14 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
             try {
                 const res = await fetch(`/api/v1/drops/${id}`);
                 if (res.ok) {
-                    const {items} = await res.json();
-                    (items ?? []).forEach((it: {menuItem: {id: string; name: string}; initialStock: number; preview: boolean; tag: string}) => {
-                        addSelectedDropItem(it.menuItem.id, it.menuItem.name, it.initialStock, it.preview, it.tag);
+                    const {drop, items} = await res.json();
+                    if (drop) {
+                        (document.getElementById('drop-pickup') as HTMLInputElement).value = drop.pickupTime ? isoToLocalInput(drop.pickupTime) : '';
+                        (document.getElementById('drop-location-name') as HTMLInputElement).value = drop.locationName ?? '';
+                        (document.getElementById('drop-location-address') as HTMLTextAreaElement).value = drop.locationAddress ?? '';
+                    }
+                    (items ?? []).forEach((it: {menuItem: {id: string; name: string}; initialStock: number; inPersonStock?: number; preview: boolean; tag: string}) => {
+                        addSelectedDropItem(it.menuItem.id, it.menuItem.name, it.initialStock, it.preview, it.tag, it.inPersonStock ?? 0);
                     });
                 } else {
                     showError('drop-form-error', 'Could not load this drop\u2019s items.');
@@ -1201,6 +1627,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
             .map(row => ({
                 menuItemId: row.dataset.id as string,
                 initialStock: Number(row.dataset.stock),
+                inPersonStock: Number(row.dataset.inperson ?? '0'),
                 preview: row.dataset.preview === 'true',
                 tag: row.dataset.tag ?? '',
             }));
@@ -1215,8 +1642,9 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
                 name: data.name,
                 openTime: data.openTime,
                 closeTime: data.closeTime,
-                setCurrent: data.setCurrent === 'on',
-                showCountdown: data.showCountdown === 'on',
+                pickupTime: data.pickupTime || null,
+                locationName: data.locationName ?? '',
+                locationAddress: data.locationAddress ?? '',
                 items: dropItems,
             }),
         });
@@ -1263,63 +1691,64 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         }
     });
 
-    // ── Set current drop ───────────────────────────────────────
-    document.querySelectorAll<HTMLButtonElement>('.admin-btn-set-current').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            const id = btn.dataset.id;
-            if (!id) return;
-            btn.disabled = true;
-            const original = btn.textContent;
-            btn.textContent = 'Saving…';
-            try {
-                const res = await fetch('/api/v1/drops/current', {
-                    method: 'PUT',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({id}),
-                });
-                if (res.ok) {
-                    location.reload();
-                } else {
-                    const err = await res.json();
-                    console.error('Set current drop failed:', err.error ?? 'Unknown error');
-                    btn.disabled = false;
-                    btn.textContent = original;
-                }
-            } catch (err) {
-                console.error('Set current drop request failed:', err);
+    // ── Lifecycle actions (announce / unannounce / archive) ────
+    async function patchDrop(id: string, body: Record<string, unknown>, btn: HTMLButtonElement) {
+        btn.disabled = true;
+        const original = btn.textContent;
+        btn.textContent = 'Saving…';
+        try {
+            const res = await fetch(`/api/v1/drops/${id}`, {
+                method: 'PATCH',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(body),
+            });
+            if (res.ok) {
+                location.reload();
+            } else {
+                const err = await res.json();
+                console.error('Drop update failed:', err.error ?? 'Unknown error');
                 btn.disabled = false;
                 btn.textContent = original;
             }
-        });
+        } catch (err) {
+            console.error('Drop update request failed:', err);
+            btn.disabled = false;
+            btn.textContent = original;
+        }
+    }
+
+    document.querySelector<HTMLButtonElement>('.admin-btn-announce')?.addEventListener('click', function () {
+        if (this.dataset.id) patchDrop(this.dataset.id, {announce: true}, this);
+    });
+    document.querySelector<HTMLButtonElement>('.admin-btn-unannounce')?.addEventListener('click', function () {
+        if (this.dataset.id) patchDrop(this.dataset.id, {announce: false}, this);
+    });
+    document.querySelector<HTMLButtonElement>('.admin-btn-archive')?.addEventListener('click', function () {
+        if (this.dataset.id) patchDrop(this.dataset.id, {archive: true}, this);
     });
 
-    // ── Unset current drop ─────────────────────────────────────
-    document.querySelectorAll<HTMLButtonElement>('.admin-btn-unset-current').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            btn.disabled = true;
-            const original = btn.textContent;
-            btn.textContent = 'Saving…';
-            try {
-                const res = await fetch('/api/v1/drops/current', {
-                    method: 'PUT',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({id: null}),
-                });
-                if (res.ok) {
-                    location.reload();
-                } else {
-                    const err = await res.json();
-                    console.error('Unset current drop failed:', err.error ?? 'Unknown error');
-                    btn.disabled = false;
-                    btn.textContent = original;
-                }
-            } catch (err) {
-                console.error('Unset current drop request failed:', err);
-                btn.disabled = false;
-                btn.textContent = original;
+    // ── Active drop countdown ──────────────────────────────────
+    const dropCdEl = document.getElementById('drop-cd-clock');
+    const dropCdTarget = dropCdEl?.closest('.drop-detail-countdown')?.getAttribute('data-target');
+    if (dropCdEl && dropCdTarget) {
+        const targetMs = new Date(dropCdTarget).getTime();
+        const pad2 = (n: number) => String(n).padStart(2, '0');
+        const tick = () => {
+            const diff = targetMs - Date.now();
+            if (diff <= 0) {
+                // The window just opened or closed — re-render the new state.
+                location.reload();
+                return;
             }
-        });
-    });
+            const d = Math.floor(diff / 86400000);
+            const h = Math.floor((diff % 86400000) / 3600000);
+            const m = Math.floor((diff % 3600000) / 60000);
+            const s = Math.floor((diff % 60000) / 1000);
+            dropCdEl.textContent = (d > 0 ? `${d}d ` : '') + `${pad2(h)}:${pad2(m)}:${pad2(s)}`;
+        };
+        tick();
+        setInterval(tick, 1000);
+    }
 
 </script>
 
@@ -1756,6 +2185,216 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         color: var(--text-muted);
     }
 
+    .admin-drop-draft {
+        background: #F3EDE5;
+        border-color: var(--accent);
+        color: var(--text-muted);
+    }
+
+    /* ── Active drop detail ───────────────────────────────────── */
+    .drop-detail {
+        background: var(--bg);
+        border: 1px solid var(--accent);
+        padding: 1.75rem;
+        margin-bottom: 2.5rem;
+    }
+
+    .drop-detail-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+        margin-bottom: 1.25rem;
+    }
+
+    .drop-detail-name {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 1.7rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        line-height: 1.2;
+        margin: 0.5rem 0 0.3rem;
+    }
+
+    .drop-detail-schedule {
+        font-size: 0.82rem;
+        color: var(--text-muted);
+    }
+
+    .drop-detail-sep {
+        margin: 0 0.4rem;
+        opacity: 0.6;
+    }
+
+    .drop-detail-actions {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+
+    .admin-btn-unannounce {
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 0.35rem 0.75rem;
+        border: 1px solid var(--accent);
+        background: none;
+        color: var(--text-muted);
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.15s;
+    }
+
+    .admin-btn-unannounce:hover {
+        border-color: var(--text-primary);
+        color: var(--text-primary);
+    }
+
+    .drop-detail-countdown {
+        display: flex;
+        align-items: baseline;
+        gap: 0.65rem;
+        padding: 0.85rem 1.1rem;
+        border: 1px solid var(--accent);
+        background: #FBF6EE;
+        margin-bottom: 1.25rem;
+    }
+
+    .drop-cd-label {
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+    }
+
+    .drop-cd-clock {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        font-variant-numeric: tabular-nums;
+    }
+
+    .admin-alert-info {
+        background: #FFF8F0;
+        border: 1px solid #E8C49A;
+        color: #7A4A1A;
+        padding: 0.75rem 1rem;
+        font-size: 0.85rem;
+        margin-bottom: 1.25rem;
+    }
+
+    .drop-detail-empty {
+        margin-bottom: 2.5rem;
+    }
+
+    .drop-older-section {
+        margin-top: 0.5rem;
+    }
+
+    .drop-older-title {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 0.85rem;
+    }
+
+    .orders-section + .orders-section {
+        margin-top: 2.25rem;
+        padding-top: 2rem;
+        border-top: 1px solid var(--border, #e7e1d8);
+    }
+
+    .orders-archived {
+        margin-top: 2.5rem;
+        padding-top: 2rem;
+        border-top: 2px solid var(--border, #e7e1d8);
+    }
+
+    .orders-archived-summary {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        cursor: pointer;
+        list-style: none;
+        user-select: none;
+    }
+
+    .orders-archived-summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .orders-archived-summary::before {
+        content: '▸';
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        transition: transform 0.15s;
+    }
+
+    .orders-archived[open] .orders-archived-summary::before {
+        transform: rotate(90deg);
+    }
+
+    .orders-archived-title {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .orders-archived-sub {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+    }
+
+    .orders-archived .orders-section:first-of-type {
+        margin-top: 1.5rem;
+    }
+
+    .orders-section-head {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        margin-bottom: 0.2rem;
+    }
+
+    .orders-section-title {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0;
+    }
+
+    .orders-section-count {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 1.4rem;
+        height: 1.4rem;
+        padding: 0 0.45rem;
+        border-radius: 999px;
+        background: var(--surface-2, #f1ece4);
+        color: var(--text-secondary, #6b6258);
+        font-size: 0.72rem;
+        font-weight: 600;
+    }
+
+    .orders-section-count:empty {
+        display: none;
+    }
+
+    .orders-section-sub {
+        margin: 0 0 0.85rem;
+        font-size: 0.82rem;
+        color: var(--text-secondary, #6b6258);
+    }
+
     .admin-drop-current-badge {
         display: inline-block;
         font-size: 0.63rem;
@@ -1862,6 +2501,99 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     }
 
     .admin-btn-drop-delete:hover {
+        background: #9A3A1A;
+        color: var(--bg);
+        border-color: #9A3A1A;
+    }
+
+    /* The Orders and In-person tables are injected via JS, so their rows never
+       receive Astro's scoped attribute. These rules are :global so cell
+       styling, status pills and the delete button apply to the dynamic rows. */
+    :global(#orders-tbody td),
+    :global(#inperson-tbody td) {
+        padding: 1rem 1.25rem;
+        vertical-align: middle;
+        border-bottom: 1px solid var(--accent);
+        color: var(--text-primary);
+        font-size: 0.875rem;
+    }
+
+    :global(#orders-tbody tr:last-child td),
+    :global(#inperson-tbody tr:last-child td) {
+        border-bottom: none;
+    }
+
+    :global(#orders-tbody tr:hover td),
+    :global(#inperson-tbody tr:hover td) {
+        background: #FAF7F2;
+    }
+
+    :global(#orders-tbody .admin-td-name) {
+        font-weight: 500;
+        white-space: nowrap;
+    }
+
+    :global(#orders-tbody .admin-td-desc),
+    :global(#inperson-tbody .admin-td-desc) {
+        max-width: 260px;
+        color: var(--text-muted);
+        font-size: 0.82rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    :global(#orders-tbody .admin-field-hint),
+    :global(#inperson-tbody .admin-field-hint) {
+        font-size: 0.75rem;
+        font-weight: 400;
+        color: var(--text-muted);
+    }
+
+    :global(#orders-tbody .admin-td-actions) {
+        white-space: nowrap;
+    }
+
+    :global(#orders-tbody .admin-drop-status) {
+        display: inline-block;
+        font-size: 0.63rem;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        padding: 0.2rem 0.55rem;
+        border: 1px solid var(--accent);
+        color: var(--text-muted);
+        white-space: nowrap;
+    }
+
+    :global(#orders-tbody .admin-order-paid) {
+        background: #EEF6EE;
+        border-color: #9CC79C;
+        color: #2F6A2F;
+    }
+
+    :global(#orders-tbody .admin-order-fulfilled) {
+        background: #EEF1F6;
+        border-color: #9CB0C7;
+        color: #2F4A6A;
+    }
+
+    :global(.admin-btn-order-delete) {
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 0.35rem 0.75rem;
+        border: 1px solid #E8C4B4;
+        background: none;
+        color: #9A3A1A;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.15s;
+        font-family: 'DM Sans', sans-serif;
+    }
+
+    :global(.admin-btn-order-delete:hover) {
         background: #9A3A1A;
         color: var(--bg);
         border-color: #9A3A1A;
@@ -2100,6 +2832,127 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         letter-spacing: 0.08em;
         text-transform: uppercase;
         color: var(--text-muted);
+    }
+
+    /* ── Stock dashboard ──────────────────────────────────────── */
+    .admin-stock-progress-col {
+        width: 30%;
+        min-width: 160px;
+    }
+
+    .admin-stock-bar {
+        display: inline-block;
+        width: calc(100% - 3rem);
+        height: 0.55rem;
+        background: var(--accent);
+        border-radius: 999px;
+        overflow: hidden;
+        vertical-align: middle;
+    }
+
+    .admin-stock-bar-fill {
+        height: 100%;
+        border-radius: 999px;
+        transition: width 0.2s ease;
+    }
+
+    .admin-stock-fill-ok {
+        background: #2F6A2F;
+    }
+
+    .admin-stock-fill-low {
+        background: #C0792B;
+    }
+
+    .admin-stock-fill-soldout {
+        background: #9A3A1A;
+    }
+
+    .admin-stock-pct {
+        display: inline-block;
+        width: 2.5rem;
+        text-align: right;
+        font-size: 0.78rem;
+        font-variant-numeric: tabular-nums;
+        color: var(--text-muted);
+        vertical-align: middle;
+    }
+
+    .admin-stock-pill {
+        display: inline-block;
+        font-size: 0.63rem;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        padding: 0.2rem 0.55rem;
+        border: 1px solid var(--accent);
+        white-space: nowrap;
+    }
+
+    .admin-stock-pill-ok {
+        background: #EEF6EE;
+        border-color: #9CC79C;
+        color: #2F6A2F;
+    }
+
+    .admin-stock-pill-low {
+        background: #FFF8F0;
+        border-color: #E8C49A;
+        color: #7A4A1A;
+    }
+
+    .admin-stock-pill-soldout {
+        background: #FDF0EE;
+        border-color: #D9836A;
+        color: #9A3A1A;
+    }
+
+    .admin-stock-foot {
+        margin-top: 1rem;
+    }
+
+    .admin-stock-section-title {
+        margin: 1.75rem 0 0.85rem;
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: var(--text-strong, #2b2b2b);
+    }
+
+    .admin-stock-section-title:first-of-type {
+        margin-top: 0.5rem;
+    }
+
+    .ip-stepper {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+
+    .ip-step-btn {
+        cursor: pointer;
+        border: 1px solid var(--border, #e2ddd4);
+        background: #fff;
+        color: var(--text-strong, #2b2b2b);
+        border-radius: 8px;
+        padding: 0.3rem 0.6rem;
+        font-size: 0.82rem;
+        font-weight: 600;
+        line-height: 1;
+        transition: background 0.15s ease, border-color 0.15s ease;
+    }
+
+    .ip-step-btn:hover:not(:disabled) {
+        background: #F6F2EA;
+    }
+
+    .ip-step-inc {
+        border-color: #C6A15B;
+        color: #6B4E18;
+    }
+
+    .ip-step-btn:disabled {
+        opacity: 0.5;
+        cursor: default;
     }
 
     .drop-items-empty {
@@ -2600,13 +3453,77 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
 
     /* ── Responsive ───────────────────────────────────────────── */
     @media (max-width: 768px) {
+        .admin-body {
+            flex-direction: column;
+        }
+
+        /* Sidebar collapses into a horizontal top bar instead of vanishing,
+           so admins keep navigation on mobile. */
         .admin-sidebar {
+            position: static;
+            width: 100%;
+            height: auto;
+            flex-flow: row wrap;
+            align-items: center;
+            gap: 0.5rem 1rem;
+            padding: 0.85rem 1rem;
+            border-right: none;
+            border-bottom: 1px solid var(--accent);
+        }
+
+        .admin-sidebar-top {
+            margin-bottom: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+
+        .admin-badge {
+            margin-top: 0;
+        }
+
+        .admin-nav {
+            order: 2;
+            flex-basis: 100%;
+            flex-direction: row;
+            gap: 0.25rem;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .admin-nav-link {
+            white-space: nowrap;
+            padding: 0.5rem 0.7rem;
+        }
+
+        .admin-sidebar-footer {
+            margin: 0 0 0 auto;
+            padding-top: 0;
+            border-top: none;
+        }
+
+        .admin-user-email {
             display: none;
+        }
+
+        .admin-logout-btn {
+            width: auto;
+            white-space: nowrap;
         }
 
         .admin-main {
             margin-left: 0;
             padding: 1.5rem 1rem;
+        }
+
+        .admin-tabs {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .admin-tab {
+            white-space: nowrap;
+            flex-shrink: 0;
         }
 
         .admin-form-row {

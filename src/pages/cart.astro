@@ -1,0 +1,669 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { getCurrentDrop, getDropItems } from '../lib/db';
+
+const currentDrop = await getCurrentDrop();
+const dropItems = currentDrop ? await getDropItems(currentDrop.id) : [];
+
+const now = Date.now();
+const openMs  = currentDrop ? new Date(currentDrop.openTime).getTime()  : null;
+const closeMs = currentDrop ? new Date(currentDrop.closeTime).getTime() : null;
+const ORDERS_CURRENTLY_OPEN = openMs !== null && closeMs !== null && now >= openMs && now < closeMs;
+
+// Authoritative map the client reconciles its localStorage cart against:
+// id -> { name, priceCents, remaining }. Only populated while orders are open.
+const availableItems: Record<string, { name: string; priceCents: number; remaining: number }> = {};
+if (ORDERS_CURRENTLY_OPEN) {
+  for (const item of dropItems) {
+    availableItems[item.menuItem.id] = {
+      name: item.menuItem.name,
+      priceCents: Math.round(item.menuItem.price * 100),
+      remaining: item.initialStock - item.consumedStock,
+    };
+  }
+}
+
+const STRIPE_PK = import.meta.env.PUBLIC_STRIPE_PUBLISHABLE_KEY;
+
+const PICKUP_FMT = new Intl.DateTimeFormat('en-US', {
+  weekday: 'short', month: 'short', day: 'numeric',
+  hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles',
+});
+const pickupLabel = currentDrop?.pickupTime ? PICKUP_FMT.format(new Date(currentDrop.pickupTime)) : null;
+---
+
+<Layout
+  title="Your Cart — Katered Kneads"
+  description="Review your Katered Kneads order and check out."
+  activePage="order"
+>
+
+  <section class="order-hero">
+    <div class="container">
+      <p class="eyebrow">Your Cart</p>
+      <h1 class="order-heading">Review &amp; Checkout</h1>
+    </div>
+  </section>
+
+  {ORDERS_CURRENTLY_OPEN ? (
+    <section class="section">
+      <div class="container">
+
+        <!-- Empty state -->
+        <div class="cart-empty-state" id="cart-empty-state" hidden>
+          <p>Your cart is empty.</p>
+          <a href="/order" class="btn-primary">Browse the Drop →</a>
+        </div>
+
+        <div class="cart-page-grid" id="cart-grid" hidden>
+          <!-- Items -->
+          <div class="cart-items-col">
+            <h2 class="section-heading">Your Items</h2>
+            <ul class="cart-page-lines" id="cart-lines"></ul>
+
+            <div class="cart-summary">
+              <div class="cart-summary-row">
+                <span>Subtotal</span>
+                <span id="cart-subtotal">$0.00</span>
+              </div>
+
+              <div class="tip-section" id="tip-section">
+                <span class="tip-label">Add a tip for the baker <span class="tip-required">(required)</span></span>
+                <div class="tip-options" id="tip-options">
+                  <button type="button" class="tip-btn" data-tip-pct="10">10%</button>
+                  <button type="button" class="tip-btn" data-tip-pct="15">15%</button>
+                  <button type="button" class="tip-btn" data-tip-pct="20">20%</button>
+                  <button type="button" class="tip-btn" data-tip-custom="1">Custom</button>
+                </div>
+                <div class="tip-custom-wrap" id="tip-custom-wrap" hidden>
+                  <span class="tip-custom-prefix">$</span>
+                  <input type="number" id="tip-custom-input" min="0" step="0.01" inputmode="decimal" placeholder="0.00" />
+                </div>
+                <p class="tip-hint" id="tip-hint">Choose a tip to continue</p>
+              </div>
+
+              <div class="cart-summary-row tip-row" id="tip-row" hidden>
+                <span>Tip</span>
+                <span id="cart-tip">$0.00</span>
+              </div>
+
+              <div class="cart-summary-row cart-total-row">
+                <span>Total</span>
+                <span id="cart-total">$0.00</span>
+              </div>
+            </div>
+
+            <a href="/order" class="cart-continue-link">← Add more items</a>
+          </div>
+
+          <!-- Checkout -->
+          <div class="checkout-col">
+            <form id="pickup-form" class="checkout-form">
+              <h2 class="checkout-step-heading">Pickup details</h2>
+              <div class="form-field">
+                <label for="co-name">Full Name</label>
+                <input type="text" id="co-name" name="name" autocomplete="name" required />
+              </div>
+              <div class="form-field">
+                <label for="co-email">Email (your code is sent here)</label>
+                <input type="email" id="co-email" name="email" autocomplete="email" required />
+              </div>
+              <div class="form-field">
+                <label for="co-phone">Phone (optional)</label>
+                <input type="tel" id="co-phone" name="phone" autocomplete="tel" />
+              </div>
+              {(currentDrop?.locationName || pickupLabel) && (
+                <div class="pickup-location-note">
+                  {pickupLabel && (
+                    <>
+                      <span class="pickup-location-label">Pickup time</span>
+                      <span class="pickup-location-value">{pickupLabel}</span>
+                    </>
+                  )}
+                  {currentDrop?.locationName && (
+                    <>
+                      <span class="pickup-location-label">Pickup area</span>
+                      <span class="pickup-location-value">{currentDrop.locationName}</span>
+                    </>
+                  )}
+                  <span class="pickup-location-hint">The exact address is sent to your email and shown on the confirmation page once your order is placed.</span>
+                </div>
+              )}
+              <div id="checkout-error" class="checkout-error" hidden></div>
+              <button type="submit" class="btn-primary checkout-submit" id="continue-btn">
+                Continue to Payment →
+              </button>
+            </form>
+
+            <form id="payment-form" class="checkout-form" hidden>
+              <h2 class="checkout-step-heading">Payment</h2>
+              <div id="payment-element"></div>
+              <div id="payment-error" class="checkout-error" hidden></div>
+              <button type="submit" class="btn-primary checkout-submit" id="pay-btn">
+                <span id="pay-btn-text">Pay Now</span>
+              </button>
+              <button type="button" class="checkout-back" id="edit-cart-btn">← Edit order</button>
+            </form>
+          </div>
+        </div>
+
+      </div>
+    </section>
+  ) : (
+    <section class="section">
+      <div class="container">
+        <div class="status-panel status-closed">
+          <div class="status-badge status-badge-closed">● Orders Closed</div>
+          <h2 class="status-heading">Ordering isn't open right now</h2>
+          <p class="status-text">Carts are only active while a drop is open, so yours has been cleared. Head to the order page for the next drop's countdown.</p>
+          <a href="/order" class="btn-primary">Back to Orders →</a>
+        </div>
+      </div>
+    </section>
+  )}
+
+  <script is:inline define:vars={{ STRIPE_PK, AVAILABLE_ITEMS: availableItems }}>
+    window.__STRIPE_PK__ = STRIPE_PK;
+    window.__AVAILABLE_ITEMS__ = AVAILABLE_ITEMS;
+  </script>
+
+  <script>
+    import { loadStripe } from '@stripe/stripe-js';
+    import { getCart, setQty, removeItem, onCartChange } from '../lib/cart';
+
+    type Available = Record<string, { name: string; priceCents: number; remaining: number }>;
+
+    function initCartPage() {
+      const grid = document.getElementById('cart-grid');
+      const emptyState = document.getElementById('cart-empty-state');
+      const linesEl = document.getElementById('cart-lines');
+      // Only run on the open cart page.
+      if (!grid || !emptyState || !linesEl) return;
+
+      const STRIPE_PK = (window as any).__STRIPE_PK__ as string | undefined;
+      const available = ((window as any).__AVAILABLE_ITEMS__ ?? {}) as Available;
+
+      const totalEl = document.getElementById('cart-total')!;
+      const subtotalEl = document.getElementById('cart-subtotal')!;
+      const tipRowEl = document.getElementById('tip-row')!;
+      const tipAmountEl = document.getElementById('cart-tip')!;
+      const tipOptions = document.getElementById('tip-options')!;
+      const tipCustomWrap = document.getElementById('tip-custom-wrap')!;
+      const tipCustomInput = document.getElementById('tip-custom-input') as HTMLInputElement;
+      const pickupForm = document.getElementById('pickup-form') as HTMLFormElement;
+      const paymentForm = document.getElementById('payment-form') as HTMLFormElement;
+      const continueBtn = document.getElementById('continue-btn') as HTMLButtonElement;
+      const checkoutError = document.getElementById('checkout-error')!;
+      const paymentError = document.getElementById('payment-error')!;
+      const payBtn = document.getElementById('pay-btn') as HTMLButtonElement;
+      const payBtnText = document.getElementById('pay-btn-text')!;
+      const editCartBtn = document.getElementById('edit-cart-btn') as HTMLButtonElement;
+
+      // While the Payment Element is mounted the cart is locked so the amount
+      // can't drift from the created Checkout Session.
+      let paymentActive = false;
+
+      function money(cents: number) { return '$' + (cents / 100).toFixed(2); }
+
+      // ── Tip state ─────────────────────────────────────────────
+      // Either a percentage of the subtotal (0 = no tip) or a fixed custom
+      // amount in cents. The resolved tip is always recomputed from the live
+      // subtotal so it stays correct as the cart changes.
+      let tipMode: 'pct' | 'custom' = 'pct';
+      let tipPct = 0;
+      let tipCustomCents = 0;
+      // A tip choice is required before checkout. Picking Custom and entering 0
+      // is how a customer opts out of tipping.
+      let tipChosen = false;
+
+      function tipCentsFor(subtotalCents: number): number {
+        if (tipMode === 'custom') return tipCustomCents;
+        return Math.round((subtotalCents * tipPct) / 100);
+      }
+
+      // The cart lines that are still purchasable, with quantities clamped to
+      // current stock and prices/names refreshed from the server.
+      function activeLines() {
+        return getCart()
+          .filter(i => available[i.id] && available[i.id].remaining > 0)
+          .map(i => {
+            const a = available[i.id];
+            return { id: i.id, name: a.name, priceCents: a.priceCents, qty: Math.min(i.qty, a.remaining), remaining: a.remaining };
+          })
+          .filter(l => l.qty > 0);
+    }
+
+      function render() {
+        const lines = activeLines();
+
+        if (lines.length === 0) {
+          grid!.hidden = true;
+          emptyState!.hidden = false;
+          return;
+        }
+        emptyState!.hidden = true;
+        grid!.hidden = false;
+
+        linesEl!.innerHTML = lines.map(l => `
+          <li class="cart-page-line" data-id="${l.id}">
+            <div class="cpl-info">
+              <span class="cpl-name">${l.name}</span>
+              <span class="cpl-unit">${money(l.priceCents)} each</span>
+            </div>
+            <div class="qty-stepper" ${paymentActive ? 'data-locked="1"' : ''}>
+              <button type="button" class="qty-btn qty-minus" aria-label="Remove one" ${paymentActive ? 'disabled' : ''}>−</button>
+              <span class="qty-value">${l.qty}</span>
+              <button type="button" class="qty-btn qty-plus" aria-label="Add one" ${paymentActive || l.qty >= l.remaining ? 'disabled' : ''}>+</button>
+            </div>
+            <span class="cpl-total">${money(l.priceCents * l.qty)}</span>
+            <button type="button" class="cpl-remove" aria-label="Remove item" ${paymentActive ? 'disabled' : ''}>✕</button>
+          </li>
+        `).join('');
+
+        const subtotal = lines.reduce((sum, l) => sum + l.priceCents * l.qty, 0);
+        const tip = tipCentsFor(subtotal);
+        subtotalEl.textContent = money(subtotal);
+        tipAmountEl.textContent = money(tip);
+        tipRowEl.hidden = tip <= 0;
+        totalEl.textContent = money(subtotal + tip);
+        // Gate checkout on a tip choice (any preset, or Custom — including 0).
+        continueBtn.disabled = !tipChosen;
+        document.getElementById('tip-hint')!.hidden = tipChosen;
+
+        // Lock tip controls once the Payment Element is mounted (the charged
+        // amount is fixed at that point).
+        tipOptions.querySelectorAll('button').forEach(b => (b as HTMLButtonElement).disabled = paymentActive);
+        tipCustomInput.disabled = paymentActive;
+      }
+
+      // ── Tip controls ──────────────────────────────────────────
+      function selectTipButton(btn: HTMLButtonElement | null) {
+        tipOptions.querySelectorAll('.tip-btn').forEach(b => b.classList.remove('is-selected'));
+        if (btn) btn.classList.add('is-selected');
+      }
+
+      tipOptions.addEventListener('click', (e) => {
+        if (paymentActive) return;
+        const btn = (e.target as HTMLElement).closest('.tip-btn') as HTMLButtonElement | null;
+        if (!btn) return;
+
+        tipChosen = true;
+        if (btn.dataset.tipCustom) {
+          tipMode = 'custom';
+          selectTipButton(btn);
+          tipCustomWrap.hidden = false;
+          tipCustomInput.focus();
+        } else {
+          tipMode = 'pct';
+          tipPct = Number(btn.dataset.tipPct) || 0;
+          selectTipButton(btn);
+          tipCustomWrap.hidden = true;
+        }
+        render();
+      });
+
+      tipCustomInput.addEventListener('input', () => {
+        const dollars = parseFloat(tipCustomInput.value);
+        tipCustomCents = Number.isFinite(dollars) && dollars > 0 ? Math.round(dollars * 100) : 0;
+        render();
+      });
+
+      // Event delegation for the dynamically rendered line controls.
+      linesEl.addEventListener('click', (e) => {
+        if (paymentActive) return;
+        const target = e.target as HTMLElement;
+        const li = target.closest('.cart-page-line') as HTMLElement | null;
+        if (!li) return;
+        const id = li.dataset.id!;
+        const a = available[id];
+        if (!a) return;
+        const current = getCart().find(i => i.id === id)?.qty ?? 0;
+
+        if (target.classList.contains('qty-minus')) {
+          setQty({ id, name: a.name, priceCents: a.priceCents }, Math.max(0, current - 1));
+        } else if (target.classList.contains('qty-plus')) {
+          setQty({ id, name: a.name, priceCents: a.priceCents }, Math.min(a.remaining, current + 1));
+        } else if (target.classList.contains('cpl-remove')) {
+          removeItem(id);
+        }
+      });
+
+      // ── Stripe (Checkout Sessions API + Payment Element) ──────
+      let stripe: any = null;
+      let checkout: any = null;
+      let confirmActions: any = null;
+
+      // Warm up Stripe.js ahead of time so checkout is instant when the user
+      // proceeds. loadStripe memoizes, so this only ever injects the script once.
+      let stripePromise: ReturnType<typeof loadStripe> | null = null;
+      function preloadStripe() {
+        if (!stripePromise && STRIPE_PK) stripePromise = loadStripe(STRIPE_PK);
+        return stripePromise;
+      }
+
+      function showError(el: HTMLElement, msg: string) { el.textContent = msg; el.hidden = false; }
+      function clearError(el: HTMLElement) { el.textContent = ''; el.hidden = true; }
+
+      pickupForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        clearError(checkoutError);
+
+        const lines = activeLines();
+        if (lines.length === 0) {
+          showError(checkoutError, 'Your cart is empty.');
+          return;
+        }
+        if (!tipChosen) {
+          showError(checkoutError, 'Please choose a tip option (select Custom and enter 0 for no tip).');
+          return;
+        }
+        if (!STRIPE_PK) {
+          showError(checkoutError, 'Payments are not configured. Please try again later.');
+          return;
+        }
+
+        continueBtn.disabled = true;
+        continueBtn.textContent = 'Setting up payment…';
+
+        const subtotal = lines.reduce((sum, l) => sum + l.priceCents * l.qty, 0);
+        const payload = {
+          customer: {
+            name: (document.getElementById('co-name') as HTMLInputElement).value,
+            email: (document.getElementById('co-email') as HTMLInputElement).value,
+            phone: (document.getElementById('co-phone') as HTMLInputElement).value,
+          },
+          items: lines.map(l => ({ menuItemId: l.id, quantity: l.qty })),
+          tipCents: tipCentsFor(subtotal),
+        };
+
+        try {
+          const res = await fetch('/api/v1/checkout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            showError(checkoutError, data.error ?? 'Could not start checkout.');
+            continueBtn.disabled = false;
+            continueBtn.textContent = 'Continue to Payment →';
+            return;
+          }
+
+          stripe = await preloadStripe();
+          checkout = stripe.initCheckoutElementsSdk({
+            clientSecret: data.clientSecret,
+            elementsOptions: { appearance: { theme: 'flat' } },
+          });
+          const paymentElement = checkout.createPaymentElement();
+          paymentElement.mount('#payment-element');
+
+          const loadActionsResult = await checkout.loadActions();
+          confirmActions = loadActionsResult.actions;
+
+          paymentActive = true;
+          render();
+          payBtnText.textContent = 'Pay ' + money(data.totalCents ?? data.subtotalCents);
+          pickupForm.hidden = true;
+          paymentForm.hidden = false;
+        } catch (err) {
+          console.error(err);
+          showError(checkoutError, 'Something went wrong. Please try again.');
+          continueBtn.disabled = false;
+          continueBtn.textContent = 'Continue to Payment →';
+        }
+      });
+
+      editCartBtn.addEventListener('click', () => {
+        paymentForm.hidden = true;
+        pickupForm.hidden = false;
+        continueBtn.disabled = false;
+        continueBtn.textContent = 'Continue to Payment →';
+        document.getElementById('payment-element')!.innerHTML = '';
+        checkout = null;
+        confirmActions = null;
+        paymentActive = false;
+        render();
+      });
+
+      paymentForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        clearError(paymentError);
+        if (!confirmActions) return;
+
+        payBtn.disabled = true;
+        const original = payBtnText.textContent;
+        payBtnText.textContent = 'Processing…';
+
+        const result = await confirmActions.confirm();
+        const error = result?.error;
+
+        // Only reached on immediate error; otherwise Stripe redirects to the
+        // session's return_url (/order/success).
+        showError(paymentError, error?.message ?? 'Payment failed. Please try again.');
+        payBtn.disabled = false;
+        payBtnText.textContent = original;
+      });
+
+      // Re-render on cart changes (this tab and others), unless locked.
+      onCartChange(() => { if (!paymentActive) render(); });
+      render();
+
+      // Warm up Stripe.js up front when there's a purchasable cart, so the
+      // "Continue to Payment" step doesn't wait on the script download.
+      if (activeLines().length > 0) preloadStripe();
+    }
+
+    initCartPage();
+  </script>
+
+  <style>
+    .cart-empty-state { text-align: center; padding: 2rem 0; }
+    .cart-empty-state p { margin-bottom: 1.25rem; color: #6b6257; }
+
+    .cart-page-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr;
+      gap: 2.5rem;
+      align-items: start;
+    }
+    @media (max-width: 768px) {
+      .cart-page-grid { grid-template-columns: 1fr; }
+    }
+
+    .cart-page-lines { list-style: none; padding: 0; margin: 1rem 0; }
+    /* Cart lines are injected client-side via innerHTML, so they never receive
+       Astro's scoped style attribute — these selectors must be :global. */
+    :global(.cart-page-line) {
+      display: grid;
+      grid-template-columns: 1fr auto auto auto;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.85rem 0;
+      border-bottom: 1px solid var(--accent);
+    }
+    :global(.cpl-info) { display: flex; flex-direction: column; gap: 0.15rem; }
+    :global(.cpl-name) { font-weight: 600; }
+    :global(.cpl-unit) { font-size: 0.85rem; color: var(--text-muted); }
+    :global(.cpl-total) { font-weight: 700; min-width: 4.5rem; text-align: right; }
+    :global(.cpl-remove) {
+      width: 2.25rem;
+      height: 2.25rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: 1px solid var(--accent);
+      cursor: pointer;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      line-height: 1;
+      transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+    }
+    :global(.cpl-remove:hover:not(:disabled)) {
+      color: #b00020;
+      border-color: #b00020;
+      background: rgba(176, 0, 32, 0.05);
+    }
+    :global(.cpl-remove:disabled) { opacity: 0.3; cursor: not-allowed; }
+
+    :global(.cart-page-line .qty-stepper) {
+      display: inline-flex;
+      align-items: stretch;
+      border: 1px solid var(--accent);
+    }
+    :global(.cart-page-line .qty-btn) {
+      width: 2.25rem;
+      height: 2.25rem;
+      font-size: 1.25rem;
+      line-height: 1;
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      color: var(--text-primary);
+      transition: background 0.15s ease;
+    }
+    :global(.cart-page-line .qty-btn:hover:not(:disabled)) { background: rgba(0, 0, 0, 0.04); }
+    :global(.cart-page-line .qty-btn:disabled) { opacity: 0.35; cursor: not-allowed; }
+    :global(.cart-page-line .qty-value) {
+      min-width: 2rem;
+      text-align: center;
+      font-weight: 600;
+      align-self: stretch;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 0.5rem;
+      border-left: 1px solid var(--accent);
+      border-right: 1px solid var(--accent);
+    }
+
+    .cart-summary { margin: 1rem 0 0; }
+    .cart-summary-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.35rem 0;
+      color: var(--text-muted, #6b6257);
+    }
+    .cart-total-row {
+      display: flex;
+      justify-content: space-between;
+      font-weight: 700;
+      font-size: 1.2rem;
+      padding-top: 1rem;
+      margin-top: 0.5rem;
+      border-top: 1px solid var(--accent);
+      color: var(--text-primary);
+    }
+
+    .tip-section {
+      padding: 0.85rem 0;
+      border-top: 1px solid var(--accent);
+      margin-top: 0.5rem;
+    }
+    .tip-label {
+      display: block;
+      font-size: 0.8rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #8a7a66;
+      margin-bottom: 0.6rem;
+    }
+    .tip-required { color: #b00020; letter-spacing: 0; }
+    .tip-hint {
+      margin: 0.6rem 0 0;
+      font-size: 0.8rem;
+      color: var(--text-muted, #6b6257);
+    }
+    .tip-options {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.4rem;
+    }
+    .tip-btn {
+      padding: 0.5rem 0.25rem;
+      background: transparent;
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.9rem;
+      color: var(--text-primary);
+      transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    }
+    .tip-btn:hover:not(:disabled) { background: rgba(0, 0, 0, 0.04); }
+    .tip-btn.is-selected {
+      background: var(--text-primary, #2b2b2b);
+      border-color: var(--text-primary, #2b2b2b);
+      color: #fff;
+    }
+    .tip-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .tip-custom-wrap {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      margin-top: 0.6rem;
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      padding: 0 0.7rem;
+    }
+    .tip-custom-prefix { color: var(--text-muted, #6b6257); }
+    .tip-custom-wrap input {
+      flex: 1;
+      border: none;
+      background: transparent;
+      padding: 0.55rem 0;
+      font-size: 1rem;
+      color: inherit;
+      outline: none;
+    }
+    .cart-continue-link {
+      display: inline-block;
+      margin-top: 1rem;
+      text-decoration: underline;
+      color: inherit;
+    }
+
+    .checkout-col {
+      background: var(--color-surface, #f6f2ec);
+      border-radius: 14px;
+      padding: 1.5rem;
+    }
+    .checkout-form { display: flex; flex-direction: column; gap: 1rem; }
+    .checkout-step-heading { margin: 0 0 0.25rem; font-size: 1.25rem; }
+    .checkout-submit { width: 100%; }
+    .checkout-submit:disabled { opacity: 0.5; cursor: not-allowed; }
+    .checkout-back {
+      background: none;
+      border: none;
+      color: inherit;
+      text-decoration: underline;
+      cursor: pointer;
+      padding: 0.5rem;
+      align-self: center;
+    }
+    .checkout-error {
+      color: #b00020;
+      background: #fbe9eb;
+      border-radius: 8px;
+      padding: 0.6rem 0.8rem;
+      font-size: 0.9rem;
+    }
+    .pickup-location-note {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+      background: rgba(0, 0, 0, 0.03);
+      border-radius: 8px;
+      padding: 0.7rem 0.85rem;
+    }
+    .pickup-location-label {
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #8a7a66;
+    }
+    .pickup-location-value { font-weight: 600; }
+    .pickup-location-hint { font-size: 0.8rem; color: var(--text-muted, #6b6257); }
+  </style>
+
+</Layout>

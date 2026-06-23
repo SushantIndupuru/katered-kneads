@@ -1,0 +1,476 @@
+---
+import '../../styles/global.css';
+
+const STRIPE_PK = import.meta.env.PUBLIC_STRIPE_PUBLISHABLE_KEY;
+const paymentIntentId = Astro.url.searchParams.get('pi') ?? '';
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
+    <link rel="icon" href="/favicon.ico"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <meta name="robots" content="noindex, nofollow"/>
+    <title>Pay — Katered Kneads</title>
+</head>
+<body class="pay-body">
+    <main class="pay-panel">
+        <p class="pay-brand">Katered Kneads</p>
+        <h1 class="pay-heading">Complete your payment</h1>
+
+        <div id="pay-summary" class="pay-summary" hidden>
+            <p class="pay-summary-label">Your order</p>
+            <ul class="pay-summary-list" id="pay-summary-list"></ul>
+
+            <div class="pay-summary-row">
+                <span>Subtotal</span>
+                <span id="pay-subtotal"></span>
+            </div>
+
+            <div class="pay-tip" id="pay-tip">
+                <p class="pay-tip-label">Add a tip <span class="pay-tip-required">(required)</span></p>
+                <div class="pay-tip-options" id="pay-tip-options">
+                    <button type="button" class="pay-tip-btn" data-tip-pct="10">10%</button>
+                    <button type="button" class="pay-tip-btn" data-tip-pct="15">15%</button>
+                    <button type="button" class="pay-tip-btn" data-tip-pct="20">20%</button>
+                    <button type="button" class="pay-tip-btn" data-tip-custom="1">Custom</button>
+                </div>
+                <div class="pay-tip-custom" id="pay-tip-custom" hidden>
+                    <span class="pay-tip-prefix">$</span>
+                    <input type="number" id="pay-tip-input" min="0" step="0.01" inputmode="decimal" placeholder="0.00" />
+                </div>
+                <p class="pay-tip-hint" id="pay-tip-hint">Choose a tip to continue</p>
+            </div>
+
+            <div class="pay-summary-row" id="pay-tip-row" hidden>
+                <span>Tip</span>
+                <span id="pay-tip-amount"></span>
+            </div>
+
+            <div class="pay-summary-total">
+                <span>Total</span>
+                <span id="pay-amount"></span>
+            </div>
+        </div>
+
+        <div id="pay-loading" class="pay-loading">
+            <span class="pay-spinner" aria-hidden="true"></span> Loading secure checkout…
+        </div>
+
+        <form id="pay-form" hidden>
+            <div id="payment-element"></div>
+            <div id="pay-error" class="pay-error" hidden></div>
+            <button type="submit" id="pay-submit" class="pay-submit">Pay now</button>
+        </form>
+
+        <div id="pay-message" class="pay-message" hidden></div>
+    </main>
+
+    <script is:inline define:vars={{ STRIPE_PK, paymentIntentId }}>
+        window.__STRIPE_PK__ = STRIPE_PK;
+        window.__PI_ID__ = paymentIntentId;
+    </script>
+
+    <script>
+        import { loadStripe } from '@stripe/stripe-js';
+
+        const PK = (window as any).__STRIPE_PK__ as string;
+        const piId = (window as any).__PI_ID__ as string;
+
+        const loadingEl = document.getElementById('pay-loading') as HTMLElement;
+        const formEl = document.getElementById('pay-form') as HTMLFormElement;
+        const amountEl = document.getElementById('pay-amount') as HTMLElement;
+        const errorEl = document.getElementById('pay-error') as HTMLElement;
+        const submitBtn = document.getElementById('pay-submit') as HTMLButtonElement;
+        const messageEl = document.getElementById('pay-message') as HTMLElement;
+        const summaryEl = document.getElementById('pay-summary') as HTMLElement;
+        const summaryListEl = document.getElementById('pay-summary-list') as HTMLElement;
+        const subtotalEl = document.getElementById('pay-subtotal') as HTMLElement;
+        const tipRowEl = document.getElementById('pay-tip-row') as HTMLElement;
+        const tipAmountEl = document.getElementById('pay-tip-amount') as HTMLElement;
+        const tipOptionsEl = document.getElementById('pay-tip-options') as HTMLElement;
+        const tipCustomWrap = document.getElementById('pay-tip-custom') as HTMLElement;
+        const tipInput = document.getElementById('pay-tip-input') as HTMLInputElement;
+
+        const money = (cents: number) => '$' + (cents / 100).toFixed(2);
+        const esc = (s: string) => s.replace(/[&<>"]/g, c =>
+            ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] ?? c));
+
+        interface SummaryItem { name: string; quantity: number; unitPriceCents: number; lineTotalCents: number; }
+
+        // ── Tip state (mirrors the online cart) ───────────────────
+        let subtotalCents = 0;
+        let tipMode: 'pct' | 'custom' = 'pct';
+        let tipPct = 0;
+        let tipCustomCents = 0;
+        // A tip choice is required before paying. Picking Custom and entering 0
+        // is how a customer opts out of tipping.
+        let tipChosen = false;
+
+        function currentTipCents(): number {
+            if (tipMode === 'custom') return tipCustomCents;
+            return Math.round((subtotalCents * tipPct) / 100);
+        }
+
+        function updateTotals() {
+            const tip = currentTipCents();
+            subtotalEl.textContent = money(subtotalCents);
+            tipAmountEl.textContent = money(tip);
+            tipRowEl.hidden = tip <= 0;
+            amountEl.textContent = money(subtotalCents + tip);
+            const hint = document.getElementById('pay-tip-hint');
+            if (hint) hint.hidden = tipChosen;
+            // Only enable paying once a tip choice has been made.
+            submitBtn.disabled = !tipChosen;
+        }
+
+        function renderSummary(items: SummaryItem[], subtotal: number) {
+            subtotalCents = subtotal;
+            if (items && items.length > 0) {
+                summaryListEl.innerHTML = items.map(i =>
+                    `<li class="pay-summary-line">
+                        <span class="pay-summary-qty">${i.quantity}×</span>
+                        <span class="pay-summary-name">${esc(i.name)}</span>
+                        <span class="pay-summary-price">${money(i.lineTotalCents)}</span>
+                    </li>`,
+                ).join('');
+            } else {
+                summaryListEl.innerHTML = '';
+            }
+            updateTotals();
+            summaryEl.hidden = false;
+        }
+
+        function selectTipButton(btn: HTMLButtonElement | null) {
+            tipOptionsEl.querySelectorAll('.pay-tip-btn').forEach(b => b.classList.remove('is-selected'));
+            if (btn) btn.classList.add('is-selected');
+        }
+
+        tipOptionsEl.addEventListener('click', (e) => {
+            const btn = (e.target as HTMLElement).closest('.pay-tip-btn') as HTMLButtonElement | null;
+            if (!btn) return;
+            tipChosen = true;
+            if (btn.dataset.tipCustom) {
+                tipMode = 'custom';
+                selectTipButton(btn);
+                tipCustomWrap.hidden = false;
+                tipInput.focus();
+            } else {
+                tipMode = 'pct';
+                tipPct = Number(btn.dataset.tipPct) || 0;
+                selectTipButton(btn);
+                tipCustomWrap.hidden = true;
+            }
+            updateTotals();
+        });
+
+        tipInput.addEventListener('input', () => {
+            const dollars = parseFloat(tipInput.value);
+            tipCustomCents = Number.isFinite(dollars) && dollars > 0 ? Math.round(dollars * 100) : 0;
+            updateTotals();
+        });
+
+        function lockTipControls() {
+            tipOptionsEl.querySelectorAll('button').forEach(b => (b as HTMLButtonElement).disabled = true);
+            tipInput.disabled = true;
+        }
+        function unlockTipControls() {
+            tipOptionsEl.querySelectorAll('button').forEach(b => (b as HTMLButtonElement).disabled = false);
+            tipInput.disabled = false;
+        }
+
+        function showMessage(text: string) {
+            loadingEl.hidden = true;
+            formEl.hidden = true;
+            messageEl.textContent = text;
+            messageEl.hidden = false;
+        }
+
+        async function init() {
+            if (!PK || !piId) {
+                showMessage('This payment link is invalid.');
+                return;
+            }
+
+            let data: any;
+            try {
+                const res = await fetch(`/api/v1/pay/in-person/${encodeURIComponent(piId)}`);
+                data = await res.json();
+                if (!res.ok) {
+                    showMessage(data.error ?? 'This payment could not be found.');
+                    return;
+                }
+            } catch {
+                showMessage('Network error — please try again.');
+                return;
+            }
+
+            if (data.status === 'succeeded') {
+                window.location.replace('/pay/thanks');
+                return;
+            }
+            if (data.status === 'canceled') {
+                showMessage('This payment was canceled. Please ask the cashier for a new code.');
+                return;
+            }
+
+            renderSummary(data.items ?? [], data.subtotalCents ?? data.amountCents ?? 0);
+
+            const stripe = await loadStripe(PK);
+            if (!stripe) {
+                showMessage('Could not load the payment form. Please try again.');
+                return;
+            }
+
+            const elements = stripe.elements({
+                clientSecret: data.clientSecret,
+                appearance: { theme: 'flat', variables: { colorPrimary: '#1a1a1a' } },
+            });
+            const paymentElement = elements.create('payment', { layout: 'tabs' });
+            paymentElement.mount('#payment-element');
+
+            loadingEl.hidden = true;
+            formEl.hidden = false;
+
+            formEl.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                errorEl.hidden = true;
+                submitBtn.disabled = true;
+                lockTipControls();
+                submitBtn.textContent = 'Processing…';
+
+                const failOut = (msg: string) => {
+                    errorEl.textContent = msg;
+                    errorEl.hidden = false;
+                    submitBtn.disabled = false;
+                    unlockTipControls();
+                    submitBtn.textContent = 'Pay now';
+                };
+
+                // Sync the chosen tip onto the PaymentIntent (amount = subtotal +
+                // tip) before confirming, then refresh Elements so wallets show
+                // the correct amount. Abort if this fails so we never charge an
+                // amount that doesn't match what's displayed.
+                try {
+                    const tipRes = await fetch(`/api/v1/pay/in-person/${encodeURIComponent(piId)}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ tipCents: currentTipCents() }),
+                    });
+                    const tipData = await tipRes.json();
+                    if (!tipRes.ok) {
+                        failOut(tipData.error ?? 'Could not update the tip. Please try again.');
+                        return;
+                    }
+                    await elements.fetchUpdates();
+                } catch {
+                    failOut('Network error — please try again.');
+                    return;
+                }
+
+                const { error } = await stripe.confirmPayment({
+                    elements,
+                    confirmParams: { return_url: `${window.location.origin}/pay/thanks` },
+                });
+
+                // Only reached if there's an immediate error; otherwise Stripe
+                // redirects to the return_url.
+                failOut(error?.message ?? 'Payment failed. Please try again.');
+            });
+        }
+
+        init();
+    </script>
+
+    <style>
+        .pay-body {
+            min-height: 100vh;
+            margin: 0;
+            background: #F3EDE5;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding: 1.5rem;
+        }
+        .pay-panel {
+            max-width: 440px;
+            width: 100%;
+            background: var(--bg);
+            border: 1px solid var(--accent);
+            border-radius: 16px;
+            padding: 2rem 1.5rem;
+            margin-top: 2vh;
+        }
+        .pay-brand {
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin: 0 0 0.75rem;
+            text-align: center;
+        }
+        .pay-heading {
+            font-family: 'Cormorant Garamond', serif;
+            font-size: 1.7rem;
+            margin: 0 0 0.25rem;
+            text-align: center;
+        }
+        .pay-summary {
+            border: 1px solid var(--accent);
+            border-radius: 12px;
+            padding: 1rem 1.1rem;
+            margin: 0.5rem 0 1.5rem;
+            background: #fff;
+        }
+        .pay-summary-label {
+            font-size: 0.66rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin: 0 0 0.6rem;
+        }
+        .pay-summary-list { list-style: none; padding: 0; margin: 0; }
+        .pay-summary-list :global(.pay-summary-line) {
+            display: flex;
+            align-items: baseline;
+            gap: 0.6rem;
+            padding: 0.4rem 0;
+            font-size: 0.95rem;
+            border-bottom: 1px solid #efe9e0;
+        }
+        .pay-summary-list :global(.pay-summary-line:last-child) { border-bottom: none; }
+        .pay-summary-list :global(.pay-summary-qty) {
+            font-weight: 700;
+            font-variant-numeric: tabular-nums;
+            min-width: 2.2ch;
+        }
+        .pay-summary-list :global(.pay-summary-name) { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+        .pay-summary-list :global(.pay-summary-price) {
+            font-variant-numeric: tabular-nums;
+            color: var(--text-muted);
+        }
+        .pay-summary-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-top: 0.75rem;
+            font-size: 0.95rem;
+            color: var(--text-muted);
+        }
+        .pay-tip {
+            margin-top: 0.9rem;
+            padding-top: 0.9rem;
+            border-top: 1px solid #efe9e0;
+        }
+        .pay-tip-label {
+            font-size: 0.66rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            margin: 0 0 0.5rem;
+        }
+        .pay-tip-required { color: #b00020; letter-spacing: 0; }
+        .pay-tip-hint {
+            margin: 0.5rem 0 0;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+        .pay-tip-options {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 0.4rem;
+        }
+        .pay-tip-btn {
+            padding: 0.55rem 0.25rem;
+            background: #fff;
+            border: 1px solid var(--accent);
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            color: var(--text-primary);
+        }
+        .pay-tip-btn.is-selected {
+            background: var(--text-primary);
+            border-color: var(--text-primary);
+            color: var(--bg);
+        }
+        .pay-tip-btn:disabled { opacity: 0.6; cursor: default; }
+        .pay-tip-custom {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            margin-top: 0.5rem;
+            border: 1px solid var(--accent);
+            border-radius: 8px;
+            padding: 0 0.7rem;
+            background: #fff;
+        }
+        .pay-tip-prefix { color: var(--text-muted); }
+        .pay-tip-custom input {
+            flex: 1;
+            border: none;
+            background: transparent;
+            padding: 0.55rem 0;
+            font-size: 1rem;
+            color: inherit;
+            outline: none;
+        }
+        .pay-summary-total {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            margin-top: 0.75rem;
+            padding-top: 0.75rem;
+            border-top: 1px solid var(--accent);
+            font-weight: 700;
+        }
+        .pay-summary-total span:last-child {
+            font-size: 1.5rem;
+            font-variant-numeric: tabular-nums;
+        }
+        .pay-loading, .pay-message {
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            padding: 1.5rem 0;
+        }
+        .pay-loading { display: flex; align-items: center; justify-content: center; gap: 0.5rem; }
+        .pay-spinner {
+            width: 1.05rem;
+            height: 1.05rem;
+            border: 2px solid var(--accent);
+            border-top-color: var(--text-primary);
+            border-radius: 50%;
+            animation: pay-spin 0.8s linear infinite;
+        }
+        @keyframes pay-spin { to { transform: rotate(360deg); } }
+        .pay-error {
+            background: #FDF0EE;
+            border: 1px solid #D9836A;
+            color: #9A3A1A;
+            border-radius: 8px;
+            padding: 0.7rem 0.9rem;
+            font-size: 0.85rem;
+            margin-top: 1rem;
+        }
+        .pay-submit {
+            width: 100%;
+            margin-top: 1.25rem;
+            background: var(--text-primary);
+            color: var(--bg);
+            border: none;
+            border-radius: 10px;
+            padding: 1rem;
+            font-size: 1.05rem;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .pay-submit:disabled { opacity: 0.6; cursor: default; }
+    </style>
+</body>
+</html>

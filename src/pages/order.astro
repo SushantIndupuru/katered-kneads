@@ -21,18 +21,24 @@ const closeMs = currentDrop ? new Date(currentDrop.closeTime).getTime() : null;
 // Orders are open when we're inside the current drop's [open, close) window.
 const ORDERS_CURRENTLY_OPEN = openMs !== null && closeMs !== null && now >= openMs && now < closeMs;
 const BEFORE_OPEN = openMs !== null && now < openMs;
-// The countdown teaser only shows before open AND when the admin enabled it.
-const SHOW_COUNTDOWN = BEFORE_OPEN && (currentDrop?.showCountdown ?? false);
+// An active drop always shows its countdown before it opens.
+const SHOW_COUNTDOWN = BEFORE_OPEN;
 
 // When open, show everything in the drop; before open, only the preview picks.
 const displayItems = ORDERS_CURRENTLY_OPEN ? dropItems : dropItems.filter(i => i.preview);
+
+// Items at or below this remaining count get a "going fast" urgency treatment.
+const LOW_STOCK_THRESHOLD = 5;
 
 const NEXT_DROP_OPEN_STR   = currentDrop?.openTime ?? null;
 const NEXT_DROP_OPEN_LABEL = currentDrop ? formatDropDate(currentDrop.openTime) : 'TBA';
 const ORDERS_CLOSE_LABEL   = currentDrop ? formatDropDate(currentDrop.closeTime) : 'TBA';
 const DROP_NAME            = currentDrop?.name ?? 'Next Drop';
-const ORDER_LINK           = 'https://kateredkneads.square.site/shop/katering-now/LQ62D5N5VAEN2X4RSTCFQTVK';
 const CDN_URL              = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL;
+
+function formatPrice(n: number): string {
+  return `$${n.toFixed(2)}`;
+}
 ---
 
 <Layout
@@ -41,39 +47,52 @@ const CDN_URL              = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL;
   activePage="order"
 >
 
-  <!-- Drop Header -->
+  <!-- Page Header -->
   <section class="order-hero">
     <div class="container">
-      <p class="eyebrow">Orders</p>
-      <h1 class="order-heading">{DROP_NAME}</h1>
+      <p class="eyebrow">UC Berkeley &amp; UC Davis</p>
+      <h1 class="order-heading">Order</h1>
       <p class="order-sub">
         {ORDERS_CURRENTLY_OPEN
-          ? `Orders are open now — closes ${ORDERS_CLOSE_LABEL}. Limited quantities per item.`
+          ? `${DROP_NAME} is live now — orders close ${ORDERS_CLOSE_LABEL}. Limited quantities per item.`
           : SHOW_COUNTDOWN
-            ? `Next drop opens ${NEXT_DROP_OPEN_LABEL}. Limited quantities — first come, first served.`
-            : `Orders are currently closed. Check back soon — or join the SMS list below to get notified.`
+            ? `Handmade cookies dropped every two weeks. ${DROP_NAME} opens soon — quantities are limited and first come, first served.`
+            : `Handmade cookies dropped every two weeks. Ordering is currently closed — check back soon for the next drop.`
         }
       </p>
     </div>
   </section>
 
-  <!-- Order Status Panel -->
-  <section class="section order-status-section" id="order-status">
+  <!-- Value-prop strip -->
+  <section class="order-valueprops">
+    <div class="container">
+      <ul class="valueprop-row">
+        <li class="valueprop">
+          <span class="valueprop-title">Baked fresh to order</span>
+          <span class="valueprop-sub">100% from scratch — never sitting on a shelf.</span>
+        </li>
+        <li class="valueprop">
+          <span class="valueprop-title">Strictly limited batches</span>
+          <span class="valueprop-sub">Every drop sells out — when it's gone, it's gone.</span>
+        </li>
+        <li class="valueprop">
+          <span class="valueprop-title">Easy campus pickup</span>
+          <span class="valueprop-sub">Grab your order at UC Berkeley or UC Davis.</span>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- Order Status Panel (only when orders aren't open — when open, the
+       drop section below carries a compact "live" indicator instead) -->
+  {!ORDERS_CURRENTLY_OPEN && (
+    <section class="section order-status-section" id="order-status">
     <div class="container">
 
-      {ORDERS_CURRENTLY_OPEN ? (
-        <div class="status-panel status-open">
-          <div class="status-badge status-badge-open">● Orders Open</div>
-          <h2 class="status-heading">Ordering is live!</h2>
-          <p class="status-text">Get your order in before the window closes. Limited quantities per item — once they're gone, they're gone.</p>
-          <p class="status-closes">Orders close: <strong>{ORDERS_CLOSE_LABEL}</strong></p>
-          <a href={ORDER_LINK} target="_blank" rel="noopener noreferrer" class="btn-primary">Order Now on Square →</a>
-        </div>
-      ) : SHOW_COUNTDOWN ? (
+      {SHOW_COUNTDOWN ? (
         <div class="status-panel status-closed">
           <div class="status-badge status-badge-closed">● Orders Closed</div>
-          <h2 class="status-heading">Next drop opens in</h2>
-          <p class="status-date">{NEXT_DROP_OPEN_LABEL}</p>
+          <h2 class="status-heading">{DROP_NAME} opens in</h2>
 
           <div class="countdown" id="countdown" aria-live="polite" aria-label="Countdown to next drop">
             <div class="countdown-item">
@@ -97,127 +116,129 @@ const CDN_URL              = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL;
             </div>
           </div>
 
-          <p class="status-cta-hint">Don't want to check back? <a href="#sms-signup">Join the SMS list ↓</a></p>
+          <p class="status-date">Opens {NEXT_DROP_OPEN_LABEL}</p>
         </div>
       ) : (
         <div class="status-panel status-closed">
           <div class="status-badge status-badge-closed">● Orders Closed</div>
           <h2 class="status-heading">Orders are currently closed</h2>
-          <p class="status-text">There's no open ordering window right now. Join the SMS list to get a text the moment the next drop goes live.</p>
-          <p class="status-cta-hint"><a href="#sms-signup">Join the SMS list ↓</a></p>
+          <p class="status-text">There's no open ordering window right now. Check back soon for the next drop.</p>
         </div>
       )}
 
     </div>
   </section>
+  )}
 
   <!-- Drop Items (shown when there are items to display) -->
   {displayItems.length > 0 && (
-    <section class="section section-tinted" id="drop-items">
+    <section class={`section${ORDERS_CURRENTLY_OPEN ? '' : ' section-tinted'}`} id="drop-items">
       <div class="container">
 
-        <div class="section-header">
-          <p class="eyebrow">{ORDERS_CURRENTLY_OPEN ? `In This Drop` : `Drop Preview`}</p>
-          <h2 class="section-heading">
-            {ORDERS_CURRENTLY_OPEN ? `What's in ${DROP_NAME}` : `Sneak Peek — ${DROP_NAME}`}
-          </h2>
-          <p class="section-sub">
-            {ORDERS_CURRENTLY_OPEN
-              ? 'Order via Square to grab your picks. Quantities are limited — order early.'
-              : "A preview of what's baking for the next drop. Full details and pricing revealed when orders open."
-            }
-          </p>
-        </div>
-
-        <div class="product-grid">
-          {displayItems.map(item => (
-            <div class="product-card">
-              <div class="product-card-image">
-                <img src={CDN_URL + item.menuItem.id} alt={item.menuItem.name} loading="lazy" />
-                <span class={`stock-badge ${ORDERS_CURRENTLY_OPEN ? 'stock-badge-available' : 'stock-badge-coming-soon'}`}>
-                  {ORDERS_CURRENTLY_OPEN ? 'Limited' : 'Coming Soon'}
-                </span>
-                {item.tag && <span class="cookie-tag">{item.tag}</span>}
-              </div>
-              <div class="product-card-body">
-                <h3>{item.menuItem.name}</h3>
-                <p>{item.menuItem.description}</p>
-              </div>
+        {ORDERS_CURRENTLY_OPEN ? (
+          <div class="drop-header-row">
+            <div>
+              <p class="eyebrow">In This Drop</p>
+              <h2 class="drop-section-title">What's in {DROP_NAME}</h2>
+              <p class="drop-date-label">Open until {ORDERS_CLOSE_LABEL} · quantities limited</p>
             </div>
-          ))}
-        </div>
-
-        {ORDERS_CURRENTLY_OPEN && (
-          <div class="drop-cta">
-            <a href={ORDER_LINK} target="_blank" rel="noopener noreferrer" class="btn-primary">
-              Order Now on Square →
-            </a>
+            <span class="drop-status-chip chip-open">● Orders Open</span>
+          </div>
+        ) : (
+          <div class="section-header">
+            <p class="eyebrow">Drop Preview</p>
+            <h2 class="section-heading">Sneak Peek — {DROP_NAME}</h2>
+            <p class="section-sub">
+              A preview of what's baking for the next drop. Full details and pricing revealed when orders open.
+            </p>
           </div>
         )}
+
+        <div class="product-grid">
+          {displayItems.map(item => {
+            const remaining = item.initialStock - item.consumedStock;
+            const inStock = remaining > 0;
+            const soldOut = ORDERS_CURRENTLY_OPEN && !inStock;
+            const lowStock = ORDERS_CURRENTLY_OPEN && inStock && LOW_STOCK_THRESHOLD >= remaining;
+            const stockBadgeClass = soldOut
+              ? 'stock-badge-soldout'
+              : lowStock
+                ? 'stock-badge-low'
+                : ORDERS_CURRENTLY_OPEN
+                  ? 'stock-badge-available'
+                  : 'stock-badge-coming-soon';
+            return (
+              <div class={`product-card${soldOut ? ' sold-out' : ''}`}>
+                <div class="product-card-image">
+                  <img src={CDN_URL + item.menuItem.id} alt={item.menuItem.name} loading="lazy" />
+                  <span class={`stock-badge ${stockBadgeClass}`}>
+                    {soldOut
+                      ? 'Sold Out'
+                      : ORDERS_CURRENTLY_OPEN
+                        ? lowStock ? `Only ${remaining} left` : `${remaining} left`
+                        : 'Coming Soon'}
+                  </span>
+                  {item.tag && <span class="cookie-tag">{item.tag}</span>}
+                </div>
+                <div class="product-card-body">
+                  <h3>{item.menuItem.name}</h3>
+                  <p>{item.menuItem.description}</p>
+                  {lowStock && (
+                    <p class="scarcity-note">Going fast — only {remaining} left</p>
+                  )}
+                  {ORDERS_CURRENTLY_OPEN && (
+                    <div
+                      class="product-card-actions"
+                      data-item-id={item.menuItem.id}
+                      data-item-name={item.menuItem.name}
+                      data-item-price-cents={Math.round(item.menuItem.price * 100)}
+                      data-item-remaining={remaining}
+                    >
+                      <div class="product-card-buy">
+                        <span class="product-price">{formatPrice(item.menuItem.price)}</span>
+                        <div class="qty-stepper">
+                          <button type="button" class="qty-btn qty-minus" aria-label={`Decrease quantity of ${item.menuItem.name}`} disabled={soldOut}>−</button>
+                          <span class="qty-value" aria-live="polite">0</span>
+                          <button type="button" class="qty-btn qty-plus" aria-label={`Increase quantity of ${item.menuItem.name}`} disabled={soldOut}>+</button>
+                        </div>
+                      </div>
+                      <button type="button" class="btn-primary add-to-cart-btn" disabled={soldOut}>Add to Cart</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
 
       </div>
     </section>
   )}
 
-  <!-- SMS Sign-up (shown when orders are closed) -->
-  {!ORDERS_CURRENTLY_OPEN && (
-    <section class="section" id="sms-signup">
+  <!-- Social proof (open orders only) -->
+  {ORDERS_CURRENTLY_OPEN && (
+    <section class="section section-tinted" id="order-reviews">
       <div class="container">
-        <div class="sms-block">
-          <div class="sms-text">
-            <p class="eyebrow">Never Miss a Drop</p>
-            <h2 class="section-heading">Join the SMS List</h2>
-            <p>
-              We text our list about 5 minutes before orders open. Be first in before quantities sell out.
-            </p>
-            <ul class="sms-benefits">
-              <li>Text notification ~5 min before orders open</li>
-              <li>First to see new menu items each drop</li>
-              <li>Easy opt-out anytime — just reply STOP</li>
-            </ul>
+        <div class="section-header">
+          <p class="eyebrow">Loved on Campus</p>
+          <h2 class="section-heading">Why students keep coming back</h2>
+        </div>
+        <div class="reviews-grid">
+          <div class="review-card">
+            <p class="review-text">"Hands down the best cookie I've had at Berkeley. Still warm at pickup — I order every single drop."</p>
+            <p class="review-author">Maya · UC Berkeley</p>
           </div>
-
-          <div class="sms-form-wrap">
-            <form
-              class="sms-form"
-              id="sms-form"
-              action="https://formspree.io/f/YOUR_FORM_ID"
-              method="POST"
-            >
-              <input type="hidden" name="_subject" value="New SMS Signup — Katered Kneads" />
-
-              <div class="form-field">
-                <label for="sms-name">First Name</label>
-                <input type="text" id="sms-name" name="name" placeholder="Your first name" required autocomplete="given-name" />
-              </div>
-
-              <div class="form-field">
-                <label for="sms-phone">Phone Number</label>
-                <input type="tel" id="sms-phone" name="phone" placeholder="+1 (555) 000-0000" required autocomplete="tel" />
-              </div>
-
-              <div class="form-field">
-                <label for="sms-campus">Your Campus</label>
-                <select id="sms-campus" name="campus" required>
-                  <option value="">Select your campus</option>
-                  <option value="UC Berkeley">UC Berkeley</option>
-                  <option value="UC Davis">UC Davis</option>
-                  <option value="Both">Both (I'm flexible)</option>
-                </select>
-              </div>
-
-              <p class="form-disclaimer">
-                By signing up you consent to receive SMS notifications from Katered Kneads.
-                Message &amp; data rates may apply. Reply STOP to unsubscribe at any time.
-              </p>
-
-              <button type="submit" class="btn-primary form-submit">Join the SMS List →</button>
-            </form>
-
-            <p class="form-success" id="form-success" hidden>
-              ✓ You're on the list! We'll text you before the next drop.
-            </p>
+          <div class="review-card">
+            <p class="review-text">"You can tell these are actually made from scratch. They sell out fast for a reason."</p>
+            <p class="review-author">Devon · UC Davis</p>
           </div>
+          <div class="review-card">
+            <p class="review-text">"Ordering took 30 seconds and pickup was right on campus. Already telling my whole dorm."</p>
+            <p class="review-author">Priya · UC Berkeley</p>
+          </div>
+        </div>
+        <div class="how-cta" style="margin-top:3rem;">
+          <a href="#drop-items" class="btn-primary">Back to the Drop ↑</a>
         </div>
       </div>
     </section>
@@ -231,7 +252,19 @@ const CDN_URL              = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL;
     </div>
   </section>
 
-  <script define:vars={{ NEXT_DROP_OPEN_STR, ORDERS_CLOSE_STR: currentDrop?.closeTime ?? null, ORDERS_CURRENTLY_OPEN }}>
+  <!-- Floating cart button (mobile only — header cart is hidden behind the hamburger) -->
+  {ORDERS_CURRENTLY_OPEN && displayItems.length > 0 && (
+    <a href="/cart" class="cart-fab" id="cart-bar" hidden aria-label="View cart">
+      <span class="cart-fab-summary">
+        <span id="cart-bar-count">0 items</span>
+        <span class="cart-bar-dot">·</span>
+        <span id="cart-bar-total">$0.00</span>
+      </span>
+      <span class="cart-fab-cta">View Cart →</span>
+    </a>
+  )}
+
+  <script is:inline define:vars={{ NEXT_DROP_OPEN_STR, ORDERS_CLOSE_STR: currentDrop?.closeTime ?? null, ORDERS_CURRENTLY_OPEN }}>
     // ── Countdown Timer ───────────────────────────────────────────
     var target = NEXT_DROP_OPEN_STR ? new Date(NEXT_DROP_OPEN_STR).getTime() : NaN;
 
@@ -276,30 +309,249 @@ const CDN_URL              = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL;
         if (Date.now() >= closeMs) window.location.reload();
       }, 1000);
     }
-
-    // ── SMS Form ──────────────────────────────────────────────────
-    var form       = document.getElementById('sms-form');
-    var successMsg = document.getElementById('form-success');
-
-    if (form) {
-      form.addEventListener('submit', function(e) {
-        e.preventDefault();
-        var data = new FormData(form);
-        fetch(form.action, {
-          method: 'POST',
-          body: data,
-          headers: { 'Accept': 'application/json' }
-        })
-        .then(function(res) {
-          if (res.ok) {
-            form.hidden = true;
-            if (successMsg) successMsg.hidden = false;
-          }
-        })
-        .catch(function(err) { console.error('Form submission error:', err); });
-      });
-    }
   </script>
 
 </Layout>
 
+<script>
+  import { getQty, setQty, cartCount, cartSubtotalCents, onCartChange } from '../lib/cart';
+
+  function initOrderCart() {
+    const cards = Array.from(document.querySelectorAll<HTMLElement>('.product-card-actions'));
+    if (cards.length === 0) return;
+
+    const bar = document.getElementById('cart-bar');
+    const barCount = document.getElementById('cart-bar-count');
+    const barTotal = document.getElementById('cart-bar-total');
+
+    function money(cents: number) { return '$' + (cents / 100).toFixed(2); }
+
+    function syncBar() {
+      const n = cartCount();
+      if (bar) bar.hidden = n === 0;
+      if (barCount) barCount.textContent = n + (n === 1 ? ' item' : ' items');
+      if (barTotal) barTotal.textContent = money(cartSubtotalCents());
+    }
+
+    // Each card keeps a local quantity selector; nothing touches the cart
+    // until the customer clicks "Add to Cart".
+    const cardSyncs: Array<() => void> = [];
+
+    cards.forEach(card => {
+      const id = card.dataset.itemId!;
+      const name = card.dataset.itemName!;
+      const priceCents = parseInt(card.dataset.itemPriceCents ?? '0', 10);
+      const remaining = parseInt(card.dataset.itemRemaining ?? '0', 10);
+
+      const valueEl = card.querySelector('.qty-value')!;
+      const minus = card.querySelector('.qty-minus') as HTMLButtonElement;
+      const plus = card.querySelector('.qty-plus') as HTMLButtonElement;
+      const addBtn = card.querySelector('.add-to-cart-btn') as HTMLButtonElement;
+
+      const inCart = () => getQty(id);
+      // The counter reflects the total quantity for this item in the cart.
+      // It starts at whatever is already in the cart (0 when nothing is).
+      let localQty = Math.min(inCart(), remaining);
+      let feedbackTimer = 0;
+
+      function sync() {
+        localQty = Math.min(Math.max(0, localQty), remaining);
+        valueEl.textContent = String(localQty);
+        minus.disabled = localQty <= 0;
+        plus.disabled = localQty >= remaining;
+        // Don't clobber the transient feedback label while it's showing.
+        if (!feedbackTimer) {
+          const current = inCart();
+          const unchanged = localQty === current;
+          addBtn.disabled = remaining === 0 || unchanged;
+          addBtn.textContent = remaining === 0
+            ? 'Sold out'
+            : unchanged
+              ? current > 0 ? 'In cart' : 'Add to Cart'
+              : localQty === 0
+                ? 'Remove from cart'
+                : current > 0 ? 'Update cart' : 'Add to Cart';
+        }
+      }
+      cardSyncs.push(sync);
+
+      minus.addEventListener('click', () => { if (localQty > 0) { localQty--; sync(); } });
+      plus.addEventListener('click', () => { if (localQty < remaining) { localQty++; sync(); } });
+
+      addBtn.addEventListener('click', () => {
+        if (remaining === 0 || localQty === inCart()) return;
+        const removing = localQty === 0;
+        setQty({ id, name, priceCents }, localQty);
+
+        addBtn.textContent = removing ? 'Removed ✓' : 'Added ✓';
+        addBtn.classList.add('added');
+        addBtn.disabled = true;
+        window.clearTimeout(feedbackTimer);
+        feedbackTimer = window.setTimeout(() => {
+          feedbackTimer = 0;
+          addBtn.classList.remove('added');
+          sync();
+        }, 1100);
+      });
+
+      sync();
+    });
+
+    function syncAll() {
+      cardSyncs.forEach(fn => fn());
+      syncBar();
+    }
+
+    onCartChange(syncAll);
+    syncAll();
+  }
+
+  initOrderCart();
+</script>
+
+<style>
+  /* ── Order-page product cards (scoped overrides) ──────────────── */
+  /* Editorial style: square corners, thin accent borders, no shadows —
+     matching the site's review / membership cards. */
+  .product-grid {
+    gap: 2rem;
+  }
+
+  .product-card {
+    border: 1px solid var(--accent);
+    height: 100%;
+    transition: border-color 0.25s ease;
+  }
+  .product-card:hover {
+    border-color: var(--text-muted);
+  }
+  .product-card.sold-out:hover {
+    border-color: var(--accent);
+  }
+
+  .product-card-body {
+    padding: 1.25rem 1.4rem 1.5rem;
+    border-bottom: none;
+    border-top: 1px solid var(--accent);
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  .product-card-body h3 {
+    font-size: 1.4rem;
+    margin-bottom: 0.4rem;
+  }
+  .product-card-body > p:not(.scarcity-note) {
+    min-height: 2.6em;
+  }
+
+  .product-card-actions {
+    margin-top: auto;
+    padding-top: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+  }
+  .product-card-buy {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+  .product-price {
+    font-family: 'Cormorant Garamond', serif;
+    font-weight: 500;
+    font-size: 1.75rem;
+    line-height: 1;
+    color: var(--text-primary);
+  }
+  .add-to-cart-btn { width: 100%; }
+  .add-to-cart-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+  .add-to-cart-btn.added { background: #2D6A45; }
+  .qty-stepper {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--accent);
+  }
+  .qty-btn {
+    width: 2.25rem;
+    height: 2.25rem;
+    font-size: 1.25rem;
+    line-height: 1;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: inherit;
+    transition: background 0.15s ease;
+  }
+  .qty-btn:hover:not(:disabled) { background: rgba(0, 0, 0, 0.04); }
+  .qty-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+  .qty-value {
+    min-width: 1.75rem;
+    text-align: center;
+    font-weight: 600;
+    border-left: 1px solid var(--accent);
+    border-right: 1px solid var(--accent);
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 0.5rem;
+  }
+
+  .stock-badge-soldout { background: #b00020; color: #fff; }
+
+  /* Floating cart button — compact, mobile only.
+     Hidden on desktop/tablet where the header cart link is visible. */
+  .cart-fab {
+    display: none;
+    position: fixed;
+    bottom: 1rem;
+    right: 1rem;
+    z-index: 30;
+    align-items: center;
+    gap: 0.75rem;
+    background: var(--text-primary);
+    color: var(--bg);
+    text-decoration: none;
+    padding: 0.7rem 1rem;
+    box-shadow: 0 6px 18px rgba(26, 26, 26, 0.22);
+  }
+  .cart-fab-summary {
+    font-size: 0.78rem;
+    font-weight: 600;
+  }
+  .cart-bar-dot { margin: 0 0.35rem; opacity: 0.55; }
+  .cart-fab-cta {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    border-left: 1px solid rgba(250, 247, 242, 0.3);
+    padding-left: 0.75rem;
+    white-space: nowrap;
+  }
+
+  /* Only surface the floating button on mobile, where the header cart is
+     tucked behind the hamburger menu. */
+  @media (max-width: 768px) {
+    .cart-fab:not([hidden]) {
+      display: inline-flex;
+    }
+
+    /* The price + quantity stepper can't shrink, so let them wrap onto
+       their own lines instead of overflowing the card sideways. */
+    .product-card-buy {
+      flex-wrap: wrap;
+    }
+  }
+
+  /* On phones a two-column grid leaves each card too narrow for the price
+     and stepper, which forced horizontal page scroll. Go single-column. */
+  @media (max-width: 560px) {
+    .product-grid {
+      grid-template-columns: 1fr;
+      gap: 1.5rem;
+    }
+  }
+</style>

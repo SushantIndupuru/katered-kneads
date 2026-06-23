@@ -6,12 +6,9 @@ import {
     updateDrop,
     setDropItems,
     deleteDrop,
-    getCurrentDropId,
-    setCurrentDropId,
-    setConfig,
     parseDropItems,
-    CURRENT_DROP_KEY,
 } from '../../../../lib/db';
+import type { Drop } from '../../../../types/db-types';
 
 export const GET: APIRoute = async ({ params }) => {
     try {
@@ -19,8 +16,7 @@ export const GET: APIRoute = async ({ params }) => {
         const drop = await getDrop(id);
         if (!drop) return json({ error: 'Drop not found' }, 404);
         const items = await getDropItems(id);
-        const currentDropId = await getCurrentDropId();
-        return json({ drop, items, isCurrent: currentDropId === id });
+        return json({ drop, items });
     } catch (err) {
         return json({ error: getErrorMessage(err) }, 500);
     }
@@ -32,42 +28,77 @@ export const PATCH: APIRoute = async ({ params, request }) => {
         const existing = await getDrop(id);
         if (!existing) return json({ error: 'Drop not found' }, 404);
 
-        const { name, openTime, closeTime, setCurrent, showCountdown, items } = await request.json();
+        const body = await request.json();
+        const { name, openTime, closeTime, pickupTime, locationName, locationAddress, items, announce, archive } = body;
 
-        if (!name || typeof name !== 'string' || !name.trim()) {
-            return json({ error: 'Name is required' }, 400);
+        const updates: Partial<Omit<Drop, 'id'>> = {};
+
+        // Lightweight lifecycle actions (announce / unannounce / archive) can be
+        // sent on their own without a full schedule payload.
+        if (announce !== undefined) {
+            updates.announcedAt = announce ? new Date().toISOString() : null;
         }
-        if (!openTime || !closeTime) {
-            return json({ error: 'Open and close times are required' }, 400);
-        }
-        const open = new Date(openTime);
-        const close = new Date(closeTime);
-        if (Number.isNaN(open.getTime()) || Number.isNaN(close.getTime())) {
-            return json({ error: 'Invalid open or close time' }, 400);
-        }
-        if (close <= open) {
-            return json({ error: 'Close time must be after open time' }, 400);
+        if (archive === true) {
+            updates.archivedAt = new Date().toISOString();
         }
 
-        const parsed = parseDropItems(items);
-        if (!Array.isArray(parsed)) return json({ error: parsed.error }, 400);
+        // Full edit: name + schedule are validated together when provided.
+        const editingSchedule = name !== undefined || openTime !== undefined || closeTime !== undefined;
+        if (editingSchedule) {
+            if (!name || typeof name !== 'string' || !name.trim()) {
+                return json({ error: 'Name is required' }, 400);
+            }
+            if (!openTime || !closeTime) {
+                return json({ error: 'Open and close times are required' }, 400);
+            }
+            const open = new Date(openTime);
+            const close = new Date(closeTime);
+            if (Number.isNaN(open.getTime()) || Number.isNaN(close.getTime())) {
+                return json({ error: 'Invalid open or close time' }, 400);
+            }
+            if (close <= open) {
+                return json({ error: 'Close time must be after open time' }, 400);
+            }
+            updates.name = name.trim();
+            updates.openTime = open.toISOString();
+            updates.closeTime = close.toISOString();
+        }
 
-        const drop = await updateDrop(id, {
-            name: name.trim(),
-            openTime: open.toISOString(),
-            closeTime: close.toISOString(),
-            showCountdown: Boolean(showCountdown),
-        });
+        // Pickup time can be edited independently of the schedule. Empty/null
+        // clears it; any provided value must be a valid date.
+        if (pickupTime !== undefined) {
+            if (pickupTime === null || pickupTime === '') {
+                updates.pickupTime = null;
+            } else {
+                const pickup = new Date(pickupTime);
+                if (Number.isNaN(pickup.getTime())) {
+                    return json({ error: 'Invalid pickup time' }, 400);
+                }
+                updates.pickupTime = pickup.toISOString();
+            }
+        }
 
+        // Location fields can be edited independently of the schedule.
+        if (locationName !== undefined) {
+            updates.locationName = typeof locationName === 'string' ? locationName.trim() : '';
+        }
+        if (locationAddress !== undefined) {
+            updates.locationAddress = typeof locationAddress === 'string' ? locationAddress.trim() : '';
+        }
+
+        let parsedItems = null;
         if (items != null) {
-            await setDropItems(id, parsed);
+            const parsed = parseDropItems(items);
+            if (!Array.isArray(parsed)) return json({ error: parsed.error }, 400);
+            parsedItems = parsed;
         }
 
-        const currentDropId = await getCurrentDropId();
-        if (setCurrent) {
-            await setCurrentDropId(id);
-        } else if (currentDropId === id) {
-            await setConfig(CURRENT_DROP_KEY, null);
+        const drop = Object.keys(updates).length > 0
+            ? await updateDrop(id, updates)
+            : existing;
+
+        if (parsedItems != null) {
+            await setDropItems(id, parsedItems);
         }
 
         return json({ drop });
@@ -82,7 +113,6 @@ export const DELETE: APIRoute = async ({ params }) => {
         const existing = await getDrop(id);
         if (!existing) return json({ error: 'Drop not found' }, 404);
 
-        // deleteDrop clears the current_drop config if this was the active drop.
         await deleteDrop(id);
 
         return json({ success: true });

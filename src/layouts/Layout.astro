@@ -1,5 +1,6 @@
 ---
 import '../styles/global.css';
+import { getCurrentDrop } from '../lib/db';
 
 export interface Props {
   title?: string;
@@ -12,19 +13,28 @@ const {
   description = "Handmade, 100% scratch cookies delivered biweekly to UC Berkeley and UC Davis. Limited orders open every two weeks.",
   activePage = ""
 } = Astro.props;
+
+// Whether a drop is currently open for ordering. When it isn't, the client
+// clears any saved cart (you can't check out outside an open window anyway).
+const currentDrop = await getCurrentDrop();
+const now = Date.now();
+const ordersOpen = !!currentDrop
+  && now >= new Date(currentDrop.openTime).getTime()
+  && now < new Date(currentDrop.closeTime).getTime();
 ---
 
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="icon" href="/favicon.ico" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" sizes="any" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="generator" content={Astro.generator} />
     <meta name="description" content={description} />
     <title>{title}</title>
   </head>
-  <body>
+  <body data-orders-open={ordersOpen ? '1' : '0'}>
 
     <!-- Mobile Nav Overlay -->
     <div class="mobile-nav" id="mobile-nav" role="dialog" aria-modal="true" aria-label="Mobile navigation">
@@ -33,17 +43,24 @@ const {
       <a href="/about" class="mobile-link">About</a>
       <a href="/menu" class="mobile-link">Our Treats</a>
       <a href="/order" class="mobile-link">Order</a>
+      <a href="/cart" class="mobile-link">Cart <span class="cart-count-badge" data-cart-count hidden></span></a>
     </div>
 
     <!-- Header -->
     <header id="site-header">
       <div class="nav-inner">
-        <a href="/" class="nav-logo" aria-label="Katered Kneads home">Katered Kneads</a>
+        <a href="/" class="nav-logo" aria-label="Katered Kneads home">
+          <img src="/logo.svg" alt="" width="30" height="30" class="nav-logo-mark" />
+          <span>Katered Kneads</span>
+        </a>
 
         <nav class="nav-links" aria-label="Primary navigation">
           <a href="/about" class={activePage === 'about' ? 'nav-active' : ''}>About</a>
           <a href="/menu" class={activePage === 'menu' ? 'nav-active' : ''}>Our Treats</a>
           <a href="/order" class={activePage === 'order' ? 'nav-active' : ''}>Order</a>
+          <a href="/cart" class={`nav-cart ${activePage === 'cart' ? 'nav-active' : ''}`} aria-label="Cart">
+            Cart<span class="cart-count-badge" data-cart-count hidden></span>
+          </a>
         </nav>
 
         <div class="nav-instagram" id="nav-instagram-desktop">
@@ -71,10 +88,9 @@ const {
       <div class="footer-inner">
         <div class="footer-newsletter">
           <p class="footer-newsletter-heading">Stay in the loop.</p>
-          <p class="footer-newsletter-sub">Follow us on Instagram for drop announcements and behind-the-scenes baking. Or join our SMS list to be texted the moment orders open.</p>
+          <p class="footer-newsletter-sub">Follow us on Instagram for drop announcements and behind-the-scenes baking — and to know the moment orders open.</p>
           <div class="footer-cta-row">
             <a href="https://www.instagram.com/Katered_Kneads" target="_blank" rel="noopener noreferrer" class="cta-link">Instagram @Katered_Kneads →</a>
-            <a href="/order#sms-signup" class="cta-link">Join SMS List →</a>
           </div>
         </div>
         <div class="footer-bottom">
@@ -85,11 +101,32 @@ const {
             <a href="/refund-policy">Refund Policy</a>
           </div>
           <p class="footer-copy">&copy; 2026 Katered Kneads &mdash; UC Berkeley &amp; UC Davis</p>
+          <p class="footer-credit">Made with &#10084;&#65039; by <a href="https://github.com/SushantIndupuru" target="_blank" rel="noopener noreferrer">Sushant Indupuru</a></p>
         </div>
       </div>
     </footer>
 
     <script>
+      import { cartCount, clearCart, onCartChange } from '../lib/cart';
+
+      // No drop is open right now — drop any saved cart so stale items don't
+      // linger between drops. (You can't check out outside an open window.)
+      if (document.body.dataset.ordersOpen !== '1') {
+        clearCart();
+      }
+
+      // Keep the header/mobile cart badges in sync with the stored cart.
+      const cartBadges = Array.from(document.querySelectorAll<HTMLElement>('[data-cart-count]'));
+      function updateCartBadges() {
+        const n = cartCount();
+        cartBadges.forEach(b => {
+          b.textContent = n > 0 ? String(n) : '';
+          b.hidden = n <= 0;
+        });
+      }
+      updateCartBadges();
+      onCartChange(updateCartBadges);
+
       // Scroll header border
       const header = document.getElementById('site-header');
       window.addEventListener('scroll', () => {
@@ -122,3 +159,21 @@ const {
 
   </body>
 </html>
+
+<style>
+  .nav-cart { position: relative; display: inline-flex; align-items: center; gap: 0.35rem; }
+  .cart-count-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.25rem;
+    height: 1.25rem;
+    padding: 0 0.35rem;
+    border-radius: 999px;
+    background: var(--color-accent, #c2410c);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+  }
+</style>

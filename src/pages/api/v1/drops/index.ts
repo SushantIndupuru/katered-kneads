@@ -1,11 +1,11 @@
 import type { APIRoute } from 'astro';
 import { json, getErrorMessage } from '../../../../lib/http';
-import { getDrops, createDrop, getCurrentDropId, setCurrentDropId, parseDropItems } from '../../../../lib/db';
+import { getActiveDrop, getArchivedDrops, createDrop, parseDropItems } from '../../../../lib/db';
 
 export const GET: APIRoute = async () => {
     try {
-        const [drops, currentDropId] = await Promise.all([getDrops(), getCurrentDropId()]);
-        return json({ drops, currentDropId });
+        const [activeDrop, olderDrops] = await Promise.all([getActiveDrop(), getArchivedDrops()]);
+        return json({ activeDrop, olderDrops });
     } catch (err) {
         return json({ error: getErrorMessage(err) }, 500);
     }
@@ -13,7 +13,13 @@ export const GET: APIRoute = async () => {
 
 export const POST: APIRoute = async ({ request }) => {
     try {
-        const { name, openTime, closeTime, setCurrent, showCountdown, items } = await request.json();
+        const { name, openTime, closeTime, pickupTime, locationName, locationAddress, items } = await request.json();
+
+        // Single-active model: only one non-archived drop at a time.
+        const existingActive = await getActiveDrop();
+        if (existingActive) {
+            return json({ error: 'Archive the current active drop before creating a new one.' }, 409);
+        }
 
         if (!name || typeof name !== 'string' || !name.trim()) {
             return json({ error: 'Name is required' }, 400);
@@ -31,6 +37,15 @@ export const POST: APIRoute = async ({ request }) => {
             return json({ error: 'Close time must be after open time' }, 400);
         }
 
+        let pickupIso: string | null = null;
+        if (pickupTime) {
+            const pickup = new Date(pickupTime);
+            if (Number.isNaN(pickup.getTime())) {
+                return json({ error: 'Invalid pickup time' }, 400);
+            }
+            pickupIso = pickup.toISOString();
+        }
+
         const parsed = parseDropItems(items);
         if (!Array.isArray(parsed)) return json({ error: parsed.error }, 400);
 
@@ -38,12 +53,12 @@ export const POST: APIRoute = async ({ request }) => {
             name: name.trim(),
             openTime: open.toISOString(),
             closeTime: close.toISOString(),
-            showCountdown: Boolean(showCountdown),
+            pickupTime: pickupIso,
+            locationName: typeof locationName === 'string' ? locationName.trim() : '',
+            locationAddress: typeof locationAddress === 'string' ? locationAddress.trim() : '',
+            announcedAt: null,
+            archivedAt: null,
         }, parsed);
-
-        if (setCurrent) {
-            await setCurrentDropId(drop.id);
-        }
 
         return json({ drop }, 201);
     } catch (err) {

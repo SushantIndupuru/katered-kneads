@@ -4,19 +4,19 @@ import {updateMenuItem, deleteMenuItem} from '../../../../lib/db/menu-items';
 import {
     getDropsForMenuItem,
     deleteDrop,
-    getCurrentDropId,
+    getActiveDrop,
 } from '../../../../lib/db';
 
 export const GET: APIRoute = async ({params}) => {
     try {
         const {id} = params;
         if (!id) return json({error: 'Missing menu item ID'}, 400);
-        const [drops, currentDropId] = await Promise.all([
+        const [drops, activeDrop] = await Promise.all([
             getDropsForMenuItem(id),
-            getCurrentDropId(),
+            getActiveDrop(),
         ]);
         return json({
-            drops: drops.map(d => ({id: d.id, name: d.name, isCurrent: d.id === currentDropId})),
+            drops: drops.map(d => ({id: d.id, name: d.name, isCurrent: d.id === activeDrop?.id})),
         });
     } catch (err) {
         const message = getErrorMessage(err);
@@ -56,7 +56,6 @@ export const DELETE: APIRoute = async ({params, url}) => {
         }
 
         if (force && drops.length > 0) {
-            // deleteDrop clears the current_drop config if it deletes the active drop.
             for (const drop of drops) {
                 await deleteDrop(drop.id);
             }

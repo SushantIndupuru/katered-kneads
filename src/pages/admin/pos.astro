@@ -1,0 +1,1594 @@
+---
+import '../../styles/global.css';
+import { getActiveDrop, getDropItems, getOrders } from '../../lib/db';
+import type { Drop, DropItemWithMenu, Order } from '../../types/db-types.ts';
+
+// Route is protected by middleware (src/middleware.ts) — any logged-in admin
+// can reach it. We still surface the user for the sign-out control.
+const user = (Astro.locals as { user?: { email?: string } }).user;
+
+let activeDrop: Drop | null = null;
+try {
+    activeDrop = await getActiveDrop();
+} catch (e) {
+    // non-fatal — the lookup tool still works without an active drop.
+}
+
+let inPersonItems: DropItemWithMenu[] = [];
+if (activeDrop) {
+    try {
+        inPersonItems = (await getDropItems(activeDrop.id)).filter(i => i.inPersonStock > 0);
+    } catch (e) {
+        // non-fatal
+    }
+}
+
+const ipRows = inPersonItems.map(item => ({
+    menuItemId: item.menuItem.id,
+    name: item.menuItem.name,
+    price: item.menuItem.price,
+    stock: item.inPersonStock,
+    sold: item.inPersonConsumed,
+    remaining: item.inPersonStock - item.inPersonConsumed,
+}));
+const ipTotals = {
+    stock: ipRows.reduce((s, r) => s + r.stock, 0),
+    sold: ipRows.reduce((s, r) => s + r.sold, 0),
+    remaining: ipRows.reduce((s, r) => s + r.remaining, 0),
+};
+
+// Remaining (unfulfilled) online orders — these still need to be handed over.
+// The client renders + updates this list as orders are served.
+let remainingOrders: Order[] = [];
+try {
+    remainingOrders = await getOrders({ statuses: ['paid'] });
+} catch (e) {
+    // non-fatal
+}
+const remainingJson = JSON.stringify(remainingOrders);
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
+    <link rel="icon" href="/favicon.ico"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <meta name="robots" content="noindex, nofollow"/>
+    <title>POS — Katered Kneads</title>
+</head>
+<body class="admin-body">
+
+<!-- Sidebar -->
+<aside class="admin-sidebar">
+    <div class="admin-sidebar-top">
+        <a href="/" class="admin-logo">Katered Kneads</a>
+        <span class="admin-badge">Admin</span>
+    </div>
+
+    <nav class="admin-nav">
+        <a href="/admin" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="7" height="7"/>
+                <rect x="14" y="3" width="7" height="7"/>
+                <rect x="14" y="14" width="7" height="7"/>
+                <rect x="3" y="14" width="7" height="7"/>
+            </svg>
+            Dashboard
+        </a>
+        <a href="/admin/stock" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                <line x1="12" y1="22.08" x2="12" y2="12"/>
+            </svg>
+            Stock
+        </a>
+        <a href="/admin/pos" class="admin-nav-link admin-nav-active">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="3" width="20" height="14" rx="2"/>
+                <line x1="2" y1="9" x2="22" y2="9"/>
+                <line x1="8" y1="21" x2="16" y2="21"/>
+                <line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+            Point of Sale
+        </a>
+        <a href="/menu" target="_blank" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+                <polyline points="10 9 9 9 8 9"/>
+            </svg>
+            View Menu ↗
+        </a>
+    </nav>
+
+    <div class="admin-sidebar-footer">
+        <p class="admin-user-email">{user?.email ?? 'Admin'}</p>
+        <form method="POST" action="/api/v1/auth/logout">
+            <button type="submit" class="admin-logout-btn">Sign Out</button>
+        </form>
+    </div>
+</aside>
+
+<!-- Main content -->
+<main class="admin-main">
+    <div class="admin-topbar">
+        <div>
+            <h1 class="admin-page-title">Point of Sale</h1>
+            <p class="admin-page-sub">{activeDrop ? activeDrop.name : 'No active drop'}</p>
+        </div>
+    </div>
+
+    <!-- Tab bar -->
+    <div class="admin-tabs">
+        <button class="admin-tab admin-tab-active" data-tab="online">
+            Online
+            <span class="admin-tab-count" id="online-count">{remainingOrders.length}</span>
+        </button>
+        <button class="admin-tab" data-tab="in-person">In Person</button>
+    </div>
+
+    <!-- ── Online tab ─────────────────────────────────────────── -->
+    <div id="tab-online" class="admin-tab-panel pos-online-grid">
+        <!-- Pickup lookup / fulfillment -->
+        <section class="pos-panel">
+            <h2 class="pos-panel-title">Pickup Lookup</h2>
+            <p class="pos-panel-hint">Enter a customer's confirmation code to find their order and hand it off.</p>
+
+            <form id="lookup-form" class="pos-lookup-form" autocomplete="off">
+                <input
+                    id="code-input"
+                    class="pos-code-input"
+                    type="text"
+                    inputmode="text"
+                    placeholder="ABC123"
+                    maxlength="12"
+                    aria-label="Confirmation code"
+                    autocapitalize="characters"
+                    spellcheck="false"
+                    autofocus
+                />
+                <button type="submit" class="pos-lookup-btn" id="lookup-btn">Look up</button>
+            </form>
+
+            <div id="lookup-message" class="pos-message" hidden></div>
+
+            <div id="order-card" class="pos-order-card" hidden>
+                <div class="pos-order-head">
+                    <div>
+                        <span class="pos-order-code" id="order-code"></span>
+                        <span class="pos-order-status" id="order-status"></span>
+                    </div>
+                    <span class="pos-order-total" id="order-total"></span>
+                </div>
+
+                <dl class="pos-order-meta">
+                    <div><dt>Name</dt><dd id="order-name"></dd></div>
+                    <div><dt>Pickup</dt><dd id="order-campus"></dd></div>
+                    <div><dt>Email</dt><dd id="order-email"></dd></div>
+                    <div><dt>Phone</dt><dd id="order-phone"></dd></div>
+                </dl>
+
+                <div class="pos-items-head">
+                    <span class="pos-items-label">Hand over</span>
+                    <span class="pos-items-count" id="order-items-count"></span>
+                </div>
+                <ul class="pos-order-items" id="order-items"></ul>
+
+                <div class="pos-order-actions">
+                    <button class="pos-fulfill-btn" id="fulfill-btn"></button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Remaining (unfulfilled) orders -->
+        <section class="pos-panel">
+            <div class="pos-remaining-head">
+                <h2 class="pos-panel-title">Remaining Orders</h2>
+                <span class="pos-remaining-badge" id="remaining-badge"></span>
+            </div>
+            <p class="pos-panel-hint">Paid orders waiting to be handed over. Tap one to pull it up, or serve it directly.</p>
+
+            <div id="remaining-empty" class="pos-empty" hidden>All caught up — every paid order has been served.</div>
+            <ul class="pos-remaining-list" id="remaining-list"></ul>
+        </section>
+    </div>
+
+    <!-- ── In-person tab ──────────────────────────────────────── -->
+    <div id="tab-in-person" class="admin-tab-panel" hidden>
+        {!activeDrop ? (
+            <section class="pos-panel">
+                <h2 class="pos-panel-title">In-Person Sales</h2>
+                <div class="pos-empty">No active drop. Create or activate a drop in the admin dashboard first.</div>
+            </section>
+        ) : ipRows.length === 0 ? (
+            <section class="pos-panel">
+                <h2 class="pos-panel-title">In-Person Sales</h2>
+                <div class="pos-empty">No in-person stock set aside for this drop. Add some via “Edit items” on the admin Drops tab.</div>
+            </section>
+        ) : (
+            <div class="pos-register" data-drop-id={activeDrop.id}>
+                <!-- Product grid -->
+                <section class="pos-panel pos-register-products">
+                    <div class="pos-register-head">
+                        <h2 class="pos-panel-title">Register</h2>
+                        <div class="pos-ip-mini">
+                            Sold <span id="ip-total-sold">{ipTotals.sold}</span> ·
+                            <span id="ip-total-remaining">{ipTotals.remaining}</span> left
+                        </div>
+                    </div>
+                    <div class="pos-product-grid">
+                        {ipRows.map(row => (
+                            <button
+                                type="button"
+                                class="pos-product"
+                                data-menu-item-id={row.menuItemId}
+                                data-name={row.name}
+                                data-price-cents={Math.round(row.price * 100)}
+                                data-stock={row.stock}
+                                data-sold={row.sold}
+                                disabled={row.remaining <= 0}
+                            >
+                                <span class="pos-product-name">{row.name}</span>
+                                <span class="pos-product-price">${row.price.toFixed(2)}</span>
+                                <span class="pos-product-left"><span class="pos-product-remaining">{row.remaining}</span> left</span>
+                            </button>
+                        ))}
+                    </div>
+                </section>
+
+                <!-- Cart / ticket -->
+                <section class="pos-panel pos-register-cart">
+                    <div class="pos-cart-head">
+                        <h2 class="pos-panel-title">Current Sale</h2>
+                        <button type="button" class="pos-cart-clear" id="cart-clear" hidden>Clear</button>
+                    </div>
+
+                    <div class="pos-cart-empty" id="cart-empty">Tap items on the left to build a sale.</div>
+                    <ul class="pos-cart-lines" id="cart-lines"></ul>
+
+                    <div class="pos-cart-foot">
+                        <div class="pos-cart-total-row">
+                            <span>Total</span>
+                            <span id="cart-total">$0.00</span>
+                        </div>
+                        <button type="button" class="pos-charge-btn" id="charge-btn" disabled>Charge</button>
+                    </div>
+                </section>
+            </div>
+        )}
+    </div>
+</main>
+
+<!-- Charge / QR payment modal -->
+<div class="pos-modal-overlay" id="charge-modal" hidden>
+    <div class="pos-modal pos-charge-modal" role="dialog" aria-modal="true" aria-labelledby="charge-title">
+        <button class="pos-modal-close" id="charge-close" aria-label="Close">✕</button>
+
+        <div id="charge-stage-qr">
+            <h2 class="pos-panel-title" id="charge-title">Scan to pay</h2>
+            <p class="pos-charge-amount" id="charge-amount"></p>
+            <div class="pos-qr-wrap">
+                <img id="charge-qr" class="pos-qr" alt="Payment QR code" width="280" height="280"/>
+            </div>
+            <p class="pos-charge-hint">Have the customer scan this with their phone camera to pay. This screen updates automatically once they're done.</p>
+            <div class="pos-charge-status" id="charge-status">
+                <span class="pos-charge-spinner" aria-hidden="true"></span>
+                Waiting for payment…
+            </div>
+            <a id="charge-link" class="pos-charge-link" href="#" target="_blank" rel="noopener">Open payment link ↗</a>
+        </div>
+
+        <div id="charge-stage-done" hidden>
+            <div class="pos-mark" aria-hidden="true">✓</div>
+            <h2 class="pos-panel-title">Payment received</h2>
+            <p class="pos-charge-amount" id="charge-done-amount"></p>
+            <button type="button" class="pos-charge-btn" id="charge-new">New sale</button>
+        </div>
+
+        <div id="charge-stage-error" hidden>
+            <div class="pos-mark pos-mark-error" aria-hidden="true">!</div>
+            <h2 class="pos-panel-title">Couldn't start payment</h2>
+            <p class="pos-charge-error-msg" id="charge-error-msg"></p>
+            <button type="button" class="pos-charge-btn pos-charge-retry" id="charge-retry">Try again</button>
+        </div>
+    </div>
+</div>
+
+<!-- Order details modal -->
+<div class="pos-modal-overlay" id="order-modal" hidden>
+    <div class="pos-modal" role="dialog" aria-modal="true" aria-labelledby="modal-code">
+        <button class="pos-modal-close" id="modal-close" aria-label="Close">✕</button>
+        <div class="pos-modal-head">
+            <div>
+                <span class="pos-order-code" id="modal-code"></span>
+                <span class="pos-order-status" id="modal-status"></span>
+            </div>
+            <span class="pos-order-total" id="modal-total"></span>
+        </div>
+        <dl class="pos-order-meta">
+            <div><dt>Name</dt><dd id="modal-name"></dd></div>
+            <div><dt>Pickup</dt><dd id="modal-campus"></dd></div>
+            <div><dt>Email</dt><dd id="modal-email"></dd></div>
+            <div><dt>Phone</dt><dd id="modal-phone"></dd></div>
+            <div><dt>Ordered</dt><dd id="modal-placed"></dd></div>
+        </dl>
+        <div class="pos-items-head">
+            <span class="pos-items-label">Items</span>
+            <span class="pos-items-count" id="modal-items-count"></span>
+        </div>
+        <ul class="pos-order-items" id="modal-items"></ul>
+        <button class="pos-fulfill-btn" id="modal-fulfill-btn"></button>
+    </div>
+</div>
+
+<script type="application/json" id="remaining-orders-data" set:html={remainingJson}></script>
+
+<script>
+    // ── Order lookup + fulfillment ─────────────────────────────
+    const form = document.getElementById('lookup-form') as HTMLFormElement;
+    const codeInput = document.getElementById('code-input') as HTMLInputElement;
+    const lookupBtn = document.getElementById('lookup-btn') as HTMLButtonElement;
+    const message = document.getElementById('lookup-message') as HTMLElement;
+    const card = document.getElementById('order-card') as HTMLElement;
+    const fulfillBtn = document.getElementById('fulfill-btn') as HTMLButtonElement;
+
+    const esc = (s: string) => s.replace(/[&<>"]/g, c =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] ?? c));
+    const money = (cents: number) => '$' + (cents / 100).toFixed(2);
+
+    interface OrderItem { nameSnapshot: string; unitPriceCents: number; quantity: number; }
+    interface Order {
+        id: string; status: string; customerName: string; customerEmail: string;
+        customerPhone: string; pickupLocation: string; subtotalCents: number;
+        pickupCode: string | null; createdAt?: string; items: OrderItem[];
+    }
+
+    let currentOrder: Order | null = null;
+
+    function showMessage(text: string, kind: 'error' | 'info') {
+        message.textContent = text;
+        message.className = `pos-message pos-message-${kind}`;
+        message.hidden = false;
+    }
+    function clearMessage() {
+        message.hidden = true;
+    }
+
+    function renderOrder(order: Order) {
+        currentOrder = order;
+        (document.getElementById('order-code') as HTMLElement).textContent = order.pickupCode ?? '—';
+        (document.getElementById('order-total') as HTMLElement).textContent = money(order.subtotalCents);
+        (document.getElementById('order-name') as HTMLElement).textContent = order.customerName || '—';
+        (document.getElementById('order-campus') as HTMLElement).textContent = order.pickupLocation || '—';
+        (document.getElementById('order-email') as HTMLElement).textContent = order.customerEmail || '—';
+        (document.getElementById('order-phone') as HTMLElement).textContent = order.customerPhone || '—';
+
+        const items = order.items ?? [];
+        const totalQty = items.reduce((sum, i) => sum + i.quantity, 0);
+        const countEl = document.getElementById('order-items-count') as HTMLElement;
+        countEl.textContent = `${totalQty} item${totalQty !== 1 ? 's' : ''}`;
+
+        const itemsEl = document.getElementById('order-items') as HTMLElement;
+        itemsEl.innerHTML = items.map(i =>
+            `<li class="pos-order-item">
+                <span class="pos-qty">${i.quantity}</span>
+                <span class="pos-item-name">${esc(i.nameSnapshot)}</span>
+                <span class="pos-line-price">${money(i.unitPriceCents * i.quantity)}</span>
+            </li>`,
+        ).join('');
+
+        updateStatusUi(order.status);
+        card.hidden = false;
+    }
+
+    function updateStatusUi(status: string) {
+        const statusEl = document.getElementById('order-status') as HTMLElement;
+        const fulfilled = status === 'fulfilled';
+        statusEl.textContent = fulfilled ? 'Served' : 'Paid';
+        statusEl.className = `pos-order-status ${fulfilled ? 'pos-status-fulfilled' : 'pos-status-paid'}`;
+        fulfillBtn.textContent = fulfilled ? 'Undo — mark as not served' : 'Mark as served ✓';
+        fulfillBtn.className = fulfilled ? 'pos-fulfill-btn pos-fulfill-undo' : 'pos-fulfill-btn';
+        fulfillBtn.disabled = false;
+    }
+
+    async function lookup(code: string) {
+        clearMessage();
+        card.hidden = true;
+        currentOrder = null;
+        lookupBtn.disabled = true;
+        try {
+            const res = await fetch(`/api/v1/orders/lookup?code=${encodeURIComponent(code)}`);
+            const data = await res.json();
+            if (!res.ok) {
+                showMessage(data.error ?? 'Lookup failed.', 'error');
+                return;
+            }
+            renderOrder(data.order as Order);
+            if ((data.order as Order).status === 'fulfilled') {
+                showMessage('Heads up: this order was already marked as served.', 'info');
+            }
+        } catch {
+            showMessage('Network error — please try again.', 'error');
+        } finally {
+            lookupBtn.disabled = false;
+        }
+    }
+
+    form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const code = codeInput.value.trim().toUpperCase();
+        if (!code) return;
+        codeInput.value = code;
+        lookup(code);
+    });
+
+    fulfillBtn.addEventListener('click', async () => {
+        if (!currentOrder) return;
+        const nextStatus = currentOrder.status === 'fulfilled' ? 'paid' : 'fulfilled';
+        fulfillBtn.disabled = true;
+        try {
+            const res = await fetch(`/api/v1/orders/${currentOrder.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: nextStatus }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                showMessage(data.error ?? 'Could not update order.', 'error');
+                fulfillBtn.disabled = false;
+                return;
+            }
+            currentOrder = data.order as Order;
+            updateStatusUi(currentOrder.status);
+            syncRemaining(currentOrder);
+            clearMessage();
+        } catch {
+            showMessage('Network error — please try again.', 'error');
+            fulfillBtn.disabled = false;
+        }
+    });
+
+    // ── Remaining (unfulfilled) orders list ────────────────────
+    const remainingListEl = document.getElementById('remaining-list') as HTMLElement;
+    const remainingEmptyEl = document.getElementById('remaining-empty') as HTMLElement;
+    const remainingBadge = document.getElementById('remaining-badge') as HTMLElement;
+    const onlineCount = document.getElementById('online-count') as HTMLElement;
+
+    let remaining: Order[] = [];
+    try {
+        const dataEl = document.getElementById('remaining-orders-data');
+        remaining = JSON.parse(dataEl?.textContent || '[]') as Order[];
+    } catch {
+        remaining = [];
+    }
+
+    function renderRemaining() {
+        remainingBadge.textContent = `${remaining.length} waiting`;
+        onlineCount.textContent = String(remaining.length);
+        if (remaining.length === 0) {
+            remainingEmptyEl.hidden = false;
+            remainingListEl.innerHTML = '';
+            return;
+        }
+        remainingEmptyEl.hidden = true;
+        remainingListEl.innerHTML = remaining.map(o => {
+            const qty = (o.items ?? []).reduce((s, i) => s + i.quantity, 0);
+            const summary = (o.items ?? [])
+                .map(i => `${i.quantity}× ${esc(i.nameSnapshot)}`).join(', ');
+            return `<li class="pos-remaining-item">
+                <span class="pos-remaining-info">
+                    <span class="pos-remaining-name">${esc(o.customerName || 'Guest')}${o.pickupLocation ? ` · ${esc(o.pickupLocation)}` : ''}</span>
+                    <span class="pos-remaining-summary">${qty} item${qty !== 1 ? 's' : ''} — ${summary}</span>
+                </span>
+                <span class="pos-remaining-total">${money(o.subtotalCents)}</span>
+                <button class="pos-remaining-expand" data-id="${esc(o.id)}" aria-label="View order details" title="View details">⤢</button>
+            </li>`;
+        }).join('');
+    }
+
+    // Keep the remaining list in sync with an order's new status: drop it when
+    // served, re-add it (newest-first) when un-served.
+    function syncRemaining(order: Order) {
+        const idx = remaining.findIndex(o => o.id === order.id);
+        if (order.status === 'fulfilled') {
+            if (idx !== -1) remaining.splice(idx, 1);
+        } else if (idx === -1) {
+            remaining.unshift(order);
+        }
+        renderRemaining();
+    }
+
+    renderRemaining();
+
+    // ── Order details modal ────────────────────────────────────
+    const modal = document.getElementById('order-modal') as HTMLElement;
+    const modalClose = document.getElementById('modal-close') as HTMLButtonElement;
+    const modalFulfillBtn = document.getElementById('modal-fulfill-btn') as HTMLButtonElement;
+    const placedFmt = new Intl.DateTimeFormat('en-US', {
+        month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    });
+    let modalOrder: Order | null = null;
+
+    function openModal(order: Order) {
+        modalOrder = order;
+        (document.getElementById('modal-code') as HTMLElement).textContent = order.pickupCode ?? '—';
+        (document.getElementById('modal-total') as HTMLElement).textContent = money(order.subtotalCents);
+        (document.getElementById('modal-name') as HTMLElement).textContent = order.customerName || '—';
+        (document.getElementById('modal-campus') as HTMLElement).textContent = order.pickupLocation || '—';
+        (document.getElementById('modal-email') as HTMLElement).textContent = order.customerEmail || '—';
+        (document.getElementById('modal-phone') as HTMLElement).textContent = order.customerPhone || '—';
+        (document.getElementById('modal-placed') as HTMLElement).textContent =
+            order.createdAt ? placedFmt.format(new Date(order.createdAt)) : '—';
+
+        const items = order.items ?? [];
+        const totalQty = items.reduce((sum, i) => sum + i.quantity, 0);
+        (document.getElementById('modal-items-count') as HTMLElement).textContent =
+            `${totalQty} item${totalQty !== 1 ? 's' : ''}`;
+        (document.getElementById('modal-items') as HTMLElement).innerHTML = items.map(i =>
+            `<li class="pos-order-item">
+                <span class="pos-qty">${i.quantity}</span>
+                <span class="pos-item-name">${esc(i.nameSnapshot)}</span>
+                <span class="pos-line-price">${money(i.unitPriceCents * i.quantity)}</span>
+            </li>`,
+        ).join('');
+
+        updateModalStatusUi(order.status);
+        modal.hidden = false;
+        document.body.style.overflow = 'hidden';
+    }
+
+    function updateModalStatusUi(status: string) {
+        const statusEl = document.getElementById('modal-status') as HTMLElement;
+        const fulfilled = status === 'fulfilled';
+        statusEl.textContent = fulfilled ? 'Served' : 'Paid';
+        statusEl.className = `pos-order-status ${fulfilled ? 'pos-status-fulfilled' : 'pos-status-paid'}`;
+        modalFulfillBtn.textContent = fulfilled ? 'Undo — mark as not served' : 'Mark as served ✓';
+        modalFulfillBtn.className = fulfilled ? 'pos-fulfill-btn pos-fulfill-undo' : 'pos-fulfill-btn';
+        modalFulfillBtn.disabled = false;
+    }
+
+    function closeModal() {
+        modal.hidden = true;
+        modalOrder = null;
+        document.body.style.overflow = '';
+    }
+
+    remainingListEl.addEventListener('click', (e) => {
+        const btn = (e.target as HTMLElement).closest('.pos-remaining-expand') as HTMLButtonElement | null;
+        if (!btn) return;
+        const order = remaining.find(o => o.id === btn.dataset.id);
+        if (order) openModal(order);
+    });
+
+    modalClose.addEventListener('click', closeModal);
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) closeModal();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !modal.hidden) closeModal();
+    });
+
+    modalFulfillBtn.addEventListener('click', async () => {
+        if (!modalOrder) return;
+        const nextStatus = modalOrder.status === 'fulfilled' ? 'paid' : 'fulfilled';
+        modalFulfillBtn.disabled = true;
+        try {
+            const res = await fetch(`/api/v1/orders/${modalOrder.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: nextStatus }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                modalFulfillBtn.disabled = false;
+                alert(data.error ?? 'Could not update order.');
+                return;
+            }
+            const updated = data.order as Order;
+            modalOrder = updated;
+            updateModalStatusUi(updated.status);
+            syncRemaining(updated);
+            // Keep the lookup card in sync if it's showing the same order.
+            if (currentOrder && currentOrder.id === updated.id) {
+                currentOrder = updated;
+                updateStatusUi(updated.status);
+            }
+        } catch {
+            modalFulfillBtn.disabled = false;
+            alert('Network error — please try again.');
+        }
+    });
+
+    // ── Tabs ───────────────────────────────────────────────────
+    const tabs = document.querySelectorAll<HTMLButtonElement>('.admin-tab');
+    function activateTab(target: string | undefined) {
+        if (!target) return;
+        tabs.forEach(t => t.classList.toggle('admin-tab-active', t.dataset.tab === target));
+        (document.getElementById('tab-online') as HTMLElement).hidden = target !== 'online';
+        (document.getElementById('tab-in-person') as HTMLElement).hidden = target !== 'in-person';
+    }
+    tabs.forEach(tab => tab.addEventListener('click', () => activateTab(tab.dataset.tab)));
+
+    // ── In-person register (cart + Stripe QR checkout) ─────────
+    const register = document.querySelector('.pos-register') as HTMLElement | null;
+    if (register) {
+        const dropId = register.dataset.dropId as string;
+        const productGrid = register.querySelector('.pos-product-grid') as HTMLElement;
+        const cartLinesEl = document.getElementById('cart-lines') as HTMLElement;
+        const cartEmptyEl = document.getElementById('cart-empty') as HTMLElement;
+        const cartTotalEl = document.getElementById('cart-total') as HTMLElement;
+        const chargeBtn = document.getElementById('charge-btn') as HTMLButtonElement;
+        const clearBtn = document.getElementById('cart-clear') as HTMLButtonElement;
+        const ipTotalSold = document.getElementById('ip-total-sold') as HTMLElement;
+        const ipTotalRemaining = document.getElementById('ip-total-remaining') as HTMLElement;
+
+        interface Product { menuItemId: string; name: string; priceCents: number; stock: number; sold: number; }
+        interface CartLine { menuItemId: string; quantity: number; }
+
+        // Build a product index from the rendered buttons.
+        const products = new Map<string, Product>();
+        const buttons = new Map<string, HTMLButtonElement>();
+        productGrid.querySelectorAll<HTMLButtonElement>('.pos-product').forEach(btn => {
+            const id = btn.dataset.menuItemId as string;
+            products.set(id, {
+                menuItemId: id,
+                name: btn.dataset.name as string,
+                priceCents: Number(btn.dataset.priceCents ?? '0'),
+                stock: Number(btn.dataset.stock ?? '0'),
+                sold: Number(btn.dataset.sold ?? '0'),
+            });
+            buttons.set(id, btn);
+        });
+
+        let cart: CartLine[] = [];
+
+        const remainingFor = (p: Product) => {
+            const inCart = cart.find(c => c.menuItemId === p.menuItemId)?.quantity ?? 0;
+            return p.stock - p.sold - inCart;
+        };
+
+        function refreshProductButtons() {
+            for (const [id, btn] of buttons) {
+                const p = products.get(id)!;
+                const left = remainingFor(p);
+                const remEl = btn.querySelector('.pos-product-remaining') as HTMLElement;
+                remEl.textContent = String(left);
+                btn.disabled = left <= 0;
+            }
+        }
+
+        function refreshTotals() {
+            let sold = 0;
+            let remaining = 0;
+            for (const p of products.values()) {
+                sold += p.sold;
+                remaining += Math.max(0, p.stock - p.sold);
+            }
+            ipTotalSold.textContent = String(sold);
+            ipTotalRemaining.textContent = String(remaining);
+        }
+
+        function renderCart() {
+            const cartTotal = cart.reduce((sum, c) => {
+                const p = products.get(c.menuItemId);
+                return sum + (p ? p.priceCents * c.quantity : 0);
+            }, 0);
+            cartTotalEl.textContent = money(cartTotal);
+
+            const hasItems = cart.length > 0;
+            cartEmptyEl.hidden = hasItems;
+            clearBtn.hidden = !hasItems;
+            chargeBtn.disabled = !hasItems;
+            chargeBtn.textContent = hasItems ? `Charge ${money(cartTotal)}` : 'Charge';
+
+            cartLinesEl.innerHTML = cart.map(c => {
+                const p = products.get(c.menuItemId)!;
+                return `<li class="pos-cart-line" data-id="${esc(c.menuItemId)}">
+                    <div class="pos-cart-line-info">
+                        <span class="pos-cart-line-name">${esc(p.name)}</span>
+                        <span class="pos-cart-line-price">${money(p.priceCents)} each</span>
+                    </div>
+                    <div class="pos-stepper">
+                        <button class="pos-step pos-cart-minus" aria-label="Remove one">−</button>
+                        <span class="pos-step-val">${c.quantity}</span>
+                        <button class="pos-step pos-cart-plus" aria-label="Add one">+</button>
+                    </div>
+                    <span class="pos-cart-line-total">${money(p.priceCents * c.quantity)}</span>
+                </li>`;
+            }).join('');
+
+            refreshProductButtons();
+        }
+
+        function addToCart(id: string) {
+            const p = products.get(id);
+            if (!p || remainingFor(p) <= 0) return;
+            const line = cart.find(c => c.menuItemId === id);
+            if (line) line.quantity += 1;
+            else cart.push({ menuItemId: id, quantity: 1 });
+            renderCart();
+        }
+
+        function changeQty(id: string, delta: number) {
+            const idx = cart.findIndex(c => c.menuItemId === id);
+            if (idx === -1) return;
+            if (delta > 0 && remainingFor(products.get(id)!) <= 0) return;
+            cart[idx].quantity += delta;
+            if (cart[idx].quantity <= 0) cart.splice(idx, 1);
+            renderCart();
+        }
+
+        productGrid.addEventListener('click', (e) => {
+            const btn = (e.target as HTMLElement).closest('.pos-product') as HTMLButtonElement | null;
+            if (!btn || btn.disabled) return;
+            addToCart(btn.dataset.menuItemId as string);
+        });
+
+        cartLinesEl.addEventListener('click', (e) => {
+            const stepBtn = (e.target as HTMLElement).closest('.pos-step') as HTMLButtonElement | null;
+            if (!stepBtn) return;
+            const line = stepBtn.closest('.pos-cart-line') as HTMLElement;
+            const id = line.dataset.id as string;
+            changeQty(id, stepBtn.classList.contains('pos-cart-plus') ? 1 : -1);
+        });
+
+        clearBtn.addEventListener('click', () => { cart = []; renderCart(); });
+
+        // ── Charge modal + QR polling ──────────────────────────
+        const chargeModal = document.getElementById('charge-modal') as HTMLElement;
+        const chargeClose = document.getElementById('charge-close') as HTMLButtonElement;
+        const stageQr = document.getElementById('charge-stage-qr') as HTMLElement;
+        const stageDone = document.getElementById('charge-stage-done') as HTMLElement;
+        const stageError = document.getElementById('charge-stage-error') as HTMLElement;
+        const qrImg = document.getElementById('charge-qr') as HTMLImageElement;
+        const chargeAmount = document.getElementById('charge-amount') as HTMLElement;
+        const chargeDoneAmount = document.getElementById('charge-done-amount') as HTMLElement;
+        const chargeLink = document.getElementById('charge-link') as HTMLAnchorElement;
+        const chargeErrorMsg = document.getElementById('charge-error-msg') as HTMLElement;
+        const chargeNewBtn = document.getElementById('charge-new') as HTMLButtonElement;
+        const chargeRetryBtn = document.getElementById('charge-retry') as HTMLButtonElement;
+
+        let pollTimer: number | null = null;
+        let activePaymentIntentId: string | null = null;
+
+        function showStage(stage: 'qr' | 'done' | 'error') {
+            stageQr.hidden = stage !== 'qr';
+            stageDone.hidden = stage !== 'done';
+            stageError.hidden = stage !== 'error';
+        }
+
+        function stopPolling() {
+            if (pollTimer !== null) { clearTimeout(pollTimer); pollTimer = null; }
+            activePaymentIntentId = null;
+        }
+
+        function closeChargeModal() {
+            stopPolling();
+            chargeModal.hidden = true;
+            document.body.style.overflow = '';
+        }
+
+        // Commit the sold quantities locally once payment is confirmed, so the
+        // grid + totals reflect the new in-person consumed counts immediately.
+        function commitSaleLocally() {
+            for (const c of cart) {
+                const p = products.get(c.menuItemId);
+                if (p) p.sold = Math.min(p.stock, p.sold + c.quantity);
+            }
+            cart = [];
+            renderCart();
+            refreshTotals();
+        }
+
+        function pollStatus() {
+            if (!activePaymentIntentId) return;
+            const piId = activePaymentIntentId;
+            pollTimer = window.setTimeout(async () => {
+                try {
+                    const res = await fetch(`/api/v1/drops/${dropId}/in-person/checkout?payment_intent=${encodeURIComponent(piId)}`);
+                    const data = await res.json();
+                    if (activePaymentIntentId !== piId) return; // modal moved on
+                    if (res.ok && data.status === 'paid') {
+                        stopPolling();
+                        chargeDoneAmount.textContent = money(data.totalCents ?? data.subtotalCents ?? 0);
+                        commitSaleLocally();
+                        showStage('done');
+                        return;
+                    }
+                } catch {
+                    // transient — keep polling
+                }
+                if (activePaymentIntentId === piId) pollStatus();
+            }, 2500);
+        }
+
+        async function startCharge() {
+            if (cart.length === 0) return;
+            chargeBtn.disabled = true;
+            showStage('qr');
+            qrImg.removeAttribute('src');
+            chargeAmount.textContent = '';
+            chargeModal.hidden = false;
+            document.body.style.overflow = 'hidden';
+            try {
+                const res = await fetch(`/api/v1/drops/${dropId}/in-person/checkout`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ items: cart }),
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    chargeErrorMsg.textContent = data.error ?? 'Please try again.';
+                    showStage('error');
+                    return;
+                }
+                qrImg.src = data.qrDataUrl;
+                chargeLink.href = data.url;
+                chargeAmount.textContent = money(data.subtotalCents ?? 0);
+                activePaymentIntentId = data.paymentIntentId;
+                pollStatus();
+            } catch {
+                chargeErrorMsg.textContent = 'Network error — please try again.';
+                showStage('error');
+            } finally {
+                chargeBtn.disabled = cart.length === 0;
+            }
+        }
+
+        chargeBtn.addEventListener('click', startCharge);
+        chargeRetryBtn.addEventListener('click', startCharge);
+        chargeClose.addEventListener('click', closeChargeModal);
+        chargeNewBtn.addEventListener('click', closeChargeModal);
+        chargeModal.addEventListener('click', (e) => {
+            if (e.target === chargeModal) closeChargeModal();
+        });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && !chargeModal.hidden) closeChargeModal();
+        });
+
+        renderCart();
+        refreshTotals();
+    }
+</script>
+
+<style>
+    /* ── Admin layout (mirrors admin.astro) ───────────────────── */
+    .admin-body {
+        min-height: 100vh;
+        background: #F3EDE5;
+        display: flex;
+    }
+    .admin-sidebar {
+        width: 220px;
+        flex-shrink: 0;
+        background: var(--bg);
+        border-right: 1px solid var(--accent);
+        display: flex;
+        flex-direction: column;
+        padding: 2rem 1.5rem;
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100vh;
+        overflow-y: auto;
+    }
+    .admin-sidebar-top { margin-bottom: 2.5rem; }
+    .admin-logo {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 1.15rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--text-primary);
+        text-decoration: none;
+        display: block;
+    }
+    .admin-badge {
+        display: inline-block;
+        margin-top: 0.35rem;
+        font-size: 0.62rem;
+        font-weight: 600;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        background: var(--text-primary);
+        color: var(--bg);
+        padding: 0.18rem 0.55rem;
+    }
+    .admin-nav { display: flex; flex-direction: column; gap: 0.25rem; flex: 1; }
+    .admin-nav-link {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        font-size: 0.82rem;
+        font-weight: 500;
+        color: var(--text-muted);
+        text-decoration: none;
+        padding: 0.6rem 0.75rem;
+        border-radius: 2px;
+        transition: background 0.15s, color 0.15s;
+    }
+    .admin-nav-link:hover,
+    .admin-nav-active {
+        background: #EDE8E1;
+        color: var(--text-primary);
+    }
+    .admin-sidebar-footer {
+        border-top: 1px solid var(--accent);
+        padding-top: 1.25rem;
+        margin-top: auto;
+    }
+    .admin-user-email {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-bottom: 0.75rem;
+        word-break: break-all;
+    }
+    .admin-logout-btn {
+        font-size: 0.78rem;
+        font-weight: 500;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        cursor: pointer;
+        background: none;
+        border: 1px solid var(--accent);
+        padding: 0.45rem 0.9rem;
+        transition: border-color 0.15s, color 0.15s;
+        width: 100%;
+    }
+    .admin-logout-btn:hover { border-color: var(--text-primary); color: var(--text-primary); }
+
+    .admin-main {
+        margin-left: 220px;
+        flex: 1;
+        padding: 2.5rem 2rem;
+        min-width: 0;
+    }
+    .admin-topbar {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        margin-bottom: 2rem;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+    .admin-page-title {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 2rem;
+        font-weight: 600;
+        margin: 0;
+    }
+    .admin-page-sub {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        margin: 0.25rem 0 0;
+    }
+
+    /* ── Tabs ──────────────────────────────────────────────────── */
+    .admin-tabs {
+        display: flex;
+        gap: 0;
+        border-bottom: 1px solid var(--accent);
+        margin-bottom: 1.5rem;
+    }
+    .admin-tab {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        padding: 0.7rem 1.25rem;
+        border: none;
+        background: none;
+        cursor: pointer;
+        color: var(--text-muted);
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+        transition: color 0.15s, border-color 0.15s;
+    }
+    .admin-tab:hover { color: var(--text-primary); }
+    .admin-tab-active {
+        color: var(--text-primary);
+        border-bottom-color: var(--text-primary);
+    }
+    .admin-tab-count {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--text-primary);
+        color: var(--bg);
+        font-size: 0.6rem;
+        font-weight: 700;
+        min-width: 1.35rem;
+        height: 1.35rem;
+        padding: 0 0.35rem;
+        border-radius: 999px;
+    }
+    .admin-tab-panel[hidden] { display: none; }
+
+    /* ── Online tab grid ───────────────────────────────────────── */
+    .pos-online-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 1.5rem;
+        align-items: start;
+    }
+    @media (min-width: 980px) {
+        .pos-online-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    }
+
+    .pos-panel {
+        background: var(--bg);
+        border: 1px solid var(--accent);
+        border-radius: 14px;
+        padding: 1.5rem;
+        min-width: 0;
+    }
+    .pos-panel-title {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin: 0 0 0.25rem;
+    }
+    .pos-panel-hint {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        margin: 0 0 1.25rem;
+    }
+
+    /* Lookup form */
+    .pos-lookup-form { display: flex; gap: 0.6rem; }
+    .pos-code-input {
+        flex: 1;
+        min-width: 0;
+        font-size: 1.6rem;
+        font-weight: 700;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        text-align: center;
+        padding: 0.75rem 0.6rem;
+        border: 1px solid var(--accent);
+        border-radius: 10px;
+        background: #fff;
+        color: var(--text-primary);
+    }
+    .pos-code-input:focus {
+        outline: none;
+        border-color: var(--text-primary);
+    }
+    .pos-code-input::placeholder { color: #c9bcae; opacity: 0.6; letter-spacing: 0.22em; }
+    .pos-lookup-btn {
+        background: var(--text-primary);
+        color: var(--bg);
+        border: none;
+        border-radius: 10px;
+        padding: 0 1.4rem;
+        font-size: 0.95rem;
+        font-weight: 600;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+    .pos-lookup-btn:disabled { opacity: 0.6; cursor: default; }
+
+    /* Messages */
+    .pos-message {
+        margin-top: 1rem;
+        padding: 0.7rem 0.9rem;
+        border-radius: 8px;
+        font-size: 0.85rem;
+    }
+    .pos-message-error { background: #FDF0EE; border: 1px solid #D9836A; color: #9A3A1A; }
+    .pos-message-info { background: #FBF6E9; border: 1px solid #D9C46A; color: #7A5E1A; }
+
+    /* Order card */
+    .pos-order-card {
+        margin-top: 1.25rem;
+        border: 1px solid var(--accent);
+        border-radius: 12px;
+        padding: 1.1rem;
+        background: #fff;
+    }
+    .pos-order-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+    }
+    .pos-order-code {
+        font-size: 1.5rem;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+    }
+    .pos-order-status {
+        display: inline-block;
+        margin-left: 0.6rem;
+        font-size: 0.68rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        padding: 0.22rem 0.5rem;
+        border-radius: 999px;
+        vertical-align: middle;
+    }
+    .pos-status-paid { background: #E8EFE6; color: #3F6B33; }
+    .pos-status-fulfilled { background: #E3E0F2; color: #4A3F8C; }
+    .pos-order-total { font-size: 1.2rem; font-weight: 700; }
+
+    .pos-order-meta {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.6rem 1rem;
+        margin: 0 0 1rem;
+    }
+    .pos-order-meta dt {
+        font-size: 0.66rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-muted);
+        margin-bottom: 0.1rem;
+    }
+    .pos-order-meta dd {
+        margin: 0;
+        font-size: 0.9rem;
+        word-break: break-word;
+    }
+
+    .pos-items-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        padding-top: 0.9rem;
+        border-top: 1px solid var(--accent);
+    }
+    .pos-items-label {
+        font-size: 0.66rem;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        font-weight: 700;
+        color: var(--text-muted);
+    }
+    .pos-items-count {
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: var(--text-muted);
+    }
+    .pos-order-items {
+        list-style: none;
+        padding: 0.5rem 0 0;
+        margin: 0 0 1.1rem;
+    }
+    /* Line items are injected via innerHTML at runtime, so they don't receive
+       Astro's scoped data attribute — these rules must be :global to apply. */
+    .pos-order-items :global(.pos-order-item) {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.6rem 0;
+        font-size: 1.15rem;
+        border-bottom: 1px solid #efe9e0;
+    }
+    .pos-order-items :global(.pos-order-item:last-child) { border-bottom: none; }
+    .pos-order-items :global(.pos-qty) {
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 2.4rem;
+        height: 2.4rem;
+        padding: 0 0.5rem;
+        background: var(--text-primary);
+        color: var(--bg);
+        border-radius: 8px;
+        font-size: 1.25rem;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+    }
+    .pos-order-items :global(.pos-item-name) { font-weight: 600; line-height: 1.2; min-width: 0; overflow-wrap: anywhere; }
+    .pos-order-items :global(.pos-line-price) {
+        margin-left: auto;
+        color: var(--text-muted);
+        font-size: 0.95rem;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .pos-fulfill-btn {
+        width: 100%;
+        background: #3F6B33;
+        color: #fff;
+        border: none;
+        border-radius: 10px;
+        padding: 0.9rem;
+        font-size: 1rem;
+        font-weight: 700;
+        cursor: pointer;
+    }
+    .pos-fulfill-btn:disabled { opacity: 0.6; cursor: default; }
+    .pos-fulfill-undo { background: #fff; color: var(--text-muted); border: 1px solid var(--accent); }
+
+    /* In-person */
+    .pos-empty {
+        font-size: 0.88rem;
+        color: var(--text-muted);
+        background: #fff;
+        border: 1px dashed var(--accent);
+        border-radius: 10px;
+        padding: 1.25rem;
+        text-align: center;
+    }
+    /* ── Register (cart-based POS) ──────────────────────────────── */
+    .pos-register {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 1.5rem;
+        align-items: start;
+    }
+    @media (min-width: 980px) {
+        .pos-register { grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); }
+        .pos-register-cart { position: sticky; top: 1.5rem; }
+    }
+    .pos-register-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+    }
+    .pos-register-head .pos-panel-title { margin: 0; }
+    .pos-ip-mini {
+        font-size: 0.78rem;
+        font-weight: 600;
+        color: var(--text-muted);
+        white-space: nowrap;
+    }
+
+    .pos-product-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        gap: 0.75rem;
+    }
+    .pos-product {
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+        text-align: left;
+        background: #fff;
+        border: 1px solid var(--accent);
+        border-radius: 12px;
+        padding: 0.9rem;
+        cursor: pointer;
+        transition: border-color 0.12s, transform 0.05s, box-shadow 0.12s;
+    }
+    .pos-product:hover:not(:disabled) {
+        border-color: var(--text-primary);
+        box-shadow: 0 2px 8px rgba(26, 26, 26, 0.06);
+    }
+    .pos-product:active:not(:disabled) { transform: translateY(1px); }
+    .pos-product:disabled { opacity: 0.45; cursor: default; }
+    .pos-product-name { font-weight: 600; font-size: 0.95rem; line-height: 1.2; }
+    .pos-product-price { font-size: 1.05rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .pos-product-left { font-size: 0.72rem; color: var(--text-muted); }
+
+    /* Cart / ticket */
+    .pos-cart-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.75rem;
+        margin-bottom: 0.75rem;
+    }
+    .pos-cart-head .pos-panel-title { margin: 0; }
+    .pos-cart-clear {
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        font-size: 0.78rem;
+        font-weight: 600;
+        cursor: pointer;
+        text-decoration: underline;
+    }
+    .pos-cart-clear:hover { color: var(--text-primary); }
+    .pos-cart-empty {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        text-align: center;
+        padding: 1.5rem 0;
+    }
+    .pos-cart-lines { list-style: none; padding: 0; margin: 0; }
+    .pos-cart-lines :global(.pos-cart-line) {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.6rem 0;
+        border-top: 1px solid #efe9e0;
+    }
+    .pos-cart-lines :global(.pos-cart-line:first-child) { border-top: none; }
+    .pos-cart-lines :global(.pos-cart-line-info) { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .pos-cart-lines :global(.pos-cart-line-name) { font-weight: 600; font-size: 0.9rem; overflow-wrap: anywhere; }
+    .pos-cart-lines :global(.pos-cart-line-price) { font-size: 0.72rem; color: var(--text-muted); }
+    .pos-cart-lines :global(.pos-cart-line-total) {
+        flex-shrink: 0;
+        min-width: 4ch;
+        text-align: right;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .pos-cart-foot {
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--accent);
+    }
+    .pos-cart-total-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        font-size: 1.05rem;
+        font-weight: 700;
+        margin-bottom: 0.9rem;
+    }
+    .pos-cart-total-row span:last-child { font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+    .pos-charge-btn {
+        width: 100%;
+        background: var(--text-primary);
+        color: var(--bg);
+        border: none;
+        border-radius: 10px;
+        padding: 1rem;
+        font-size: 1.05rem;
+        font-weight: 700;
+        cursor: pointer;
+    }
+    .pos-charge-btn:disabled { opacity: 0.4; cursor: default; }
+
+    /* Charge / QR modal */
+    .pos-charge-modal { max-width: 420px; text-align: center; }
+    .pos-charge-modal .pos-panel-title { margin: 0 1.5rem 0.25rem 0; }
+    .pos-charge-amount { font-size: 1.6rem; font-weight: 700; margin: 0 0 1rem; font-variant-numeric: tabular-nums; }
+    .pos-qr-wrap {
+        display: flex;
+        justify-content: center;
+        background: #fff;
+        border: 1px solid var(--accent);
+        border-radius: 14px;
+        padding: 1rem;
+        margin: 0 auto 1rem;
+        width: fit-content;
+    }
+    .pos-qr { display: block; width: 280px; height: 280px; max-width: 100%; }
+    .pos-charge-hint { font-size: 0.82rem; color: var(--text-muted); margin: 0 0 1rem; }
+    .pos-charge-status {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.55rem;
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 0.85rem;
+    }
+    .pos-charge-spinner {
+        width: 1.05rem;
+        height: 1.05rem;
+        border: 2px solid var(--accent);
+        border-top-color: var(--text-primary);
+        border-radius: 50%;
+        animation: pos-spin 0.8s linear infinite;
+    }
+    @keyframes pos-spin { to { transform: rotate(360deg); } }
+    .pos-charge-link { font-size: 0.8rem; color: var(--text-muted); }
+    .pos-charge-error-msg { color: #9A3A1A; font-size: 0.9rem; margin: 0 0 1.25rem; }
+    .pos-charge-retry { background: var(--text-primary); }
+    .pos-mark {
+        width: 64px;
+        height: 64px;
+        line-height: 64px;
+        border-radius: 50%;
+        background: #3F6B33;
+        color: #fff;
+        font-size: 2rem;
+        margin: 0.5rem auto 1rem;
+    }
+    .pos-mark-error { background: #b00020; }
+
+    .pos-stepper { display: flex; align-items: center; gap: 0.5rem; }
+    .pos-step {
+        width: 2.6rem;
+        height: 2.6rem;
+        border: 1px solid var(--accent);
+        background: #fff;
+        border-radius: 10px;
+        font-size: 1.4rem;
+        line-height: 1;
+        cursor: pointer;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .pos-step:active { background: #f0ebe3; }
+    .pos-step:disabled { opacity: 0.5; cursor: default; }
+    .pos-step-val {
+        min-width: 2ch;
+        text-align: center;
+        font-size: 1.2rem;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+    }
+
+    /* ── Remaining orders list ─────────────────────────────────── */
+    .pos-remaining-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.75rem;
+    }
+    .pos-remaining-badge {
+        font-size: 0.7rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-muted);
+        white-space: nowrap;
+    }
+    .pos-remaining-list { list-style: none; padding: 0; margin: 0; }
+    /* Rows are injected via innerHTML, so they don't get Astro's scoped
+       attribute — these rules must be :global to apply. */
+    .pos-remaining-list :global(.pos-remaining-item) {
+        display: flex;
+        align-items: center;
+        gap: 0.85rem;
+        padding: 0.7rem 0;
+        border-top: 1px solid #efe9e0;
+    }
+    .pos-remaining-list :global(.pos-remaining-item:first-child) { border-top: none; }
+    .pos-remaining-list :global(.pos-remaining-info) {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.1rem;
+    }
+    .pos-remaining-list :global(.pos-remaining-name) {
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+    .pos-remaining-list :global(.pos-remaining-summary) {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .pos-remaining-list :global(.pos-remaining-total) {
+        flex-shrink: 0;
+        font-size: 0.9rem;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+    }
+    .pos-remaining-list :global(.pos-remaining-expand) {
+        flex-shrink: 0;
+        width: 2.1rem;
+        height: 2.1rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #fff;
+        border: 1px solid var(--accent);
+        border-radius: 8px;
+        color: var(--text-muted);
+        font-size: 1rem;
+        cursor: pointer;
+        transition: border-color 0.15s, color 0.15s;
+    }
+    .pos-remaining-list :global(.pos-remaining-expand:hover) {
+        border-color: var(--text-primary);
+        color: var(--text-primary);
+    }
+
+    /* ── Order details modal ───────────────────────────────────── */
+    .pos-modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(26, 26, 26, 0.45);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.25rem;
+        z-index: 100;
+    }
+    .pos-modal-overlay[hidden] { display: none; }
+    .pos-modal {
+        position: relative;
+        background: var(--bg);
+        border: 1px solid var(--accent);
+        border-radius: 14px;
+        padding: 1.75rem;
+        width: 100%;
+        max-width: 480px;
+        max-height: calc(100vh - 2.5rem);
+        overflow-y: auto;
+    }
+    .pos-modal-close {
+        position: absolute;
+        top: 0.85rem;
+        right: 0.85rem;
+        width: 2rem;
+        height: 2rem;
+        border: none;
+        background: none;
+        font-size: 1.1rem;
+        color: var(--text-muted);
+        cursor: pointer;
+        border-radius: 8px;
+    }
+    .pos-modal-close:hover { color: var(--text-primary); background: #EDE8E1; }
+    .pos-modal-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 0.75rem;
+        margin: 0 2rem 1rem 0;
+    }
+
+    /* ── Responsive ────────────────────────────────────────────── */
+    @media (max-width: 768px) {
+        .admin-body { flex-direction: column; }
+
+        /* Sidebar collapses into a horizontal top bar instead of vanishing,
+           so admins keep navigation on mobile. */
+        .admin-sidebar {
+            position: static;
+            width: 100%;
+            height: auto;
+            flex-flow: row wrap;
+            align-items: center;
+            gap: 0.5rem 1rem;
+            padding: 0.85rem 1rem;
+            border-right: none;
+            border-bottom: 1px solid var(--accent);
+        }
+        .admin-sidebar-top {
+            margin-bottom: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+        .admin-badge { margin-top: 0; }
+        .admin-nav {
+            order: 2;
+            flex-basis: 100%;
+            flex-direction: row;
+            gap: 0.25rem;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        .admin-nav-link { white-space: nowrap; padding: 0.5rem 0.7rem; }
+        .admin-sidebar-footer {
+            margin: 0 0 0 auto;
+            padding-top: 0;
+            border-top: none;
+        }
+        .admin-user-email { display: none; }
+        .admin-logout-btn { width: auto; white-space: nowrap; }
+
+        .admin-main { margin-left: 0; padding: 1.5rem 1rem; }
+
+        .admin-tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .admin-tab { white-space: nowrap; flex-shrink: 0; }
+    }
+</style>
+</body>
+</html>

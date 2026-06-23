@@ -8,15 +8,15 @@ export const POST: APIRoute = async ({request}) => {
         const formData = await request.formData();
 
         const file = formData.get('file');
-        const id = formData.get('id');
+        const idField = formData.get('id');
 
         if (!(file instanceof File)) {
             return json({error: 'No file provided'}, 400);
         }
 
-        if (typeof id !== 'string' || !id) {
-            return json({error: 'No id provided'}, 400);
-        }
+        // When no id is provided (e.g. creating a new item), generate the UUID
+        // that will also be used as the DB row id.
+        const id = typeof idField === 'string' && idField ? idField : crypto.randomUUID();
 
         const inputBuffer = Buffer.from(await file.arrayBuffer());
         const webpBuffer = await sharp(inputBuffer).webp().toBuffer();
