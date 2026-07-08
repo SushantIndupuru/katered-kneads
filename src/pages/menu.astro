@@ -1,18 +1,35 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import type { MenuItem } from '../types/db-types.ts';
-import { getMenuItems, getCurrentDropItems } from '../lib/db';
+import { getMenuItems, getCurrentDrop, getDropItems } from '../lib/db';
 
 const CDN_URL = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL;
 
 const allItems = await getMenuItems();
-const dropItems = await getCurrentDropItems();
+const currentDrop = await getCurrentDrop();
+const dropItems = currentDrop ? await getDropItems(currentDrop.id) : [];
 
+// Is the current drop actually live (inside its [open, close) window)?
+const now = Date.now();
+const openMs = currentDrop ? new Date(currentDrop.openTime).getTime() : null;
+const closeMs = currentDrop ? new Date(currentDrop.closeTime).getTime() : null;
+const DROP_OPEN = openMs !== null && closeMs !== null && now >= openMs && now < closeMs;
+
+// When the drop is live, badge everything in it. Before it opens, only the
+// preview picks are public — so only those get a "coming soon" badge; the rest
+// of the lineup stays hidden until orders open.
 const dropItemIds = new Set(dropItems.map(d => d.menuItem.id));
+const previewItemIds = new Set(dropItems.filter(d => d.preview).map(d => d.menuItem.id));
 
 function getItemBadge(item: MenuItem): { text: string; cls: string } | null {
-  if (!dropItemIds.has(item.id)) return null;
-  return { text: 'This Drop', cls: 'stock-badge-available' };
+  if (DROP_OPEN) {
+    if (!dropItemIds.has(item.id)) return null;
+    return { text: 'This Drop', cls: 'stock-badge-available' };
+  }
+  if (previewItemIds.has(item.id)) {
+    return { text: 'Coming Soon', cls: 'stock-badge-coming-soon' };
+  }
+  return null;
 }
 ---
 

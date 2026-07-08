@@ -2003,3 +2003,68 @@ footer {
   }
 }
 
+/* Legal pages (privacy, terms, refund) */
+.legal {
+  padding-top: 3.5rem;
+  padding-bottom: 5rem;
+}
+
+.legal-content {
+  max-width: 760px;
+}
+
+.legal-content h2 {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--text-primary);
+  margin: 2.75rem 0 0.85rem;
+}
+
+.legal-content h2:first-child {
+  margin-top: 0;
+}
+
+.legal-content p {
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+}
+
+.legal-content ul {
+  list-style: none;
+  margin: 0 0 1.25rem;
+  padding: 0;
+}
+
+.legal-content ul li {
+  position: relative;
+  padding-left: 1.35rem;
+  color: var(--text-muted);
+  margin-bottom: 0.65rem;
+}
+
+.legal-content ul li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.65rem;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--text-primary);
+  opacity: 0.5;
+}
+
+.legal-content ul li strong,
+.legal-content p strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.legal-content a {
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
