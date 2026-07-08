@@ -29,7 +29,7 @@ export const PATCH: APIRoute = async ({ params, request }) => {
         if (!existing) return json({ error: 'Drop not found' }, 404);
 
         const body = await request.json();
-        const { name, openTime, closeTime, pickupTime, locationName, locationAddress, items, announce, archive } = body;
+        const { name, openTime, closeTime, pickupTime, locationName, locationAddress, lowStockThreshold, items, announce, archive } = body;
 
         const updates: Partial<Omit<Drop, 'id'>> = {};
 
@@ -84,6 +84,15 @@ export const PATCH: APIRoute = async ({ params, request }) => {
         }
         if (locationAddress !== undefined) {
             updates.locationAddress = typeof locationAddress === 'string' ? locationAddress.trim() : '';
+        }
+
+        // Low-stock threshold can be edited independently of the schedule.
+        if (lowStockThreshold !== undefined) {
+            const threshold = lowStockThreshold === null || lowStockThreshold === '' ? 0 : Number(lowStockThreshold);
+            if (!Number.isInteger(threshold) || threshold < 0) {
+                return json({ error: 'Low stock threshold must be a non-negative whole number' }, 400);
+            }
+            updates.lowStockThreshold = threshold;
         }
 
         let parsedItems = null;

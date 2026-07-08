@@ -1,5 +1,6 @@
 ---
 import Layout from '../layouts/Layout.astro';
+import SmsSignup from '../components/SmsSignup.astro';
 import { getCurrentDrop, getDropItems } from '../lib/db';
 
 const currentDrop = await getCurrentDrop();
@@ -24,11 +25,17 @@ const BEFORE_OPEN = openMs !== null && now < openMs;
 // An active drop always shows its countdown before it opens.
 const SHOW_COUNTDOWN = BEFORE_OPEN;
 
+// The "no drop scheduled" panel already carries its own SMS signup box, so
+// suppress the footer one to avoid two identical boxes on the same page.
+const SHOW_NO_DROP_SIGNUP = !ORDERS_CURRENTLY_OPEN && !SHOW_COUNTDOWN;
+
 // When open, show everything in the drop; before open, only the preview picks.
 const displayItems = ORDERS_CURRENTLY_OPEN ? dropItems : dropItems.filter(i => i.preview);
 
-// Items at or below this remaining count get a "going fast" urgency treatment.
-const LOW_STOCK_THRESHOLD = 5;
+// Admin-configured per drop: items at or below this remaining count show a
+// "Low stock, N left" badge. 0 (the default) hides remaining counts entirely —
+// items just read as available until they sell out.
+const LOW_STOCK_THRESHOLD = currentDrop?.lowStockThreshold ?? 0;
 
 const NEXT_DROP_OPEN_STR   = currentDrop?.openTime ?? null;
 const NEXT_DROP_OPEN_LABEL = currentDrop ? formatDropDate(currentDrop.openTime) : 'TBA';
@@ -45,6 +52,7 @@ function formatPrice(n: number): string {
   title="Order — Katered Kneads"
   description="Order handmade cookies delivered to UC Berkeley or UC Davis. Ordering is open only during each drop window — about every two weeks."
   activePage="order"
+  hideFooterSignup={SHOW_NO_DROP_SIGNUP}
 >
 
   <!-- Page Header -->
@@ -72,8 +80,8 @@ function formatPrice(n: number): string {
           <span class="valueprop-sub">100% from scratch — never sitting on a shelf.</span>
         </li>
         <li class="valueprop">
-          <span class="valueprop-title">Strictly limited batches</span>
-          <span class="valueprop-sub">Every drop sells out — when it's gone, it's gone.</span>
+          <span class="valueprop-title">Made with Care</span>
+          <span class="valueprop-sub">Carefully crafted unique recipes.</span>
         </li>
         <li class="valueprop">
           <span class="valueprop-title">Easy campus pickup</span>
@@ -119,10 +127,17 @@ function formatPrice(n: number): string {
           <p class="status-date">Opens {NEXT_DROP_OPEN_LABEL}</p>
         </div>
       ) : (
-        <div class="status-panel status-closed">
-          <div class="status-badge status-badge-closed">● Orders Closed</div>
-          <h2 class="status-heading">Orders are currently closed</h2>
-          <p class="status-text">There's no open ordering window right now. Check back soon for the next drop.</p>
+        <div class="status-panel status-closed no-drop-panel">
+          <div class="status-badge status-badge-closed">● No Drop Scheduled</div>
+          <h2 class="status-heading">Don't miss the next drop</h2>
+          <p class="status-text">There's no open ordering window right now — and our drops sell out fast. Drop your number and we'll text you the moment the next one is announced, plus when orders open and where to pick up.</p>
+          <div class="no-drop-signup">
+            <SmsSignup
+              source="order-no-drop"
+              heading=""
+              sub=""
+            />
+          </div>
         </div>
       )}
 
@@ -159,25 +174,31 @@ function formatPrice(n: number): string {
             const remaining = item.initialStock - item.consumedStock;
             const inStock = remaining > 0;
             const soldOut = ORDERS_CURRENTLY_OPEN && !inStock;
-            const lowStock = ORDERS_CURRENTLY_OPEN && inStock && LOW_STOCK_THRESHOLD >= remaining;
+            // Only surface remaining counts once stock dips to the admin's
+            // threshold (threshold 0 = never). Otherwise the item just reads
+            // as available with no number.
+            const lowStock = ORDERS_CURRENTLY_OPEN && inStock && LOW_STOCK_THRESHOLD > 0 && LOW_STOCK_THRESHOLD >= remaining;
+            // Badge is only shown when it has something meaningful to say:
+            // sold out, low stock, or a pre-open "Coming Soon" preview.
             const stockBadgeClass = soldOut
               ? 'stock-badge-soldout'
               : lowStock
                 ? 'stock-badge-low'
-                : ORDERS_CURRENTLY_OPEN
-                  ? 'stock-badge-available'
-                  : 'stock-badge-coming-soon';
+                : 'stock-badge-coming-soon';
+            const stockBadgeText = soldOut
+              ? 'Sold Out'
+              : lowStock
+                ? `Low stock, ${remaining} left`
+                : !ORDERS_CURRENTLY_OPEN
+                  ? 'Coming Soon'
+                  : null;
             return (
               <div class={`product-card${soldOut ? ' sold-out' : ''}`}>
                 <div class="product-card-image">
                   <img src={CDN_URL + item.menuItem.id} alt={item.menuItem.name} loading="lazy" />
-                  <span class={`stock-badge ${stockBadgeClass}`}>
-                    {soldOut
-                      ? 'Sold Out'
-                      : ORDERS_CURRENTLY_OPEN
-                        ? lowStock ? `Only ${remaining} left` : `${remaining} left`
-                        : 'Coming Soon'}
-                  </span>
+                  {stockBadgeText && (
+                    <span class={`stock-badge ${stockBadgeClass}`}>{stockBadgeText}</span>
+                  )}
                   {item.tag && <span class="cookie-tag">{item.tag}</span>}
                 </div>
                 <div class="product-card-body">
@@ -500,6 +521,16 @@ function formatPrice(n: number): string {
   }
 
   .stock-badge-soldout { background: #b00020; color: #fff; }
+
+  /* No-drop state: the SMS signup is the main call to action. */
+  .no-drop-signup {
+    margin-top: 1.75rem;
+    padding-top: 1.75rem;
+    border-top: 1px solid var(--accent);
+  }
+  .no-drop-signup :global(.sms-signup-form) {
+    margin: 0 auto;
+  }
 
   /* Floating cart button — compact, mobile only.
      Hidden on desktop/tablet where the header cart link is visible. */

@@ -1219,6 +1219,12 @@ footer {
   margin-top: 1rem;
 }
 
+.footer-newsletter-social {
+  margin-top: 1.75rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--accent);
+}
+
 /* ── Reviews Grid ────────────────────────────────────────────── */
 .reviews-grid {
   display: grid;

@@ -20,6 +20,9 @@ export interface Drop {
   announcedAt: string | null;
   // NULL = the single active/focused drop; set = moved to the "older drops" list.
   archivedAt: string | null;
+  // When an item's remaining online stock is at or below this number, the
+  // storefront shows a "Low stock, N left" badge. 0 = never show counts.
+  lowStockThreshold: number;
 }
 
 export interface DropItem {
@@ -78,6 +81,20 @@ export interface Order {
   stripePaymentIntentId: string | null;
   createdAt: string;
   items: OrderItem[];
+}
+
+// A customer who opted in to SMS drop updates. The sending side is added
+// later; for now this is just a consented, deduplicated list of numbers.
+export interface SmsSubscriber {
+  id: string;
+  // Stored in E.164, e.g. +15305551234.
+  phone: string;
+  consent: boolean;
+  // Where the signup happened (e.g. "footer", "order").
+  source: string;
+  // NULL = actively subscribed; set = opted out.
+  unsubscribedAt: string | null;
+  createdAt: string;
 }
 
 // A walk-up sale taken through the in-person POS. Unlike online orders there is

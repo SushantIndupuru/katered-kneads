@@ -1,7 +1,7 @@
 import { createServerClient } from '../supabase.ts';
 import type { Drop, MenuItem, DropItemWithMenu, InPersonSale } from '../../types/db-types.ts';
 
-const DROP_COLUMNS = 'id, name, open_time, close_time, pickup_time, location_name, location_address, announced_at, archived_at';
+const DROP_COLUMNS = 'id, name, open_time, close_time, pickup_time, location_name, location_address, announced_at, archived_at, low_stock_threshold';
 
 interface DropRow {
     id: string;
@@ -13,6 +13,7 @@ interface DropRow {
     location_address: string | null;
     announced_at: string | null;
     archived_at: string | null;
+    low_stock_threshold: number | null;
 }
 
 function mapDrop(row: DropRow): Drop {
@@ -26,6 +27,7 @@ function mapDrop(row: DropRow): Drop {
         locationAddress: row.location_address ?? '',
         announcedAt: row.announced_at,
         archivedAt: row.archived_at,
+        lowStockThreshold: row.low_stock_threshold ?? 0,
     };
 }
 
@@ -126,6 +128,7 @@ export async function createDrop(
             pickup_time: data.pickupTime ?? null,
             location_name: data.locationName ?? '',
             location_address: data.locationAddress ?? '',
+            low_stock_threshold: data.lowStockThreshold ?? 0,
         })
         .select(DROP_COLUMNS)
         .single();
@@ -253,6 +256,7 @@ export async function updateDrop(
     if (data.pickupTime !== undefined) updates.pickup_time = data.pickupTime;
     if (data.locationName !== undefined) updates.location_name = data.locationName;
     if (data.locationAddress !== undefined) updates.location_address = data.locationAddress;
+    if (data.lowStockThreshold !== undefined) updates.low_stock_threshold = data.lowStockThreshold;
     if (data.announcedAt !== undefined) updates.announced_at = data.announcedAt;
     if (data.archivedAt !== undefined) updates.archived_at = data.archivedAt;
 
@@ -401,33 +405,86 @@ interface InPersonSaleRow {
     created_at: string;
 }
 
+const IN_PERSON_SALE_COLUMNS = 'id, drop_id, subtotal_cents, tip_cents, stripe_payment_intent_id, items, created_at';
+
+function mapInPersonSale(row: InPersonSaleRow): InPersonSale {
+    const rawItems = Array.isArray(row.items) ? (row.items as Record<string, unknown>[]) : [];
+    return {
+        id: row.id,
+        dropId: row.drop_id,
+        subtotalCents: row.subtotal_cents,
+        tipCents: row.tip_cents ?? 0,
+        stripePaymentIntentId: row.stripe_payment_intent_id,
+        createdAt: row.created_at,
+        items: rawItems.map(i => ({
+            menuItemId: (i.menuItemId as string | null) ?? null,
+            nameSnapshot: (i.nameSnapshot as string) ?? '',
+            unitPriceCents: Number(i.unitPriceCents ?? 0),
+            quantity: Number(i.quantity ?? 0),
+        })),
+    } satisfies InPersonSale;
+}
+
 // Lists recorded in-person POS sales, newest first, for the admin orders view.
 export async function getInPersonSales({ limit = 100 }: { limit?: number } = {}): Promise<InPersonSale[]> {
     const supabase = createServerClient();
     const { data, error } = await supabase
         .from('in_person_sales')
-        .select('id, drop_id, subtotal_cents, tip_cents, stripe_payment_intent_id, items, created_at')
+        .select(IN_PERSON_SALE_COLUMNS)
         .order('created_at', { ascending: false })
         .limit(limit);
     if (error) throw error;
+    return ((data as InPersonSaleRow[]) ?? []).map(mapInPersonSale);
+}
 
-    return ((data as InPersonSaleRow[]) ?? []).map(row => {
-        const rawItems = Array.isArray(row.items) ? (row.items as Record<string, unknown>[]) : [];
-        return {
-            id: row.id,
-            dropId: row.drop_id,
-            subtotalCents: row.subtotal_cents,
-            tipCents: row.tip_cents ?? 0,
-            stripePaymentIntentId: row.stripe_payment_intent_id,
-            createdAt: row.created_at,
-            items: rawItems.map(i => ({
-                menuItemId: (i.menuItemId as string | null) ?? null,
-                nameSnapshot: (i.nameSnapshot as string) ?? '',
-                unitPriceCents: Number(i.unitPriceCents ?? 0),
-                quantity: Number(i.quantity ?? 0),
-            })),
-        } satisfies InPersonSale;
+export async function getInPersonSaleById(id: string): Promise<InPersonSale | null> {
+    const supabase = createServerClient();
+    const { data, error } = await supabase
+        .from('in_person_sales')
+        .select(IN_PERSON_SALE_COLUMNS)
+        .eq('id', id)
+        .maybeSingle();
+    if (error) throw error;
+    return data ? mapInPersonSale(data as InPersonSaleRow) : null;
+}
+
+// Returns in-person stock to a drop (inverse of incrementInPersonConsumed) when
+// a recorded POS sale is deleted. Clamped server-side so in_person_consumed
+// can't go negative.
+export async function decrementInPersonConsumed(
+    dropId: string,
+    items: { menuItemId: string; quantity: number }[],
+): Promise<void> {
+    const supabase = createServerClient();
+    const { error } = await supabase.rpc('decrement_in_person_consumed', {
+        p_drop_id: dropId,
+        items,
     });
+    if (error) throw error;
+}
+
+// Deletes a recorded in-person sale and returns its quantities to the drop's
+// in-person pool. Mirrors deleteOrder: the stock is reverted first (and throws
+// on failure) so a sale is never deleted with its stock silently unaccounted
+// for. This does NOT refund the customer — the Stripe refund is a separate,
+// manual step. Returns false if the sale didn't exist.
+export async function deleteInPersonSale(id: string): Promise<boolean> {
+    const supabase = createServerClient();
+    const sale = await getInPersonSaleById(id);
+    if (!sale) return false;
+
+    if (sale.dropId) {
+        const lines = sale.items
+            .filter(i => i.menuItemId)
+            .map(i => ({ menuItemId: i.menuItemId as string, quantity: i.quantity }));
+        if (lines.length > 0) {
+            await decrementInPersonConsumed(sale.dropId, lines);
+        }
+    }
+
+    const { error } = await supabase.from('in_person_sales').delete().eq('id', id);
+    if (error) throw error;
+    return true;
 }
 
 export async function deleteDrop(id: string): Promise<void> {

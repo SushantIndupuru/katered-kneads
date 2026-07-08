@@ -37,7 +37,10 @@ const STATUS_LABEL: Record<DropStatus, string> = {
 };
 const activeStatus: DropStatus | null = activeDrop ? dropStatus(activeDrop) : null;
 
-const LOW_STOCK_THRESHOLD = 5;
+// Mirror the drop's customer-facing threshold for the admin "low" pills. When
+// the admin has it set to 0 (counts hidden from customers) fall back to 5 so
+// this internal dashboard still flags items that are running down.
+const LOW_STOCK_THRESHOLD = activeDrop?.lowStockThreshold || 5;
 const stockItems = activeDropItems.map(item => {
     const remaining = item.initialStock - item.consumedStock;
     const soldPct = item.initialStock > 0 ? Math.round((item.consumedStock / item.initialStock) * 100) : 0;
