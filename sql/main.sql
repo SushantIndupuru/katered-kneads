@@ -191,6 +191,32 @@ CREATE TABLE IF NOT EXISTS sms_subscribers
     created_at      TIMESTAMPTZ      NOT NULL DEFAULT now()
 );
 
+-- ── Row Level Security ──────────────────────────────────────────────────────
+-- CRITICAL: the site ships a public "publishable"/anon Supabase key to the
+-- browser (PUBLIC_SUPABASE_PUBLISHABLE_KEY). Tables created via raw SQL do NOT
+-- have RLS enabled by default, which would let anyone use that public key to
+-- read/write every table directly through Supabase's REST API — bypassing the
+-- app entirely.
+--
+-- We enable RLS on every table and define NO policies for the anon/authenticated
+-- roles, which makes those roles default-deny (no read, no write). The server-
+-- side code uses the SECRET (service_role) key, which BYPASSES RLS, so the app's
+-- own API routes keep working. Net effect: the only way to touch the DB is
+-- through our server, and those routes are gated by admin auth in middleware.
+ALTER TABLE menu_items      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE drops           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE drop_items      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orders          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE order_items     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE in_person_sales ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sms_subscribers ENABLE ROW LEVEL SECURITY;
+
+-- Belt-and-suspenders: explicitly revoke all table privileges from the public
+-- API roles. RLS already blocks them, but revoking grants means even a future
+-- accidental policy can't hand them access unless privileges are re-granted too.
+REVOKE ALL ON menu_items, drops, drop_items, orders, order_items, in_person_sales, sms_subscribers
+    FROM anon, authenticated;
+
 -- Atomically record an in-person sale by incrementing in_person_consumed for
 -- each line. `items` is a JSON array of { "menuItemId": uuid, "quantity": int }.
 -- Raises if any line would exceed the in-person allocation so the caller fails
@@ -303,3 +329,13 @@ BEGIN
         END LOOP;
 END;
 $$ LANGUAGE plpgsql;
+
+-- These stock functions mutate the DB and are only ever invoked server-side via
+-- the service_role key. Postgres grants EXECUTE to PUBLIC by default, so revoke
+-- it from the public API roles to keep them from being called with the anon key.
+REVOKE EXECUTE ON FUNCTION
+    increment_in_person_consumed(UUID, JSONB),
+    decrement_drop_stock(UUID, JSONB),
+    restock_drop_items(UUID, JSONB),
+    decrement_in_person_consumed(UUID, JSONB)
+    FROM anon, authenticated;
