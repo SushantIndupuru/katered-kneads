@@ -48,6 +48,7 @@ try {
 const dropDateFmt = new Intl.DateTimeFormat('en-US', {
     month: 'short', day: 'numeric', year: 'numeric',
     hour: 'numeric', minute: '2-digit',
+    timeZone: 'America/Los_Angeles',
 });
 const now = Date.now();
 
@@ -900,6 +901,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
 
     const ordersFmt = new Intl.DateTimeFormat('en-US', {
         month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+        timeZone: 'America/Los_Angeles',
     });
     const ordersEsc = (s: string) => s.replace(/[&<>"]/g, c =>
         ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] ?? c));
@@ -1629,7 +1631,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     function dropOpenIsPast(): boolean {
         const v = dropOpenInput?.value;
         if (!v) return false;
-        const t = new Date(v).getTime();
+        const t = new Date(localInputToISO(v)).getTime();
         return !Number.isNaN(t) && t <= Date.now();
     }
 
@@ -1643,10 +1645,52 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
 
     dropOpenInput?.addEventListener('input', updatePreOpenVisibility);
 
+    // The business operates in Pacific time. datetime-local inputs are bare
+    // wall-clock strings with no zone, so we explicitly interpret/display them in
+    // this zone — otherwise the server (UTC on Vercel) would parse them in its
+    // own zone and the time would drift.
+    const DROP_TZ = 'America/Los_Angeles';
+
+    // How far the given instant's DROP_TZ wall-clock is ahead of UTC, in ms
+    // (e.g. -7h during PDT). Used to convert between wall-clock and UTC.
+    function tzOffsetMs(date: Date): number {
+        const dtf = new Intl.DateTimeFormat('en-US', {
+            timeZone: DROP_TZ, hourCycle: 'h23',
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit',
+        });
+        const m: Record<string, string> = {};
+        for (const p of dtf.formatToParts(date)) m[p.type] = p.value;
+        const asUTC = Date.UTC(
+            Number(m.year), Number(m.month) - 1, Number(m.day),
+            Number(m.hour), Number(m.minute), Number(m.second),
+        );
+        return asUTC - date.getTime();
+    }
+
+    // Wall-clock datetime-local value (interpreted as Pacific) → UTC ISO string.
+    function localInputToISO(value: string): string {
+        const [datePart, timePart] = value.split('T');
+        const [y, mo, d] = datePart.split('-').map(Number);
+        const [h, mi] = (timePart ?? '00:00').split(':').map(Number);
+        const guessUTC = Date.UTC(y, mo - 1, d, h, mi);
+        // Offset near the target instant (using the guess is accurate except in
+        // the rare hour straddling a DST transition).
+        const offset = tzOffsetMs(new Date(guessUTC));
+        return new Date(guessUTC - offset).toISOString();
+    }
+
+    // UTC ISO string → wall-clock datetime-local value in Pacific.
     function isoToLocalInput(iso: string): string {
         const d = new Date(iso);
-        const pad = (n: number) => String(n).padStart(2, '0');
-        return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        const dtf = new Intl.DateTimeFormat('en-US', {
+            timeZone: DROP_TZ, hourCycle: 'h23',
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit',
+        });
+        const m: Record<string, string> = {};
+        for (const p of dtf.formatToParts(d)) m[p.type] = p.value;
+        return `${m.year}-${m.month}-${m.day}T${m.hour}:${m.minute}`;
     }
 
     document.getElementById('open-drop-modal')?.addEventListener('click', () => {
@@ -1715,7 +1759,13 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         const spinner = document.getElementById('drop-spinner') as HTMLElement;
         const id = dropIdField?.value ?? '';
 
-        if (data.openTime && data.closeTime && new Date(data.closeTime) <= new Date(data.openTime)) {
+        // Convert the Pacific wall-clock inputs to unambiguous UTC ISO strings so
+        // the server stores the intended instant regardless of its own timezone.
+        const openISO = data.openTime ? localInputToISO(data.openTime) : '';
+        const closeISO = data.closeTime ? localInputToISO(data.closeTime) : '';
+        const pickupISO = data.pickupTime ? localInputToISO(data.pickupTime) : null;
+
+        if (openISO && closeISO && new Date(closeISO) <= new Date(openISO)) {
             showError('drop-form-error', 'Close time must be after open time.');
             return;
         }
@@ -1737,9 +1787,9 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
                 name: data.name,
-                openTime: data.openTime,
-                closeTime: data.closeTime,
-                pickupTime: data.pickupTime || null,
+                openTime: openISO,
+                closeTime: closeISO,
+                pickupTime: pickupISO,
                 locationName: data.locationName ?? '',
                 locationAddress: data.locationAddress ?? '',
                 lowStockThreshold: data.lowStockThreshold ?? '0',

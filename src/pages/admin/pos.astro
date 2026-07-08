@@ -515,6 +515,7 @@ const remainingJson = JSON.stringify(remainingOrders);
     const modalFulfillBtn = document.getElementById('modal-fulfill-btn') as HTMLButtonElement;
     const placedFmt = new Intl.DateTimeFormat('en-US', {
         month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+        timeZone: 'America/Los_Angeles',
     });
     let modalOrder: Order | null = null;
 
