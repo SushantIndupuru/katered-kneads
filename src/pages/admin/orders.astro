@@ -1,0 +1,1311 @@
+---
+import '../../styles/global.css';
+import { getActiveDrop, getArchivedDrops, getDropItems } from '../../lib/db';
+import type { Drop, DropItemWithMenu } from '../../types/db-types.ts';
+
+// Route is protected by middleware (src/middleware.ts).
+const user = (Astro.locals as { user?: { email?: string } }).user;
+
+let activeDrop: Drop | null = null;
+try {
+    activeDrop = await getActiveDrop();
+} catch (e) {
+    // non-fatal
+}
+
+let olderDrops: Drop[] = [];
+try {
+    olderDrops = await getArchivedDrops();
+} catch (e) {
+    // non-fatal
+}
+
+// ── "To prepare" tracker ──────────────────────────────────────
+// A drop's stock is set before it opens (and can be topped up later via
+// "Edit items"). The kitchen bakes against that target. We show each item's
+// target (online + in-person stock) alongside how much has been made so far,
+// so bakers can tick off production as they go.
+let prepItems: DropItemWithMenu[] = [];
+if (activeDrop) {
+    try {
+        prepItems = await getDropItems(activeDrop.id);
+    } catch (e) {
+        // non-fatal
+    }
+}
+
+const prepRows = prepItems
+    .map(it => {
+        const target = it.initialStock + it.inPersonStock;
+        const made = Math.min(Math.max(0, it.madeStock), target);
+        const pct = target > 0 ? Math.round((made / target) * 100) : 0;
+        return {
+            menuItemId: it.menuItem.id,
+            name: it.menuItem.name,
+            target,
+            made,
+            remaining: Math.max(0, target - made),
+            pct,
+        };
+    })
+    .filter(r => r.target > 0);
+
+const prepTotals = {
+    target: prepRows.reduce((s, r) => s + r.target, 0),
+    made: prepRows.reduce((s, r) => s + r.made, 0),
+    remaining: prepRows.reduce((s, r) => s + r.remaining, 0),
+};
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
+    <link rel="icon" href="/favicon.ico"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <meta name="robots" content="noindex, nofollow"/>
+    <title>Orders — Katered Kneads</title>
+</head>
+<body class="admin-body">
+
+<!-- Sidebar -->
+<aside class="admin-sidebar">
+    <div class="admin-sidebar-top">
+        <a href="/" class="admin-logo">Katered Kneads</a>
+        <span class="admin-badge">Admin</span>
+    </div>
+
+    <nav class="admin-nav">
+        <a href="/admin" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="7" height="7"/>
+                <rect x="14" y="3" width="7" height="7"/>
+                <rect x="14" y="14" width="7" height="7"/>
+                <rect x="3" y="14" width="7" height="7"/>
+            </svg>
+            Dashboard
+        </a>
+        <a href="/admin/stock" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                <line x1="12" y1="22.08" x2="12" y2="12"/>
+            </svg>
+            Stock
+        </a>
+        <a href="/admin/pos" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="3" width="20" height="14" rx="2"/>
+                <line x1="2" y1="9" x2="22" y2="9"/>
+                <line x1="8" y1="21" x2="16" y2="21"/>
+                <line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+            Point of Sale
+        </a>
+        <a href="/admin/orders" class="admin-nav-link admin-nav-active">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 2h6a1 1 0 0 1 1 1v1h1a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1V3a1 1 0 0 1 1-1z"/>
+                <line x1="9" y1="12" x2="15" y2="12"/>
+                <line x1="9" y1="16" x2="15" y2="16"/>
+            </svg>
+            Orders
+        </a>
+        <a href="/menu" target="_blank" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+                <polyline points="10 9 9 9 8 9"/>
+            </svg>
+            View Menu ↗
+        </a>
+    </nav>
+
+    <div class="admin-sidebar-footer">
+        <p class="admin-user-email">{user?.email ?? 'Admin'}</p>
+        <form method="POST" action="/api/v1/auth/logout">
+            <button type="submit" class="admin-logout-btn">Sign Out</button>
+        </form>
+    </div>
+</aside>
+
+<!-- Main content -->
+<main class="admin-main">
+    <div class="admin-topbar">
+        <div>
+            <h1 class="admin-page-title">Orders</h1>
+            <p class="admin-page-sub">{activeDrop ? activeDrop.name : 'No active drop'}</p>
+        </div>
+    </div>
+
+    <!-- ── To prepare (production tracker) ─────────────────────── -->
+    <section class="prep-panel">
+        <div class="prep-head">
+            <div>
+                <h2 class="prep-title">To prepare</h2>
+                <p class="prep-sub">How much of this drop's stock has been baked so far. Tap +/− as you make each item.</p>
+            </div>
+            <div class="prep-total" hidden={prepTotals.target === 0}>
+                <span class="prep-total-num"><span id="prep-total-made">{prepTotals.made}</span> / {prepTotals.target}</span>
+                <span class="prep-total-label"><span id="prep-total-remaining">{prepTotals.remaining}</span> left to make</span>
+            </div>
+        </div>
+
+        {prepRows.length === 0 ? (
+            <div class="prep-empty">
+                {activeDrop
+                    ? 'This drop has no stock set yet. Add items and their stock on the dashboard Drops tab.'
+                    : 'No active drop. Create and announce a drop to track what needs to be made.'}
+            </div>
+        ) : (
+            <ul class="prep-list" id="prep-list" data-drop-id={activeDrop!.id}>
+                {prepRows.map(row => (
+                    <li
+                        class:list={['prep-item', { 'prep-item-done': row.remaining === 0 }]}
+                        data-menu-item-id={row.menuItemId}
+                        data-target={row.target}
+                        data-made={row.made}
+                    >
+                        <div class="prep-item-main">
+                            <div class="prep-item-info">
+                                <span class="prep-name">{row.name}</span>
+                                <span class="prep-count">
+                                    <span class="prep-count-nums"><span class="prep-made-val">{row.made}</span> / {row.target} made</span>
+                                    <span class="prep-remaining-tag" hidden={row.remaining === 0}><span class="prep-remaining-val">{row.remaining}</span> to go</span>
+                                    <span class="prep-done-tag" hidden={row.remaining !== 0}>Done ✓</span>
+                                </span>
+                            </div>
+                            <div class="prep-stepper">
+                                <button type="button" class="prep-step prep-step-dec" aria-label="Made one fewer">−</button>
+                                <button type="button" class="prep-step prep-step-inc" aria-label="Made one more">+</button>
+                                <button type="button" class="prep-step prep-step-all" aria-label="Mark all made">All</button>
+                            </div>
+                        </div>
+                        <div class="prep-bar">
+                            <div class="prep-bar-fill" style={`width:${row.pct}%`}></div>
+                        </div>
+                    </li>
+                ))}
+            </ul>
+        )}
+    </section>
+
+    <!-- Online orders -->
+    <div class="orders-section">
+        <div class="orders-section-head">
+            <h3 class="orders-section-title">Online orders</h3>
+            <span class="orders-section-count" id="orders-online-count"></span>
+        </div>
+        <p class="orders-section-sub">Paid through the website — customers pick up with a code.</p>
+        <div id="orders-loading" class="admin-loading">
+            <span class="admin-spinner"></span>
+            <span class="admin-loading-text">Loading orders…</span>
+        </div>
+        <div id="orders-error" class="admin-alert admin-alert-error" hidden></div>
+        <div class="admin-table-wrap" id="orders-table-wrap" hidden>
+            <table class="admin-table">
+                <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Code</th>
+                    <th>Customer</th>
+                    <th>Pickup</th>
+                    <th>Items</th>
+                    <th>Total</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+                </thead>
+                <tbody id="orders-tbody"></tbody>
+            </table>
+        </div>
+        <div id="orders-empty" class="admin-empty" hidden>No online orders yet.</div>
+    </div>
+
+    <!-- In-person sales -->
+    <div class="orders-section">
+        <div class="orders-section-head">
+            <h3 class="orders-section-title">In-person sales</h3>
+            <span class="orders-section-count" id="inperson-count"></span>
+        </div>
+        <p class="orders-section-sub">Walk-up sales taken at the counter through the Point of Sale.</p>
+        <div id="inperson-loading" class="admin-loading">
+            <span class="admin-spinner"></span>
+            <span class="admin-loading-text">Loading in-person sales…</span>
+        </div>
+        <div id="inperson-error" class="admin-alert admin-alert-error" hidden></div>
+        <div class="admin-table-wrap" id="inperson-table-wrap" hidden>
+            <table class="admin-table">
+                <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Items</th>
+                    <th>Total</th>
+                    <th>Reference</th>
+                    <th>Actions</th>
+                </tr>
+                </thead>
+                <tbody id="inperson-tbody"></tbody>
+            </table>
+        </div>
+        <div id="inperson-empty" class="admin-empty" hidden>No in-person sales yet.</div>
+    </div>
+
+    <!-- Archived orders (from archived drops) -->
+    <details class="orders-archived" id="orders-archived" hidden data-archived-drops={JSON.stringify(olderDrops.map(d => ({id: d.id, name: d.name})))}>
+        <summary class="orders-archived-summary">
+            <span class="orders-archived-title">Archived</span>
+            <span class="orders-section-count" id="orders-archived-count"></span>
+            <span class="orders-archived-sub">Orders and sales from archived drops.</span>
+        </summary>
+
+        <!-- Archived online orders -->
+        <div class="orders-section">
+            <div class="orders-section-head">
+                <h3 class="orders-section-title">Online orders</h3>
+                <span class="orders-section-count" id="orders-archived-online-count"></span>
+            </div>
+            <div class="admin-table-wrap" id="orders-archived-table-wrap" hidden>
+                <table class="admin-table">
+                    <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Drop</th>
+                        <th>Code</th>
+                        <th>Customer</th>
+                        <th>Pickup</th>
+                        <th>Items</th>
+                        <th>Total</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                    </thead>
+                    <tbody id="orders-archived-tbody"></tbody>
+                </table>
+            </div>
+            <div id="orders-archived-empty" class="admin-empty" hidden>No archived online orders.</div>
+        </div>
+
+        <!-- Archived in-person sales -->
+        <div class="orders-section">
+            <div class="orders-section-head">
+                <h3 class="orders-section-title">In-person sales</h3>
+                <span class="orders-section-count" id="inperson-archived-count"></span>
+            </div>
+            <div class="admin-table-wrap" id="inperson-archived-table-wrap" hidden>
+                <table class="admin-table">
+                    <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Drop</th>
+                        <th>Items</th>
+                        <th>Total</th>
+                        <th>Reference</th>
+                        <th>Actions</th>
+                    </tr>
+                    </thead>
+                    <tbody id="inperson-archived-tbody"></tbody>
+                </table>
+            </div>
+            <div id="inperson-archived-empty" class="admin-empty" hidden>No archived in-person sales.</div>
+        </div>
+    </details>
+</main>
+
+<!-- Delete Order Confirm Modal -->
+<div class="admin-modal-overlay" id="order-delete-modal" hidden>
+    <div class="admin-modal admin-modal-sm">
+        <div class="admin-modal-header">
+            <h2 class="admin-modal-title">Delete Order</h2>
+            <button class="admin-modal-close" id="close-order-delete-modal">✕</button>
+        </div>
+        <p class="admin-delete-confirm-text">Are you sure you want to delete order <strong id="order-delete-name"></strong>?
+            Its items will be returned to the drop's stock. This cannot be undone.</p>
+        <div id="order-delete-error" class="admin-alert admin-alert-error" hidden></div>
+        <div class="admin-modal-actions">
+            <button type="button" class="admin-btn-cancel" id="cancel-order-delete-modal">Cancel</button>
+            <button type="button" class="admin-btn-delete-confirm" id="confirm-order-delete">Delete</button>
+            <span class="modal-spinner" id="order-delete-spinner" hidden></span>
+        </div>
+    </div>
+</div>
+
+<!-- Delete In-Person Sale Confirm Modal -->
+<div class="admin-modal-overlay" id="inperson-delete-modal" hidden>
+    <div class="admin-modal admin-modal-sm">
+        <div class="admin-modal-header">
+            <h2 class="admin-modal-title">Delete In-Person Sale</h2>
+            <button class="admin-modal-close" id="close-inperson-delete-modal">✕</button>
+        </div>
+        <p class="admin-delete-confirm-text">Delete in-person sale <strong id="inperson-delete-name"></strong>?
+            Its items will be returned to the drop's in-person stock.</p>
+        <p class="admin-delete-confirm-text admin-field-hint">Heads up: this only reverses the stock count. It does <strong>not</strong> refund the customer — issue any refund in Stripe separately. This cannot be undone.</p>
+        <div id="inperson-delete-error" class="admin-alert admin-alert-error" hidden></div>
+        <div class="admin-modal-actions">
+            <button type="button" class="admin-btn-cancel" id="cancel-inperson-delete-modal">Cancel</button>
+            <button type="button" class="admin-btn-delete-confirm" id="confirm-inperson-delete">Delete</button>
+            <span class="modal-spinner" id="inperson-delete-spinner" hidden></span>
+        </div>
+    </div>
+</div>
+
+<script>
+    import { showToast } from '../../lib/toast';
+
+    // ── Production tracker (how much has been made) ────────────
+    const prepList = document.getElementById('prep-list') as HTMLElement | null;
+    if (prepList) {
+        const dropId = prepList.dataset.dropId ?? '';
+        const totalMadeEl = document.getElementById('prep-total-made');
+        const totalRemainingEl = document.getElementById('prep-total-remaining');
+
+        const recomputeTotals = () => {
+            let made = 0;
+            let remaining = 0;
+            prepList.querySelectorAll<HTMLElement>('.prep-item').forEach(row => {
+                const m = Number(row.dataset.made ?? '0');
+                const t = Number(row.dataset.target ?? '0');
+                made += m;
+                remaining += Math.max(0, t - m);
+            });
+            if (totalMadeEl) totalMadeEl.textContent = String(made);
+            if (totalRemainingEl) totalRemainingEl.textContent = String(remaining);
+        };
+
+        const applyRow = (row: HTMLElement, made: number) => {
+            const target = Number(row.dataset.target ?? '0');
+            row.dataset.made = String(made);
+            const remaining = Math.max(0, target - made);
+            const pct = target > 0 ? Math.round((made / target) * 100) : 0;
+            (row.querySelector('.prep-made-val') as HTMLElement).textContent = String(made);
+            (row.querySelector('.prep-remaining-val') as HTMLElement).textContent = String(remaining);
+            (row.querySelector('.prep-bar-fill') as HTMLElement).style.width = `${pct}%`;
+            const done = remaining === 0;
+            row.classList.toggle('prep-item-done', done);
+            (row.querySelector('.prep-remaining-tag') as HTMLElement).hidden = done;
+            (row.querySelector('.prep-done-tag') as HTMLElement).hidden = !done;
+            recomputeTotals();
+        };
+
+        const setMade = async (row: HTMLElement, next: number) => {
+            const target = Number(row.dataset.target ?? '0');
+            const current = Number(row.dataset.made ?? '0');
+            const clamped = Math.max(0, Math.min(next, target));
+            if (clamped === current) return;
+
+            // Optimistic update, reverted on failure.
+            applyRow(row, clamped);
+            const buttons = row.querySelectorAll<HTMLButtonElement>('.prep-step');
+            buttons.forEach(b => { b.disabled = true; });
+            try {
+                const res = await fetch(`/api/v1/drops/${dropId}/made`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ menuItemId: row.dataset.menuItemId, madeStock: clamped }),
+                });
+                if (!res.ok) throw new Error('request failed');
+                const data = await res.json();
+                applyRow(row, Number(data.madeStock ?? clamped));
+            } catch {
+                applyRow(row, current);
+                showToast('Could not save production count. Please try again.', 'error');
+            } finally {
+                buttons.forEach(b => { b.disabled = false; });
+            }
+        };
+
+        prepList.addEventListener('click', (e) => {
+            const btn = (e.target as HTMLElement).closest('.prep-step') as HTMLButtonElement | null;
+            if (!btn) return;
+            const row = btn.closest<HTMLElement>('.prep-item');
+            if (!row) return;
+            const current = Number(row.dataset.made ?? '0');
+            const target = Number(row.dataset.target ?? '0');
+            if (btn.classList.contains('prep-step-inc')) setMade(row, current + 1);
+            else if (btn.classList.contains('prep-step-dec')) setMade(row, current - 1);
+            else if (btn.classList.contains('prep-step-all')) setMade(row, target);
+        });
+    }
+
+    // ── Modal helpers ──────────────────────────────────────────
+    function openModal(id: string) {
+        const el = document.getElementById(id);
+        if (el) {
+            el.hidden = false;
+            document.body.style.overflow = 'hidden';
+        }
+    }
+    function closeModal(id: string) {
+        const el = document.getElementById(id);
+        if (el) {
+            el.hidden = true;
+            document.body.style.overflow = '';
+        }
+    }
+    function showError(id: string, msg: string) {
+        const el = document.getElementById(id);
+        if (el) { el.textContent = msg; el.hidden = false; }
+    }
+    function clearError(id: string) {
+        const el = document.getElementById(id);
+        if (el) { el.hidden = true; el.textContent = ''; }
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        ['order-delete-modal', 'inperson-delete-modal'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el && !el.hidden) closeModal(id);
+        });
+    });
+
+    // ── Archived-drop lookup ───────────────────────────────────
+    const archivedDropList: { id: string; name: string }[] = (() => {
+        try { return JSON.parse(document.getElementById('orders-archived')?.dataset.archivedDrops || '[]'); }
+        catch { return []; }
+    })();
+    const archivedDropNames = new Map<string, string>(archivedDropList.map(d => [d.id, d.name]));
+    const isArchivedDrop = (dropId: string | null | undefined) => dropId != null && archivedDropNames.has(dropId);
+
+    const ordersFmt = new Intl.DateTimeFormat('en-US', {
+        month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+        timeZone: 'America/Los_Angeles',
+    });
+    const ordersEsc = (s: string) => s.replace(/[&<>"]/g, c =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] ?? c));
+
+    let archivedOnlineCount = 0;
+    let archivedInPersonCount = 0;
+    function refreshArchivedVisibility() {
+        const wrap = document.getElementById('orders-archived');
+        if (!wrap) return;
+        const total = archivedOnlineCount + archivedInPersonCount;
+        (wrap as HTMLDetailsElement).hidden = total === 0;
+        const countEl = document.getElementById('orders-archived-count');
+        if (countEl) countEl.textContent = total ? `${total}` : '';
+    }
+
+    // ── Online orders ──────────────────────────────────────────
+    async function loadOrders() {
+        const loading = document.getElementById('orders-loading')!;
+        const errorEl = document.getElementById('orders-error')!;
+        const tableWrap = document.getElementById('orders-table-wrap')!;
+        const tbody = document.getElementById('orders-tbody')!;
+        const emptyEl = document.getElementById('orders-empty')!;
+        const archTableWrap = document.getElementById('orders-archived-table-wrap')!;
+        const archTbody = document.getElementById('orders-archived-tbody')!;
+        const archEmptyEl = document.getElementById('orders-archived-empty')!;
+
+        try {
+            const res = await fetch('/api/v1/orders');
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error ?? 'Failed to load orders');
+
+            loading.hidden = true;
+            const allOrders = data.orders ?? [];
+            const orders = allOrders.filter((o: any) => !isArchivedDrop(o.dropId));
+            const archived = allOrders.filter((o: any) => isArchivedDrop(o.dropId));
+
+            const renderRow = (o: any, withDrop: boolean) => {
+                const itemsLabel = (o.items ?? [])
+                    .map((i: any) => `${i.quantity}× ${ordersEsc(i.nameSnapshot)}`).join(', ');
+                const tipCents = o.tipCents ?? 0;
+                const total = '$' + ((o.subtotalCents + tipCents) / 100).toFixed(2)
+                    + (tipCents > 0 ? `<br><span class="admin-field-hint">incl. $${(tipCents / 100).toFixed(2)} tip</span>` : '');
+                const label = o.pickupCode ? ordersEsc(o.pickupCode) : ordersEsc(o.customerName);
+                const dropCell = withDrop
+                    ? `<td class="admin-td-desc">${ordersEsc(archivedDropNames.get(o.dropId) ?? '—')}</td>`
+                    : '';
+                return `<tr>
+                    <td class="admin-td-desc">${ordersFmt.format(new Date(o.createdAt))}</td>
+                    ${dropCell}
+                    <td class="admin-td-name">${o.pickupCode ? ordersEsc(o.pickupCode) : '—'}</td>
+                    <td>${ordersEsc(o.customerName)}<br><span class="admin-field-hint">${ordersEsc(o.customerEmail)}</span></td>
+                    <td>${ordersEsc(o.pickupLocation || '—')}</td>
+                    <td class="admin-td-desc">${itemsLabel}</td>
+                    <td>${total}</td>
+                    <td><span class="admin-drop-status admin-order-${o.status}">${o.status}</span></td>
+                    <td class="admin-td-actions">
+                        <button class="admin-btn-order-delete" data-id="${ordersEsc(o.id)}" data-label="${label}">Delete</button>
+                    </td>
+                </tr>`;
+            };
+
+            const countEl = document.getElementById('orders-online-count');
+            if (countEl) countEl.textContent = orders.length ? `${orders.length}` : '';
+            if (orders.length === 0) {
+                emptyEl.hidden = false;
+            } else {
+                tbody.innerHTML = orders.map((o: any) => renderRow(o, false)).join('');
+                tableWrap.hidden = false;
+            }
+
+            archivedOnlineCount = archived.length;
+            const archCountEl = document.getElementById('orders-archived-online-count');
+            if (archCountEl) archCountEl.textContent = archived.length ? `${archived.length}` : '';
+            if (archived.length === 0) {
+                archEmptyEl.hidden = false;
+            } else {
+                archTbody.innerHTML = archived.map((o: any) => renderRow(o, true)).join('');
+                archTableWrap.hidden = false;
+            }
+            refreshArchivedVisibility();
+        } catch (err) {
+            loading.hidden = true;
+            errorEl.textContent = err instanceof Error ? err.message : 'Failed to load orders';
+            errorEl.hidden = false;
+        }
+    }
+
+    // ── In-person sales ────────────────────────────────────────
+    async function loadInPersonSales() {
+        const loading = document.getElementById('inperson-loading')!;
+        const errorEl = document.getElementById('inperson-error')!;
+        const tableWrap = document.getElementById('inperson-table-wrap')!;
+        const tbody = document.getElementById('inperson-tbody')!;
+        const emptyEl = document.getElementById('inperson-empty')!;
+        const archTableWrap = document.getElementById('inperson-archived-table-wrap')!;
+        const archTbody = document.getElementById('inperson-archived-tbody')!;
+        const archEmptyEl = document.getElementById('inperson-archived-empty')!;
+
+        try {
+            const res = await fetch('/api/v1/orders/in-person');
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error ?? 'Failed to load in-person sales');
+
+            loading.hidden = true;
+            const allSales = data.sales ?? [];
+            const sales = allSales.filter((s: any) => !isArchivedDrop(s.dropId));
+            const archived = allSales.filter((s: any) => isArchivedDrop(s.dropId));
+
+            const renderRow = (s: any, withDrop: boolean) => {
+                const itemsLabel = (s.items ?? [])
+                    .map((i: any) => `${i.quantity}× ${ordersEsc(i.nameSnapshot || 'Item')}`).join(', ');
+                const tipCents = s.tipCents ?? 0;
+                const total = '$' + ((s.subtotalCents + tipCents) / 100).toFixed(2)
+                    + (tipCents > 0 ? `<br><span class="admin-field-hint">incl. $${(tipCents / 100).toFixed(2)} tip</span>` : '');
+                const refRaw = s.stripePaymentIntentId ? s.stripePaymentIntentId.slice(-8) : '';
+                const ref = refRaw ? ordersEsc(refRaw) : '—';
+                const label = refRaw ? `#${refRaw}` : ordersFmt.format(new Date(s.createdAt));
+                const dropCell = withDrop
+                    ? `<td class="admin-td-desc">${ordersEsc(archivedDropNames.get(s.dropId) ?? '—')}</td>`
+                    : '';
+                return `<tr>
+                    <td class="admin-td-desc">${ordersFmt.format(new Date(s.createdAt))}</td>
+                    ${dropCell}
+                    <td class="admin-td-desc">${itemsLabel || '—'}</td>
+                    <td>${total}</td>
+                    <td><span class="admin-field-hint">${ref}</span></td>
+                    <td class="admin-td-actions">
+                        <button class="admin-btn-order-delete admin-btn-inperson-delete" data-id="${ordersEsc(s.id)}" data-label="${ordersEsc(label)}">Delete</button>
+                    </td>
+                </tr>`;
+            };
+
+            const countEl = document.getElementById('inperson-count');
+            if (countEl) countEl.textContent = sales.length ? `${sales.length}` : '';
+            if (sales.length === 0) {
+                emptyEl.hidden = false;
+            } else {
+                tbody.innerHTML = sales.map((s: any) => renderRow(s, false)).join('');
+                tableWrap.hidden = false;
+            }
+
+            archivedInPersonCount = archived.length;
+            const archCountEl = document.getElementById('inperson-archived-count');
+            if (archCountEl) archCountEl.textContent = archived.length ? `${archived.length}` : '';
+            if (archived.length === 0) {
+                archEmptyEl.hidden = false;
+            } else {
+                archTbody.innerHTML = archived.map((s: any) => renderRow(s, true)).join('');
+                archTableWrap.hidden = false;
+            }
+            refreshArchivedVisibility();
+        } catch (err) {
+            loading.hidden = true;
+            errorEl.textContent = err instanceof Error ? err.message : 'Failed to load in-person sales';
+            errorEl.hidden = false;
+        }
+    }
+
+    // ── Delete order (reverts stock) ───────────────────────────
+    let pendingOrderDeleteId: string | null = null;
+    const onOrderDeleteClick = (e: Event) => {
+        const btn = (e.target as HTMLElement).closest('.admin-btn-order-delete') as HTMLButtonElement | null;
+        if (!btn) return;
+        pendingOrderDeleteId = btn.dataset.id ?? null;
+        const nameEl = document.getElementById('order-delete-name');
+        if (nameEl) nameEl.textContent = btn.dataset.label ?? 'this order';
+        clearError('order-delete-error');
+        openModal('order-delete-modal');
+    };
+    document.getElementById('orders-tbody')?.addEventListener('click', onOrderDeleteClick);
+    document.getElementById('orders-archived-tbody')?.addEventListener('click', onOrderDeleteClick);
+    document.getElementById('close-order-delete-modal')?.addEventListener('click', () => closeModal('order-delete-modal'));
+    document.getElementById('cancel-order-delete-modal')?.addEventListener('click', () => closeModal('order-delete-modal'));
+
+    document.getElementById('confirm-order-delete')?.addEventListener('click', async () => {
+        if (!pendingOrderDeleteId) return;
+        clearError('order-delete-error');
+        const confirmBtn = document.getElementById('confirm-order-delete') as HTMLButtonElement;
+        const spinner = document.getElementById('order-delete-spinner') as HTMLElement;
+        confirmBtn.disabled = true;
+        spinner.hidden = false;
+        try {
+            const res = await fetch(`/api/v1/orders/${pendingOrderDeleteId}`, {method: 'DELETE'});
+            if (res.ok) {
+                location.reload();
+            } else {
+                const err = await res.json();
+                showError('order-delete-error', err.error ?? 'Could not delete order.');
+                confirmBtn.disabled = false;
+                spinner.hidden = true;
+            }
+        } catch {
+            showError('order-delete-error', 'Could not delete order.');
+            confirmBtn.disabled = false;
+            spinner.hidden = true;
+        }
+    });
+
+    // ── Delete in-person sale (reverts in-person stock, no refund) ───
+    let pendingInPersonDeleteId: string | null = null;
+    const onInPersonDeleteClick = (e: Event) => {
+        const btn = (e.target as HTMLElement).closest('.admin-btn-inperson-delete') as HTMLButtonElement | null;
+        if (!btn) return;
+        pendingInPersonDeleteId = btn.dataset.id ?? null;
+        const nameEl = document.getElementById('inperson-delete-name');
+        if (nameEl) nameEl.textContent = btn.dataset.label ?? 'this sale';
+        clearError('inperson-delete-error');
+        openModal('inperson-delete-modal');
+    };
+    document.getElementById('inperson-tbody')?.addEventListener('click', onInPersonDeleteClick);
+    document.getElementById('inperson-archived-tbody')?.addEventListener('click', onInPersonDeleteClick);
+    document.getElementById('close-inperson-delete-modal')?.addEventListener('click', () => closeModal('inperson-delete-modal'));
+    document.getElementById('cancel-inperson-delete-modal')?.addEventListener('click', () => closeModal('inperson-delete-modal'));
+
+    document.getElementById('confirm-inperson-delete')?.addEventListener('click', async () => {
+        if (!pendingInPersonDeleteId) return;
+        clearError('inperson-delete-error');
+        const confirmBtn = document.getElementById('confirm-inperson-delete') as HTMLButtonElement;
+        const spinner = document.getElementById('inperson-delete-spinner') as HTMLElement;
+        confirmBtn.disabled = true;
+        spinner.hidden = false;
+        try {
+            const res = await fetch(`/api/v1/orders/in-person/${pendingInPersonDeleteId}`, {method: 'DELETE'});
+            if (res.ok) {
+                location.reload();
+            } else {
+                const err = await res.json();
+                showError('inperson-delete-error', err.error ?? 'Could not delete sale.');
+                confirmBtn.disabled = false;
+                spinner.hidden = true;
+            }
+        } catch {
+            showError('inperson-delete-error', 'Could not delete sale.');
+            confirmBtn.disabled = false;
+            spinner.hidden = true;
+        }
+    });
+
+    loadOrders();
+    loadInPersonSales();
+</script>
+
+<style>
+    /* ── Admin layout (mirrors admin.astro) ───────────────────── */
+    .admin-body {
+        min-height: 100vh;
+        background: #F3EDE5;
+        display: flex;
+    }
+    .admin-sidebar {
+        width: 220px;
+        flex-shrink: 0;
+        background: var(--bg);
+        border-right: 1px solid var(--accent);
+        display: flex;
+        flex-direction: column;
+        padding: 2rem 1.5rem;
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100vh;
+        overflow-y: auto;
+    }
+    .admin-sidebar-top { margin-bottom: 2.5rem; }
+    .admin-logo {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 1.15rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--text-primary);
+        text-decoration: none;
+        display: block;
+    }
+    .admin-badge {
+        display: inline-block;
+        margin-top: 0.35rem;
+        font-size: 0.62rem;
+        font-weight: 600;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        background: var(--text-primary);
+        color: var(--bg);
+        padding: 0.18rem 0.55rem;
+    }
+    .admin-nav { display: flex; flex-direction: column; gap: 0.25rem; flex: 1; }
+    .admin-nav-link {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        font-size: 0.82rem;
+        font-weight: 500;
+        color: var(--text-muted);
+        text-decoration: none;
+        padding: 0.6rem 0.75rem;
+        border-radius: 2px;
+        transition: background 0.15s, color 0.15s;
+    }
+    .admin-nav-link:hover,
+    .admin-nav-active {
+        background: #EDE8E1;
+        color: var(--text-primary);
+    }
+    .admin-sidebar-footer {
+        border-top: 1px solid var(--accent);
+        padding-top: 1.25rem;
+        margin-top: auto;
+    }
+    .admin-user-email {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-bottom: 0.75rem;
+        word-break: break-all;
+    }
+    .admin-logout-btn {
+        font-size: 0.78rem;
+        font-weight: 500;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        cursor: pointer;
+        background: none;
+        border: 1px solid var(--accent);
+        padding: 0.45rem 0.9rem;
+        transition: border-color 0.15s, color 0.15s;
+        width: 100%;
+    }
+    .admin-logout-btn:hover { border-color: var(--text-primary); color: var(--text-primary); }
+
+    .admin-main {
+        margin-left: 220px;
+        flex: 1;
+        padding: 2.5rem 2rem;
+        min-width: 0;
+    }
+    .admin-topbar {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        margin-bottom: 2rem;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+    .admin-page-title {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 2rem;
+        font-weight: 600;
+        margin: 0;
+    }
+    .admin-page-sub {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        margin: 0.25rem 0 0;
+    }
+
+    /* ── To prepare (bake list) ────────────────────────────────── */
+    .prep-panel {
+        background: var(--bg);
+        border: 1px solid var(--accent);
+        border-left: 4px solid #C6792B;
+        border-radius: 12px;
+        padding: 1.5rem 1.75rem;
+        margin-bottom: 2rem;
+    }
+    .prep-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+        margin-bottom: 1.1rem;
+    }
+    .prep-title {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin: 0;
+    }
+    .prep-sub {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        margin: 0.15rem 0 0;
+    }
+    .prep-total {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        line-height: 1;
+    }
+    .prep-total[hidden] { display: none; }
+    .prep-total-num {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 2rem;
+        font-weight: 600;
+        color: #9A5A1A;
+        font-variant-numeric: tabular-nums;
+    }
+    .prep-total-label {
+        font-size: 0.66rem;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        margin-top: 0.3rem;
+    }
+    .prep-empty {
+        font-size: 0.88rem;
+        color: var(--text-muted);
+        background: #fff;
+        border: 1px dashed var(--accent);
+        border-radius: 10px;
+        padding: 1.25rem;
+        text-align: center;
+    }
+    .prep-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 0.85rem;
+    }
+    .prep-item {
+        display: flex;
+        flex-direction: column;
+        gap: 0.85rem;
+        background: #fff;
+        border: 1px solid var(--accent);
+        border-left: 3px solid #C6792B;
+        border-radius: 10px;
+        padding: 1rem 1.1rem;
+    }
+    .prep-item-done { border-left-color: #2F6A2F; }
+    .prep-item-main {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+    }
+    .prep-item-info { min-width: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+    .prep-name {
+        font-weight: 600;
+        font-size: 1.02rem;
+        line-height: 1.2;
+        overflow-wrap: anywhere;
+    }
+    .prep-count {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        font-variant-numeric: tabular-nums;
+    }
+    .prep-count-nums { white-space: nowrap; }
+    .prep-count .prep-made-val { font-weight: 700; color: var(--text-primary); }
+    .prep-remaining-tag,
+    .prep-done-tag {
+        white-space: nowrap;
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+    }
+    .prep-remaining-tag { color: #7A4A1A; background: #FBF1E4; }
+    .prep-done-tag { color: #2F6A2F; background: #EAF3EA; }
+    .prep-remaining-tag[hidden], .prep-done-tag[hidden] { display: none; }
+    .prep-bar {
+        height: 0.5rem;
+        background: var(--accent);
+        border-radius: 999px;
+        overflow: hidden;
+    }
+    .prep-bar-fill {
+        height: 100%;
+        background: #C6792B;
+        border-radius: 999px;
+        transition: width 0.2s ease;
+    }
+    .prep-item-done .prep-bar-fill { background: #2F6A2F; }
+    .prep-stepper { display: flex; align-items: center; gap: 0.35rem; flex-shrink: 0; }
+    .prep-step {
+        cursor: pointer;
+        border: 1px solid var(--accent);
+        background: #fff;
+        color: var(--text-primary);
+        border-radius: 8px;
+        width: 2.2rem;
+        height: 2.2rem;
+        font-size: 1.15rem;
+        font-weight: 600;
+        line-height: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .prep-step-all {
+        width: auto;
+        padding: 0 0.65rem;
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+    }
+    .prep-step:hover:not(:disabled) { background: #F6F2EA; border-color: #C6792B; }
+    .prep-step:disabled { opacity: 0.5; cursor: default; }
+
+    /* ── Table ─────────────────────────────────────────────────── */
+    .admin-table-wrap {
+        background: var(--bg);
+        border: 1px solid var(--accent);
+        overflow-x: auto;
+    }
+    .admin-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.875rem;
+    }
+    .admin-table thead { border-bottom: 1px solid var(--accent); }
+    .admin-table th {
+        text-align: left;
+        font-size: 0.65rem;
+        font-weight: 600;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        padding: 0.9rem 1.25rem;
+        white-space: nowrap;
+    }
+    .admin-table td {
+        padding: 1rem 1.25rem;
+        vertical-align: middle;
+        border-bottom: 1px solid var(--accent);
+        color: var(--text-primary);
+    }
+    .admin-table tr:last-child td { border-bottom: none; }
+    .admin-table tr:hover td { background: #FAF7F2; }
+    .admin-td-name { font-weight: 500; white-space: nowrap; }
+    .admin-td-desc {
+        max-width: 240px;
+        color: var(--text-muted);
+        font-size: 0.82rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .admin-td-actions { white-space: nowrap; }
+    .admin-no-image { color: var(--text-muted); }
+
+    .admin-empty {
+        padding: 3rem;
+        text-align: center;
+        font-size: 0.9rem;
+        color: var(--text-muted);
+    }
+    .admin-field-hint {
+        font-size: 0.78rem;
+        color: var(--text-muted);
+    }
+
+    /* ── Order status pills + delete button ────────────────────── */
+    .admin-drop-status {
+        display: inline-block;
+        font-size: 0.63rem;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        padding: 0.2rem 0.55rem;
+        border: 1px solid var(--accent);
+        color: var(--text-muted);
+        white-space: nowrap;
+    }
+    :global(.admin-order-paid) {
+        background: #EEF6EE;
+        border-color: #9CC79C;
+        color: #2F6A2F;
+    }
+    :global(.admin-order-fulfilled) {
+        background: #EEF1F6;
+        border-color: #9CB0C7;
+        color: #2F4A6A;
+    }
+    :global(.admin-btn-order-delete) {
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 0.35rem 0.75rem;
+        border: 1px solid #E8C4B4;
+        background: none;
+        color: #9A3A1A;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.15s;
+        font-family: 'DM Sans', sans-serif;
+    }
+    :global(.admin-btn-order-delete:hover) {
+        background: #9A3A1A;
+        color: var(--bg);
+        border-color: #9A3A1A;
+    }
+
+    /* ── Alerts ────────────────────────────────────────────────── */
+    .admin-alert {
+        padding: 0.75rem 1rem;
+        font-size: 0.85rem;
+        margin-bottom: 1rem;
+    }
+    .admin-alert-error {
+        background: #FDF0EE;
+        border: 1px solid #D9836A;
+        color: #9A3A1A;
+    }
+
+    /* ── Orders sections ───────────────────────────────────────── */
+    .orders-section + .orders-section {
+        margin-top: 2.25rem;
+        padding-top: 2rem;
+        border-top: 1px solid var(--border, #e7e1d8);
+    }
+    .orders-archived {
+        margin-top: 2.5rem;
+        padding-top: 2rem;
+        border-top: 2px solid var(--border, #e7e1d8);
+    }
+    .orders-archived-summary {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        cursor: pointer;
+        list-style: none;
+        user-select: none;
+    }
+    .orders-archived-summary::-webkit-details-marker { display: none; }
+    .orders-archived-summary::before {
+        content: '▸';
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        transition: transform 0.15s;
+    }
+    .orders-archived[open] .orders-archived-summary::before { transform: rotate(90deg); }
+    .orders-archived-title {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+    .orders-archived-sub {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+    }
+    .orders-archived .orders-section:first-of-type { margin-top: 1.5rem; }
+    .orders-section-head {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        margin-bottom: 0.2rem;
+    }
+    .orders-section-title {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0;
+    }
+    .orders-section-count {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 1.4rem;
+        height: 1.4rem;
+        padding: 0 0.45rem;
+        border-radius: 999px;
+        background: var(--surface-2, #f1ece4);
+        color: var(--text-secondary, #6b6258);
+        font-size: 0.72rem;
+        font-weight: 600;
+    }
+    .orders-section-count:empty { display: none; }
+    .orders-section-sub {
+        margin: 0 0 0.85rem;
+        font-size: 0.82rem;
+        color: var(--text-secondary, #6b6258);
+    }
+
+    /* ── Modals ────────────────────────────────────────────────── */
+    .admin-modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(26, 26, 26, 0.5);
+        z-index: 200;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem;
+    }
+    .admin-modal-overlay[hidden] { display: none; }
+    .admin-modal {
+        background: var(--bg);
+        border: 1px solid var(--accent);
+        width: 100%;
+        max-width: 560px;
+        max-height: 90vh;
+        overflow-y: auto;
+        padding: 2rem;
+        position: relative;
+    }
+    .admin-modal-sm { max-width: 420px; }
+    .admin-modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1.75rem;
+    }
+    .admin-modal-title {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 1.5rem;
+        font-weight: 500;
+        color: var(--text-primary);
+    }
+    .admin-modal-close {
+        background: none;
+        border: none;
+        font-size: 1.1rem;
+        cursor: pointer;
+        color: var(--text-muted);
+        line-height: 1;
+        padding: 0.25rem;
+    }
+    .admin-modal-close:hover { color: var(--text-primary); }
+    .admin-modal-actions {
+        display: flex;
+        gap: 0.75rem;
+        justify-content: flex-end;
+        margin-top: 0.5rem;
+    }
+    .admin-btn-cancel {
+        font-size: 0.82rem;
+        font-weight: 500;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        padding: 0.9rem 1.5rem;
+        border: 1px solid var(--accent);
+        background: none;
+        cursor: pointer;
+        color: var(--text-muted);
+        transition: all 0.15s;
+    }
+    .admin-btn-cancel:hover { color: var(--text-primary); border-color: var(--text-primary); }
+    .admin-btn-delete-confirm {
+        font-family: 'DM Sans', sans-serif;
+        font-size: 0.82rem;
+        font-weight: 600;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        background: #9A3A1A;
+        color: #fff;
+        padding: 0.9rem 1.9rem;
+        border: none;
+        cursor: pointer;
+        transition: opacity 0.2s;
+    }
+    .admin-btn-delete-confirm:hover { opacity: 0.85; }
+    .admin-delete-confirm-text {
+        font-size: 0.9rem;
+        color: var(--text-muted);
+        margin-bottom: 1.5rem;
+        line-height: 1.7;
+    }
+    .admin-delete-confirm-text strong { color: var(--text-primary); }
+
+    .modal-spinner {
+        display: inline-block;
+        width: 18px;
+        height: 18px;
+        border: 2px solid var(--accent);
+        border-top-color: var(--text-primary);
+        border-radius: 50%;
+        animation: modal-spin 0.7s linear infinite;
+        flex-shrink: 0;
+        align-self: center;
+    }
+    .modal-spinner[hidden] { display: none; }
+    @keyframes modal-spin { to { transform: rotate(360deg); } }
+
+    /* ── Responsive ────────────────────────────────────────────── */
+    @media (max-width: 768px) {
+        .admin-body { flex-direction: column; }
+        .admin-sidebar {
+            position: static;
+            width: 100%;
+            height: auto;
+            flex-flow: row wrap;
+            align-items: center;
+            gap: 0.5rem 1rem;
+            padding: 0.85rem 1rem;
+            border-right: none;
+            border-bottom: 1px solid var(--accent);
+        }
+        .admin-sidebar-top {
+            margin-bottom: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+        .admin-badge { margin-top: 0; }
+        .admin-nav {
+            order: 2;
+            flex-basis: 100%;
+            flex-direction: row;
+            gap: 0.25rem;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        .admin-nav-link { white-space: nowrap; padding: 0.5rem 0.7rem; }
+        .admin-sidebar-footer {
+            margin: 0 0 0 auto;
+            padding-top: 0;
+            border-top: none;
+        }
+        .admin-user-email { display: none; }
+        .admin-logout-btn { width: auto; white-space: nowrap; }
+
+        .admin-main { margin-left: 0; padding: 1.5rem 1rem; }
+    }
+</style>
+</body>
+</html>

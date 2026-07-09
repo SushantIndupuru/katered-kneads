@@ -44,6 +44,8 @@ export interface DropItemWithMenu {
   consumedStock: number;
   inPersonStock: number;
   inPersonConsumed: number;
+  // How many have physically been baked/made so far (production progress).
+  madeStock: number;
   preview: boolean;
   tag: string;
 }

@@ -63,6 +63,10 @@ CREATE TABLE IF NOT EXISTS drop_items
     -- of the online pool (never touched by online ordering).
     in_person_stock    INT NOT NULL DEFAULT 0 CHECK (in_person_stock >= 0),
     in_person_consumed INT NOT NULL DEFAULT 0,
+    -- Production tracker: how many of this item have physically been baked/made
+    -- so far, against the target (initial_stock + in_person_stock). Independent
+    -- of what's been sold — it just tracks the kitchen's progress.
+    made_stock     INT NOT NULL DEFAULT 0 CHECK (made_stock >= 0),
     -- When true, this item is shown in the drop's pre-open preview (sneak peek).
     preview        BOOLEAN NOT NULL DEFAULT false,
     -- Optional marketing tag shown on the item card (e.g. "Fan Favorite").
@@ -82,6 +86,10 @@ CREATE TABLE IF NOT EXISTS drop_items
 -- ALTER TABLE drop_items ADD CONSTRAINT drop_items_in_person_stock_check    CHECK (in_person_stock >= 0);
 -- ALTER TABLE drop_items ADD CONSTRAINT drop_items_in_person_consumed_check CHECK (in_person_consumed >= 0);
 -- ALTER TABLE drop_items ADD CONSTRAINT drop_items_in_person_max_check      CHECK (in_person_consumed <= in_person_stock);
+
+-- Migration for existing databases: add the production tracker column.
+-- ALTER TABLE drop_items ADD COLUMN IF NOT EXISTS made_stock INT NOT NULL DEFAULT 0;
+-- ALTER TABLE drop_items ADD CONSTRAINT drop_items_made_stock_check CHECK (made_stock >= 0);
 
 CREATE TABLE IF NOT EXISTS orders
 (

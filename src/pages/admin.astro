@@ -139,6 +139,15 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
             </svg>
             Point of Sale
         </a>
+        <a href="/admin/orders" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 2h6a1 1 0 0 1 1 1v1h1a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1V3a1 1 0 0 1 1-1z"/>
+                <line x1="9" y1="12" x2="15" y2="12"/>
+                <line x1="9" y1="16" x2="15" y2="16"/>
+            </svg>
+            Orders
+        </a>
         <a href="/menu" target="_blank" class="admin-nav-link">
             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
                  stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -174,7 +183,6 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     <div class="admin-tabs" data-items-total={items.length}>
         <button class="admin-tab admin-tab-active" data-tab="menu-items">Menu Items</button>
         <button class="admin-tab" data-tab="drops">Drops</button>
-        <button class="admin-tab" data-tab="orders">Orders</button>
     </div>
 
     {fetchError && (
@@ -373,129 +381,6 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         </div>
     </div>
 
-    <!-- Orders tab -->
-    <div id="tab-orders" class="admin-tab-panel" hidden data-archived-drops={JSON.stringify(olderDrops.map(d => ({id: d.id, name: d.name})))}>
-        <!-- Online orders -->
-        <div class="orders-section">
-            <div class="orders-section-head">
-                <h3 class="orders-section-title">Online orders</h3>
-                <span class="orders-section-count" id="orders-online-count"></span>
-            </div>
-            <p class="orders-section-sub">Paid through the website — customers pick up with a code.</p>
-            <div id="orders-loading" class="admin-loading">
-                <span class="admin-spinner"></span>
-                <span class="admin-loading-text">Loading orders…</span>
-            </div>
-            <div id="orders-error" class="admin-alert admin-alert-error" hidden></div>
-            <div class="admin-table-wrap" id="orders-table-wrap" hidden>
-                <table class="admin-table">
-                    <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Code</th>
-                        <th>Customer</th>
-                        <th>Pickup</th>
-                        <th>Items</th>
-                        <th>Total</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
-                    </thead>
-                    <tbody id="orders-tbody"></tbody>
-                </table>
-            </div>
-            <div id="orders-empty" class="admin-empty" hidden>No online orders yet.</div>
-        </div>
-
-        <!-- In-person sales -->
-        <div class="orders-section">
-            <div class="orders-section-head">
-                <h3 class="orders-section-title">In-person sales</h3>
-                <span class="orders-section-count" id="inperson-count"></span>
-            </div>
-            <p class="orders-section-sub">Walk-up sales taken at the counter through the Point of Sale.</p>
-            <div id="inperson-loading" class="admin-loading">
-                <span class="admin-spinner"></span>
-                <span class="admin-loading-text">Loading in-person sales…</span>
-            </div>
-            <div id="inperson-error" class="admin-alert admin-alert-error" hidden></div>
-            <div class="admin-table-wrap" id="inperson-table-wrap" hidden>
-                <table class="admin-table">
-                    <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Items</th>
-                        <th>Total</th>
-                        <th>Reference</th>
-                        <th>Actions</th>
-                    </tr>
-                    </thead>
-                    <tbody id="inperson-tbody"></tbody>
-                </table>
-            </div>
-            <div id="inperson-empty" class="admin-empty" hidden>No in-person sales yet.</div>
-        </div>
-
-        <!-- Archived orders (from archived drops) -->
-        <details class="orders-archived" id="orders-archived" hidden>
-            <summary class="orders-archived-summary">
-                <span class="orders-archived-title">Archived</span>
-                <span class="orders-section-count" id="orders-archived-count"></span>
-                <span class="orders-archived-sub">Orders and sales from archived drops.</span>
-            </summary>
-
-            <!-- Archived online orders -->
-            <div class="orders-section">
-                <div class="orders-section-head">
-                    <h3 class="orders-section-title">Online orders</h3>
-                    <span class="orders-section-count" id="orders-archived-online-count"></span>
-                </div>
-                <div class="admin-table-wrap" id="orders-archived-table-wrap" hidden>
-                    <table class="admin-table">
-                        <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Drop</th>
-                            <th>Code</th>
-                            <th>Customer</th>
-                            <th>Pickup</th>
-                            <th>Items</th>
-                            <th>Total</th>
-                            <th>Status</th>
-                            <th>Actions</th>
-                        </tr>
-                        </thead>
-                        <tbody id="orders-archived-tbody"></tbody>
-                    </table>
-                </div>
-                <div id="orders-archived-empty" class="admin-empty" hidden>No archived online orders.</div>
-            </div>
-
-            <!-- Archived in-person sales -->
-            <div class="orders-section">
-                <div class="orders-section-head">
-                    <h3 class="orders-section-title">In-person sales</h3>
-                    <span class="orders-section-count" id="inperson-archived-count"></span>
-                </div>
-                <div class="admin-table-wrap" id="inperson-archived-table-wrap" hidden>
-                    <table class="admin-table">
-                        <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Drop</th>
-                            <th>Items</th>
-                            <th>Total</th>
-                            <th>Reference</th>
-                            <th>Actions</th>
-                        </tr>
-                        </thead>
-                        <tbody id="inperson-archived-tbody"></tbody>
-                    </table>
-                </div>
-                <div id="inperson-archived-empty" class="admin-empty" hidden>No archived in-person sales.</div>
-            </div>
-        </details>
-    </div>
 </main>
 
 <!-- Add Modal -->
@@ -762,43 +647,6 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     </div>
 </div>
 
-<!-- Delete Order Confirm Modal -->
-<div class="admin-modal-overlay" id="order-delete-modal" hidden>
-    <div class="admin-modal admin-modal-sm">
-        <div class="admin-modal-header">
-            <h2 class="admin-modal-title">Delete Order</h2>
-            <button class="admin-modal-close" id="close-order-delete-modal">✕</button>
-        </div>
-        <p class="admin-delete-confirm-text">Are you sure you want to delete order <strong id="order-delete-name"></strong>?
-            Its items will be returned to the drop's stock. This cannot be undone.</p>
-        <div id="order-delete-error" class="admin-alert admin-alert-error" hidden></div>
-        <div class="admin-modal-actions">
-            <button type="button" class="admin-btn-cancel" id="cancel-order-delete-modal">Cancel</button>
-            <button type="button" class="admin-btn-delete-confirm" id="confirm-order-delete">Delete</button>
-            <span class="modal-spinner" id="order-delete-spinner" hidden></span>
-        </div>
-    </div>
-</div>
-
-<!-- Delete In-Person Sale Confirm Modal -->
-<div class="admin-modal-overlay" id="inperson-delete-modal" hidden>
-    <div class="admin-modal admin-modal-sm">
-        <div class="admin-modal-header">
-            <h2 class="admin-modal-title">Delete In-Person Sale</h2>
-            <button class="admin-modal-close" id="close-inperson-delete-modal">✕</button>
-        </div>
-        <p class="admin-delete-confirm-text">Delete in-person sale <strong id="inperson-delete-name"></strong>?
-            Its items will be returned to the drop's in-person stock.</p>
-        <p class="admin-delete-confirm-text admin-field-hint">Heads up: this only reverses the stock count. It does <strong>not</strong> refund the customer — issue any refund in Stripe separately. This cannot be undone.</p>
-        <div id="inperson-delete-error" class="admin-alert admin-alert-error" hidden></div>
-        <div class="admin-modal-actions">
-            <button type="button" class="admin-btn-cancel" id="cancel-inperson-delete-modal">Cancel</button>
-            <button type="button" class="admin-btn-delete-confirm" id="confirm-inperson-delete">Delete</button>
-            <span class="modal-spinner" id="inperson-delete-spinner" hidden></span>
-        </div>
-    </div>
-</div>
-
 <script>
     // ── Modal helpers ──────────────────────────────────────────
     function openModal(id: string) {
@@ -836,7 +684,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     // Close on overlay click — but only when the press *started* on the overlay
     // itself. Otherwise a text selection that begins inside the modal and is
     // released over the overlay (a drag-out) would wrongly close the modal.
-    ['add-modal', 'edit-modal', 'delete-modal', 'drop-modal', 'drop-delete-modal', 'order-delete-modal', 'inperson-delete-modal'].forEach(id => {
+    ['add-modal', 'edit-modal', 'delete-modal', 'drop-modal', 'drop-delete-modal'].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
         let pressedOnOverlay = false;
@@ -858,7 +706,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
             picker.hidden = true;
             return;
         }
-        ['add-modal', 'edit-modal', 'delete-modal', 'drop-modal', 'drop-delete-modal', 'order-delete-modal', 'inperson-delete-modal'].forEach(id => {
+        ['add-modal', 'edit-modal', 'delete-modal', 'drop-modal', 'drop-delete-modal'].forEach(id => {
             const el = document.getElementById(id);
             if (el && !el.hidden) closeModal(id);
         });
@@ -879,278 +727,16 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         tabs.forEach(t => t.classList.toggle('admin-tab-active', t.dataset.tab === target));
         document.getElementById('tab-menu-items')!.hidden = target !== 'menu-items';
         document.getElementById('tab-drops')!.hidden = target !== 'drops';
-        document.getElementById('tab-orders')!.hidden = target !== 'orders';
         if (target === 'menu-items') {
             if (pageTitle) pageTitle.textContent = 'Menu Items';
             if (pageSub) pageSub.textContent = `${totalItems} total item${totalItems !== 1 ? 's' : ''}`;
             addItemBtn.hidden = false;
-        } else if (target === 'orders') {
-            if (pageTitle) pageTitle.textContent = 'Orders';
-            if (pageSub) pageSub.textContent = 'Online orders and in-person sales';
-            addItemBtn.hidden = true;
-            loadOrders();
-            loadInPersonSales();
         } else {
             if (pageTitle) pageTitle.textContent = 'Drops';
             if (pageSub) pageSub.textContent = 'Biweekly order windows';
             addItemBtn.hidden = true;
         }
     }
-
-    // ── Archived-drop lookup (orders/sales tied to these are filed away) ──
-    const archivedDropList: { id: string; name: string }[] = (() => {
-        try { return JSON.parse(document.getElementById('tab-orders')?.dataset.archivedDrops || '[]'); }
-        catch { return []; }
-    })();
-    const archivedDropNames = new Map<string, string>(archivedDropList.map(d => [d.id, d.name]));
-    const isArchivedDrop = (dropId: string | null | undefined) => dropId != null && archivedDropNames.has(dropId);
-
-    const ordersFmt = new Intl.DateTimeFormat('en-US', {
-        month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
-        timeZone: 'America/Los_Angeles',
-    });
-    const ordersEsc = (s: string) => s.replace(/[&<>"]/g, c =>
-        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] ?? c));
-
-    let archivedOnlineCount = 0;
-    let archivedInPersonCount = 0;
-    function refreshArchivedVisibility() {
-        const wrap = document.getElementById('orders-archived');
-        if (!wrap) return;
-        const total = archivedOnlineCount + archivedInPersonCount;
-        (wrap as HTMLDetailsElement).hidden = total === 0;
-        const countEl = document.getElementById('orders-archived-count');
-        if (countEl) countEl.textContent = total ? `${total}` : '';
-    }
-
-    // ── Orders (lazy-loaded on first tab open) ─────────────────
-    let ordersLoaded = false;
-    async function loadOrders() {
-        if (ordersLoaded) return;
-        ordersLoaded = true;
-        const loading = document.getElementById('orders-loading')!;
-        const errorEl = document.getElementById('orders-error')!;
-        const tableWrap = document.getElementById('orders-table-wrap')!;
-        const tbody = document.getElementById('orders-tbody')!;
-        const emptyEl = document.getElementById('orders-empty')!;
-        const archTableWrap = document.getElementById('orders-archived-table-wrap')!;
-        const archTbody = document.getElementById('orders-archived-tbody')!;
-        const archEmptyEl = document.getElementById('orders-archived-empty')!;
-
-        try {
-            const res = await fetch('/api/v1/orders');
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error ?? 'Failed to load orders');
-
-            loading.hidden = true;
-            const allOrders = data.orders ?? [];
-            const orders = allOrders.filter((o: any) => !isArchivedDrop(o.dropId));
-            const archived = allOrders.filter((o: any) => isArchivedDrop(o.dropId));
-
-            const renderRow = (o: any, withDrop: boolean) => {
-                const itemsLabel = (o.items ?? [])
-                    .map((i: any) => `${i.quantity}× ${ordersEsc(i.nameSnapshot)}`).join(', ');
-                const tipCents = o.tipCents ?? 0;
-                const total = '$' + ((o.subtotalCents + tipCents) / 100).toFixed(2)
-                    + (tipCents > 0 ? `<br><span class="admin-field-hint">incl. $${(tipCents / 100).toFixed(2)} tip</span>` : '');
-                const label = o.pickupCode ? ordersEsc(o.pickupCode) : ordersEsc(o.customerName);
-                const dropCell = withDrop
-                    ? `<td class="admin-td-desc">${ordersEsc(archivedDropNames.get(o.dropId) ?? '—')}</td>`
-                    : '';
-                return `<tr>
-                    <td class="admin-td-desc">${ordersFmt.format(new Date(o.createdAt))}</td>
-                    ${dropCell}
-                    <td class="admin-td-name">${o.pickupCode ? ordersEsc(o.pickupCode) : '—'}</td>
-                    <td>${ordersEsc(o.customerName)}<br><span class="admin-field-hint">${ordersEsc(o.customerEmail)}</span></td>
-                    <td>${ordersEsc(o.pickupLocation || '—')}</td>
-                    <td class="admin-td-desc">${itemsLabel}</td>
-                    <td>${total}</td>
-                    <td><span class="admin-drop-status admin-order-${o.status}">${o.status}</span></td>
-                    <td class="admin-td-actions">
-                        <button class="admin-btn-order-delete" data-id="${ordersEsc(o.id)}" data-label="${label}">Delete</button>
-                    </td>
-                </tr>`;
-            };
-
-            const countEl = document.getElementById('orders-online-count');
-            if (countEl) countEl.textContent = orders.length ? `${orders.length}` : '';
-            if (orders.length === 0) {
-                emptyEl.hidden = false;
-            } else {
-                tbody.innerHTML = orders.map((o: any) => renderRow(o, false)).join('');
-                tableWrap.hidden = false;
-            }
-
-            archivedOnlineCount = archived.length;
-            const archCountEl = document.getElementById('orders-archived-online-count');
-            if (archCountEl) archCountEl.textContent = archived.length ? `${archived.length}` : '';
-            if (archived.length === 0) {
-                archEmptyEl.hidden = false;
-            } else {
-                archTbody.innerHTML = archived.map((o: any) => renderRow(o, true)).join('');
-                archTableWrap.hidden = false;
-            }
-            refreshArchivedVisibility();
-        } catch (err) {
-            loading.hidden = true;
-            errorEl.textContent = err instanceof Error ? err.message : 'Failed to load orders';
-            errorEl.hidden = false;
-        }
-    }
-
-    // ── In-person sales (lazy-loaded on first tab open) ────────
-    let inPersonLoaded = false;
-    async function loadInPersonSales() {
-        if (inPersonLoaded) return;
-        inPersonLoaded = true;
-        const loading = document.getElementById('inperson-loading')!;
-        const errorEl = document.getElementById('inperson-error')!;
-        const tableWrap = document.getElementById('inperson-table-wrap')!;
-        const tbody = document.getElementById('inperson-tbody')!;
-        const emptyEl = document.getElementById('inperson-empty')!;
-        const archTableWrap = document.getElementById('inperson-archived-table-wrap')!;
-        const archTbody = document.getElementById('inperson-archived-tbody')!;
-        const archEmptyEl = document.getElementById('inperson-archived-empty')!;
-
-        try {
-            const res = await fetch('/api/v1/orders/in-person');
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error ?? 'Failed to load in-person sales');
-
-            loading.hidden = true;
-            const allSales = data.sales ?? [];
-            const sales = allSales.filter((s: any) => !isArchivedDrop(s.dropId));
-            const archived = allSales.filter((s: any) => isArchivedDrop(s.dropId));
-
-            const renderRow = (s: any, withDrop: boolean) => {
-                const itemsLabel = (s.items ?? [])
-                    .map((i: any) => `${i.quantity}× ${ordersEsc(i.nameSnapshot || 'Item')}`).join(', ');
-                const tipCents = s.tipCents ?? 0;
-                const total = '$' + ((s.subtotalCents + tipCents) / 100).toFixed(2)
-                    + (tipCents > 0 ? `<br><span class="admin-field-hint">incl. $${(tipCents / 100).toFixed(2)} tip</span>` : '');
-                const refRaw = s.stripePaymentIntentId ? s.stripePaymentIntentId.slice(-8) : '';
-                const ref = refRaw ? ordersEsc(refRaw) : '—';
-                const label = refRaw ? `#${refRaw}` : ordersFmt.format(new Date(s.createdAt));
-                const dropCell = withDrop
-                    ? `<td class="admin-td-desc">${ordersEsc(archivedDropNames.get(s.dropId) ?? '—')}</td>`
-                    : '';
-                return `<tr>
-                    <td class="admin-td-desc">${ordersFmt.format(new Date(s.createdAt))}</td>
-                    ${dropCell}
-                    <td class="admin-td-desc">${itemsLabel || '—'}</td>
-                    <td>${total}</td>
-                    <td><span class="admin-field-hint">${ref}</span></td>
-                    <td class="admin-td-actions">
-                        <button class="admin-btn-order-delete admin-btn-inperson-delete" data-id="${ordersEsc(s.id)}" data-label="${ordersEsc(label)}">Delete</button>
-                    </td>
-                </tr>`;
-            };
-
-            const countEl = document.getElementById('inperson-count');
-            if (countEl) countEl.textContent = sales.length ? `${sales.length}` : '';
-            if (sales.length === 0) {
-                emptyEl.hidden = false;
-            } else {
-                tbody.innerHTML = sales.map((s: any) => renderRow(s, false)).join('');
-                tableWrap.hidden = false;
-            }
-
-            archivedInPersonCount = archived.length;
-            const archCountEl = document.getElementById('inperson-archived-count');
-            if (archCountEl) archCountEl.textContent = archived.length ? `${archived.length}` : '';
-            if (archived.length === 0) {
-                archEmptyEl.hidden = false;
-            } else {
-                archTbody.innerHTML = archived.map((s: any) => renderRow(s, true)).join('');
-                archTableWrap.hidden = false;
-            }
-            refreshArchivedVisibility();
-        } catch (err) {
-            loading.hidden = true;
-            errorEl.textContent = err instanceof Error ? err.message : 'Failed to load in-person sales';
-            errorEl.hidden = false;
-        }
-    }
-
-    // ── Delete order (reverts stock) ───────────────────────────
-    let pendingOrderDeleteId: string | null = null;
-    const onOrderDeleteClick = (e: Event) => {
-        const btn = (e.target as HTMLElement).closest('.admin-btn-order-delete') as HTMLButtonElement | null;
-        if (!btn) return;
-        pendingOrderDeleteId = btn.dataset.id ?? null;
-        const nameEl = document.getElementById('order-delete-name');
-        if (nameEl) nameEl.textContent = btn.dataset.label ?? 'this order';
-        clearError('order-delete-error');
-        openModal('order-delete-modal');
-    };
-    document.getElementById('orders-tbody')?.addEventListener('click', onOrderDeleteClick);
-    document.getElementById('orders-archived-tbody')?.addEventListener('click', onOrderDeleteClick);
-    document.getElementById('close-order-delete-modal')?.addEventListener('click', () => closeModal('order-delete-modal'));
-    document.getElementById('cancel-order-delete-modal')?.addEventListener('click', () => closeModal('order-delete-modal'));
-
-    document.getElementById('confirm-order-delete')?.addEventListener('click', async () => {
-        if (!pendingOrderDeleteId) return;
-        clearError('order-delete-error');
-        const confirmBtn = document.getElementById('confirm-order-delete') as HTMLButtonElement;
-        const spinner = document.getElementById('order-delete-spinner') as HTMLElement;
-        confirmBtn.disabled = true;
-        spinner.hidden = false;
-        try {
-            const res = await fetch(`/api/v1/orders/${pendingOrderDeleteId}`, {method: 'DELETE'});
-            if (res.ok) {
-                location.reload();
-            } else {
-                const err = await res.json();
-                showError('order-delete-error', err.error ?? 'Could not delete order.');
-                confirmBtn.disabled = false;
-                spinner.hidden = true;
-            }
-        } catch {
-            showError('order-delete-error', 'Could not delete order.');
-            confirmBtn.disabled = false;
-            spinner.hidden = true;
-        }
-    });
-
-    // ── Delete in-person sale (reverts in-person stock, no refund) ───
-    let pendingInPersonDeleteId: string | null = null;
-    const onInPersonDeleteClick = (e: Event) => {
-        const btn = (e.target as HTMLElement).closest('.admin-btn-inperson-delete') as HTMLButtonElement | null;
-        if (!btn) return;
-        pendingInPersonDeleteId = btn.dataset.id ?? null;
-        const nameEl = document.getElementById('inperson-delete-name');
-        if (nameEl) nameEl.textContent = btn.dataset.label ?? 'this sale';
-        clearError('inperson-delete-error');
-        openModal('inperson-delete-modal');
-    };
-    document.getElementById('inperson-tbody')?.addEventListener('click', onInPersonDeleteClick);
-    document.getElementById('inperson-archived-tbody')?.addEventListener('click', onInPersonDeleteClick);
-    document.getElementById('close-inperson-delete-modal')?.addEventListener('click', () => closeModal('inperson-delete-modal'));
-    document.getElementById('cancel-inperson-delete-modal')?.addEventListener('click', () => closeModal('inperson-delete-modal'));
-
-    document.getElementById('confirm-inperson-delete')?.addEventListener('click', async () => {
-        if (!pendingInPersonDeleteId) return;
-        clearError('inperson-delete-error');
-        const confirmBtn = document.getElementById('confirm-inperson-delete') as HTMLButtonElement;
-        const spinner = document.getElementById('inperson-delete-spinner') as HTMLElement;
-        confirmBtn.disabled = true;
-        spinner.hidden = false;
-        try {
-            const res = await fetch(`/api/v1/orders/in-person/${pendingInPersonDeleteId}`, {method: 'DELETE'});
-            if (res.ok) {
-                location.reload();
-            } else {
-                const err = await res.json();
-                showError('inperson-delete-error', err.error ?? 'Could not delete sale.');
-                confirmBtn.disabled = false;
-                spinner.hidden = true;
-            }
-        } catch {
-            showError('inperson-delete-error', 'Could not delete sale.');
-            confirmBtn.disabled = false;
-            spinner.hidden = true;
-        }
-    });
 
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {
@@ -1163,7 +749,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     // Restore the last-active tab after a reload (drop actions reload the page).
     try {
         const saved = sessionStorage.getItem(ACTIVE_TAB_KEY);
-        if (saved && ['drops', 'stock', 'orders'].includes(saved)) activateTab(saved);
+        if (saved && ['drops'].includes(saved)) activateTab(saved);
     } catch {}
 
     // ── File → base64 helper ───────────────────────────────────
