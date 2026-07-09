@@ -382,7 +382,10 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
                 <span class="orders-section-count" id="orders-online-count"></span>
             </div>
             <p class="orders-section-sub">Paid through the website — customers pick up with a code.</p>
-            <div id="orders-loading" class="admin-empty">Loading orders…</div>
+            <div id="orders-loading" class="admin-loading">
+                <span class="admin-spinner"></span>
+                <span class="admin-loading-text">Loading orders…</span>
+            </div>
             <div id="orders-error" class="admin-alert admin-alert-error" hidden></div>
             <div class="admin-table-wrap" id="orders-table-wrap" hidden>
                 <table class="admin-table">
@@ -411,7 +414,10 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
                 <span class="orders-section-count" id="inperson-count"></span>
             </div>
             <p class="orders-section-sub">Walk-up sales taken at the counter through the Point of Sale.</p>
-            <div id="inperson-loading" class="admin-empty">Loading in-person sales…</div>
+            <div id="inperson-loading" class="admin-loading">
+                <span class="admin-spinner"></span>
+                <span class="admin-loading-text">Loading in-person sales…</span>
+            </div>
             <div id="inperson-error" class="admin-alert admin-alert-error" hidden></div>
             <div class="admin-table-wrap" id="inperson-table-wrap" hidden>
                 <table class="admin-table">

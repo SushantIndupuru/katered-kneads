@@ -415,6 +415,8 @@ const inPersonLow = inPersonItems.filter(r => r.inPersonStatus === 'low').length
 </main>
 
 <script>
+    import { showToast } from '../../lib/toast';
+
     // ── In-person sales steppers ───────────────────────────────
     const ipTable = document.getElementById('ip-stock-table') as HTMLTableElement | null;
     if (ipTable) {
@@ -459,7 +461,7 @@ const inPersonLow = inPersonItems.filter(r => r.inPersonStatus === 'low').length
                 if (remEl) remEl.textContent = String(Math.max(0, stock - sold));
                 recomputeTotals();
             } catch {
-                alert('Could not update in-person sales. Please try again.');
+                showToast('Could not update in-person sales. Please try again.', 'error');
             } finally {
                 buttons.forEach(b => { b.disabled = false; });
             }

@@ -10,11 +10,6 @@ interface CartLine {
     quantity: number;
 }
 
-// Creates a Stripe PaymentIntent for an in-person POS cart and returns a QR code
-// (data URL) pointing at our own /pay/in-person page. The customer scans it and
-// pays on their own phone with a card-only Payment Element (no email/phone
-// collected); the sale is recorded when payment confirms (via the webhook
-// and/or the GET poll below). Draws from the in-person stock pool.
 export const POST: APIRoute = async ({ params, request, url }) => {
     try {
         const dropId = params.id as string;
@@ -65,16 +60,10 @@ export const POST: APIRoute = async ({ params, request, url }) => {
 
         if (subtotalCents <= 0) return json({ error: 'Total must be greater than zero' }, 400);
 
-        // Carry the cart in metadata as `menuItemId:qty` pairs so the sale can be
-        // rebuilt at finalize time. The subtotal is stashed too so the pay page
-        // can validate a customer-added tip against it (the PI amount itself grows
-        // to include the tip, so it can't be used as the subtotal afterwards).
         const cart = orderLines.map(l => `${l.menuItemId}:${l.quantity}`).join(',');
         const metadata = { kind: 'in_person', dropId, cart, subtotal: String(subtotalCents) };
 
         const stripe = getStripe();
-        // Card only (incl. Apple/Google Pay wallets) so Stripe Link — which asks
-        // for a phone number — never appears, and no email is collected.
         const intent = await stripe.paymentIntents.create({
             amount: subtotalCents,
             currency: 'usd',
@@ -82,9 +71,6 @@ export const POST: APIRoute = async ({ params, request, url }) => {
             metadata,
         });
 
-        // The QR points at our own pay page, which mounts the Payment Element
-        // using this PaymentIntent. We never put the client secret in the QR; the
-        // page fetches it server-side from the PaymentIntent id.
         const payUrl = `${url.origin}/pay/in-person?pi=${encodeURIComponent(intent.id)}`;
         const qrDataUrl = await QRCode.toDataURL(payUrl, {
             width: 320,
@@ -104,8 +90,6 @@ export const POST: APIRoute = async ({ params, request, url }) => {
     }
 };
 
-// Polled by the POS while the QR is on screen. Confirms with Stripe and records
-// the sale once paid (idempotent). Returns the current payment status.
 export const GET: APIRoute = async ({ url }) => {
     try {
         const paymentIntentId = url.searchParams.get('payment_intent');

@@ -48,7 +48,6 @@ export const DELETE: APIRoute = async ({params, url}) => {
         const drops = await getDropsForMenuItem(id);
 
         if (drops.length > 0 && !force) {
-            // Block: caller must explicitly confirm cascading deletion of the drops.
             return json({
                 error: 'Menu item is used in one or more drops',
                 drops: drops.map(d => ({id: d.id, name: d.name})),

@@ -33,8 +33,6 @@ export const PATCH: APIRoute = async ({ params, request }) => {
 
         const updates: Partial<Omit<Drop, 'id'>> = {};
 
-        // Lightweight lifecycle actions (announce / unannounce / archive) can be
-        // sent on their own without a full schedule payload.
         if (announce !== undefined) {
             updates.announcedAt = announce ? new Date().toISOString() : null;
         }
@@ -42,7 +40,6 @@ export const PATCH: APIRoute = async ({ params, request }) => {
             updates.archivedAt = new Date().toISOString();
         }
 
-        // Full edit: name + schedule are validated together when provided.
         const editingSchedule = name !== undefined || openTime !== undefined || closeTime !== undefined;
         if (editingSchedule) {
             if (!name || typeof name !== 'string' || !name.trim()) {
@@ -64,8 +61,6 @@ export const PATCH: APIRoute = async ({ params, request }) => {
             updates.closeTime = close.toISOString();
         }
 
-        // Pickup time can be edited independently of the schedule. Empty/null
-        // clears it; any provided value must be a valid date.
         if (pickupTime !== undefined) {
             if (pickupTime === null || pickupTime === '') {
                 updates.pickupTime = null;
@@ -78,7 +73,6 @@ export const PATCH: APIRoute = async ({ params, request }) => {
             }
         }
 
-        // Location fields can be edited independently of the schedule.
         if (locationName !== undefined) {
             updates.locationName = typeof locationName === 'string' ? locationName.trim() : '';
         }
@@ -86,7 +80,6 @@ export const PATCH: APIRoute = async ({ params, request }) => {
             updates.locationAddress = typeof locationAddress === 'string' ? locationAddress.trim() : '';
         }
 
-        // Low-stock threshold can be edited independently of the schedule.
         if (lowStockThreshold !== undefined) {
             const threshold = lowStockThreshold === null || lowStockThreshold === '' ? 0 : Number(lowStockThreshold);
             if (!Number.isInteger(threshold) || threshold < 0) {

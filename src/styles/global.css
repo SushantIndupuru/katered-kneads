@@ -110,6 +110,7 @@ nav.nav-links {
   align-items: center;
   gap: 2rem;
   list-style: none;
+  margin-left: auto;
 }
 
 nav.nav-links a {
@@ -136,6 +137,10 @@ nav.nav-links a::after {
 
 nav.nav-links a:hover::after {
   width: 100%;
+}
+
+.nav-instagram {
+  margin-left: 2rem;
 }
 
 .nav-instagram a {
@@ -2072,5 +2077,59 @@ footer {
   color: var(--text-primary);
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+/* ── Shared loading spinner (admin dashboard) ─────────────────────────────
+   A circular spinner used anywhere the admin fetches data, so content animates
+   in behind a loading state instead of popping in abruptly. */
+.admin-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.9rem;
+  padding: 3rem;
+  text-align: center;
+}
+
+.admin-loading[hidden] {
+  display: none;
+}
+
+.admin-loading-text {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+.admin-spinner {
+  display: inline-block;
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--accent);
+  border-top-color: var(--text-primary);
+  border-radius: 50%;
+  animation: admin-spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+.admin-spinner-sm {
+  width: 18px;
+  height: 18px;
+  border-width: 2px;
+}
+
+@keyframes admin-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Respect reduced-motion preferences: keep a gentle spin rather than a hard
+   snap so the loading state is still legible without rapid motion. */
+@media (prefers-reduced-motion: reduce) {
+  .admin-spinner {
+    animation-duration: 1.6s;
+  }
 }
 

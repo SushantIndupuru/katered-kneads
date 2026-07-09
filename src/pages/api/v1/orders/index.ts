@@ -4,8 +4,6 @@ import { getOrders } from '../../../../lib/db';
 
 export const GET: APIRoute = async () => {
     try {
-        // Only surface orders that have actually been purchased — exclude
-        // pending (unfinished checkout) and canceled sessions.
         const orders = await getOrders({ statuses: ['paid', 'fulfilled'] });
         return json({ orders });
     } catch (err) {

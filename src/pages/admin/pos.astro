@@ -162,6 +162,7 @@ const remainingJson = JSON.stringify(remainingOrders);
             <div id="lookup-message" class="pos-message" hidden></div>
 
             <div id="order-card" class="pos-order-card" hidden>
+                <button class="pos-order-card-close" id="order-card-close" aria-label="Close">✕</button>
                 <div class="pos-order-head">
                     <div>
                         <span class="pos-order-code" id="order-code"></span>
@@ -277,7 +278,11 @@ const remainingJson = JSON.stringify(remainingOrders);
             <h2 class="pos-panel-title" id="charge-title">Scan to pay</h2>
             <p class="pos-charge-amount" id="charge-amount"></p>
             <div class="pos-qr-wrap">
-                <img id="charge-qr" class="pos-qr" alt="Payment QR code" width="280" height="280"/>
+                <div class="pos-qr-loading" id="charge-qr-loading">
+                    <span class="admin-spinner"></span>
+                    <span class="admin-loading-text">Generating code…</span>
+                </div>
+                <img id="charge-qr" class="pos-qr" alt="Payment QR code" width="280" height="280" hidden/>
             </div>
             <p class="pos-charge-hint">Have the customer scan this with their phone camera to pay. This screen updates automatically once they're done.</p>
             <div class="pos-charge-status" id="charge-status">
@@ -333,12 +338,15 @@ const remainingJson = JSON.stringify(remainingOrders);
 <script type="application/json" id="remaining-orders-data" set:html={remainingJson}></script>
 
 <script>
+    import { showToast, confirmDialog } from '../../lib/toast';
+
     // ── Order lookup + fulfillment ─────────────────────────────
     const form = document.getElementById('lookup-form') as HTMLFormElement;
     const codeInput = document.getElementById('code-input') as HTMLInputElement;
     const lookupBtn = document.getElementById('lookup-btn') as HTMLButtonElement;
     const message = document.getElementById('lookup-message') as HTMLElement;
     const card = document.getElementById('order-card') as HTMLElement;
+    const cardClose = document.getElementById('order-card-close') as HTMLButtonElement;
     const fulfillBtn = document.getElementById('fulfill-btn') as HTMLButtonElement;
 
     const esc = (s: string) => s.replace(/[&<>"]/g, c =>
@@ -405,6 +413,8 @@ const remainingJson = JSON.stringify(remainingOrders);
         card.hidden = true;
         currentOrder = null;
         lookupBtn.disabled = true;
+        const lookupBtnLabel = lookupBtn.textContent;
+        lookupBtn.innerHTML = '<span class="admin-spinner admin-spinner-sm"></span>';
         try {
             const res = await fetch(`/api/v1/orders/lookup?code=${encodeURIComponent(code)}`);
             const data = await res.json();
@@ -420,7 +430,27 @@ const remainingJson = JSON.stringify(remainingOrders);
             showMessage('Network error — please try again.', 'error');
         } finally {
             lookupBtn.disabled = false;
+            lookupBtn.textContent = lookupBtnLabel;
         }
+    }
+
+    function dismissCard() {
+        card.hidden = true;
+        currentOrder = null;
+        clearMessage();
+        codeInput.value = '';
+        codeInput.focus();
+    }
+
+    async function closeCard() {
+        if (currentOrder && currentOrder.status !== 'fulfilled') {
+            const ok = await confirmDialog(
+                'This order hasn\u2019t been marked as served yet. Close anyway?',
+                { title: 'Order not served', confirmLabel: 'Close anyway', cancelLabel: 'Keep open' },
+            );
+            if (!ok) return;
+        }
+        dismissCard();
     }
 
     form.addEventListener('submit', (e) => {
@@ -429,6 +459,11 @@ const remainingJson = JSON.stringify(remainingOrders);
         if (!code) return;
         codeInput.value = code;
         lookup(code);
+    });
+
+    cardClose.addEventListener('click', closeCard);
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !card.hidden) closeCard();
     });
 
     fulfillBtn.addEventListener('click', async () => {
@@ -591,7 +626,7 @@ const remainingJson = JSON.stringify(remainingOrders);
             const data = await res.json();
             if (!res.ok) {
                 modalFulfillBtn.disabled = false;
-                alert(data.error ?? 'Could not update order.');
+                showToast(data.error ?? 'Could not update order.', 'error');
                 return;
             }
             const updated = data.order as Order;
@@ -605,7 +640,7 @@ const remainingJson = JSON.stringify(remainingOrders);
             }
         } catch {
             modalFulfillBtn.disabled = false;
-            alert('Network error — please try again.');
+            showToast('Network error — please try again.', 'error');
         }
     });
 
@@ -751,6 +786,7 @@ const remainingJson = JSON.stringify(remainingOrders);
         const stageDone = document.getElementById('charge-stage-done') as HTMLElement;
         const stageError = document.getElementById('charge-stage-error') as HTMLElement;
         const qrImg = document.getElementById('charge-qr') as HTMLImageElement;
+        const qrLoading = document.getElementById('charge-qr-loading') as HTMLElement;
         const chargeAmount = document.getElementById('charge-amount') as HTMLElement;
         const chargeDoneAmount = document.getElementById('charge-done-amount') as HTMLElement;
         const chargeLink = document.getElementById('charge-link') as HTMLAnchorElement;
@@ -816,7 +852,11 @@ const remainingJson = JSON.stringify(remainingOrders);
             if (cart.length === 0) return;
             chargeBtn.disabled = true;
             showStage('qr');
+            // Show the spinner in the QR box until the generated code arrives, so
+            // the customer never sees an empty frame.
             qrImg.removeAttribute('src');
+            qrImg.hidden = true;
+            if (qrLoading) qrLoading.hidden = false;
             chargeAmount.textContent = '';
             chargeModal.hidden = false;
             document.body.style.overflow = 'hidden';
@@ -833,6 +873,8 @@ const remainingJson = JSON.stringify(remainingOrders);
                     return;
                 }
                 qrImg.src = data.qrDataUrl;
+                qrImg.hidden = false;
+                if (qrLoading) qrLoading.hidden = true;
                 chargeLink.href = data.url;
                 chargeAmount.textContent = money(data.subtotalCents ?? 0);
                 activePaymentIntentId = data.paymentIntentId;
@@ -1081,6 +1123,12 @@ const remainingJson = JSON.stringify(remainingOrders);
         white-space: nowrap;
     }
     .pos-lookup-btn:disabled { opacity: 0.6; cursor: default; }
+    /* The button background is dark, so tint the spinner light to stay visible. */
+    .pos-lookup-btn .admin-spinner {
+        border-color: rgba(255, 255, 255, 0.35);
+        border-top-color: #fff;
+        vertical-align: middle;
+    }
 
     /* Messages */
     .pos-message {
@@ -1094,18 +1142,35 @@ const remainingJson = JSON.stringify(remainingOrders);
 
     /* Order card */
     .pos-order-card {
+        position: relative;
         margin-top: 1.25rem;
         border: 1px solid var(--accent);
         border-radius: 12px;
         padding: 1.1rem;
         background: #fff;
     }
+    .pos-order-card-close {
+        position: absolute;
+        top: 0.6rem;
+        right: 0.6rem;
+        width: 2rem;
+        height: 2rem;
+        border: none;
+        background: none;
+        font-size: 1.1rem;
+        color: var(--text-muted);
+        cursor: pointer;
+        border-radius: 8px;
+        z-index: 1;
+    }
+    .pos-order-card-close:hover { color: var(--text-primary); background: #EDE8E1; }
     .pos-order-head {
         display: flex;
         justify-content: space-between;
         align-items: center;
         gap: 0.75rem;
         margin-bottom: 1rem;
+        padding-right: 2rem;
     }
     .pos-order-code {
         font-size: 1.5rem;
@@ -1368,6 +1433,19 @@ const remainingJson = JSON.stringify(remainingOrders);
         width: fit-content;
     }
     .pos-qr { display: block; width: 280px; height: 280px; max-width: 100%; }
+    .pos-qr[hidden] { display: none; }
+    /* Placeholder that fills the QR frame with a spinner while the code loads. */
+    .pos-qr-loading {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.9rem;
+        width: 280px;
+        height: 280px;
+        max-width: 100%;
+    }
+    .pos-qr-loading[hidden] { display: none; }
     .pos-charge-hint { font-size: 0.82rem; color: var(--text-muted); margin: 0 0 1rem; }
     .pos-charge-status {
         display: flex;

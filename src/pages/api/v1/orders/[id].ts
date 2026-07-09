@@ -5,8 +5,6 @@ import type { OrderStatus } from '../../../../types/db-types';
 
 const VALID_STATUSES: OrderStatus[] = ['paid', 'fulfilled'];
 
-// Updates an order's status from the POS — e.g. marking it 'fulfilled' once it
-// has been handed to the customer, or back to 'paid' to undo a mistake.
 export const PATCH: APIRoute = async ({ params, request }) => {
     try {
         const id = params.id as string;

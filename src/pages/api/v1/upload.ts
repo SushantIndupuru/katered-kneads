@@ -14,8 +14,6 @@ export const POST: APIRoute = async ({request}) => {
             return json({error: 'No file provided'}, 400);
         }
 
-        // When no id is provided (e.g. creating a new item), generate the UUID
-        // that will also be used as the DB row id.
         const id = typeof idField === 'string' && idField ? idField : crypto.randomUUID();
 
         const inputBuffer = Buffer.from(await file.arrayBuffer());

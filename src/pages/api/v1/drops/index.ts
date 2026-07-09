@@ -15,7 +15,6 @@ export const POST: APIRoute = async ({ request }) => {
     try {
         const { name, openTime, closeTime, pickupTime, locationName, locationAddress, lowStockThreshold, items } = await request.json();
 
-        // Single-active model: only one non-archived drop at a time.
         const existingActive = await getActiveDrop();
         if (existingActive) {
             return json({ error: 'Archive the current active drop before creating a new one.' }, 409);
