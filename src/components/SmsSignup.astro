@@ -104,11 +104,10 @@ const fieldId = `sms-phone-${source}`;
             showMsg("You're on the list! We'll text you when the next drop lands.", true);
           } else {
             showMsg(data.error ?? 'Something went wrong. Please try again.', false);
-            btn.disabled = false;
-            btn.textContent = original;
           }
         } catch {
           showMsg('Something went wrong. Please try again.', false);
+        } finally {
           btn.disabled = false;
           btn.textContent = original;
         }

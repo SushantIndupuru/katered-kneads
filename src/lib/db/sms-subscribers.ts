@@ -63,3 +63,25 @@ export async function getActiveSmsSubscribers(): Promise<SmsSubscriber[]> {
     if (error) throw error;
     return ((data as SmsSubscriberRow[]) ?? []).map(mapSubscriber);
 }
+
+// Every subscriber, active and opted-out alike — for the admin management view.
+export async function getAllSmsSubscribers(): Promise<SmsSubscriber[]> {
+    const supabase = createServerClient();
+    const { data, error } = await supabase
+        .from('sms_subscribers')
+        .select(SMS_COLUMNS)
+        .order('created_at', { ascending: false });
+    if (error) throw error;
+    return ((data as SmsSubscriberRow[]) ?? []).map(mapSubscriber);
+}
+
+// Permanently removes a subscriber row. Used by the admin to scrub a number
+// entirely (as opposed to unsubscribeSms, which keeps a suppression record).
+export async function deleteSmsSubscriber(id: string): Promise<void> {
+    const supabase = createServerClient();
+    const { error } = await supabase
+        .from('sms_subscribers')
+        .delete()
+        .eq('id', id);
+    if (error) throw error;
+}
