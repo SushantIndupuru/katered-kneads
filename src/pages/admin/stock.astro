@@ -37,7 +37,10 @@ const STATUS_LABEL: Record<DropStatus, string> = {
 };
 const activeStatus: DropStatus | null = activeDrop ? dropStatus(activeDrop) : null;
 
-const LOW_STOCK_THRESHOLD = 5;
+// Mirror the drop's customer-facing threshold for the admin "low" pills. When
+// the admin has it set to 0 (counts hidden from customers) fall back to 5 so
+// this internal dashboard still flags items that are running down.
+const LOW_STOCK_THRESHOLD = activeDrop?.lowStockThreshold || 5;
 const stockItems = activeDropItems.map(item => {
     const remaining = item.initialStock - item.consumedStock;
     const soldPct = item.initialStock > 0 ? Math.round((item.consumedStock / item.initialStock) * 100) : 0;
@@ -130,6 +133,22 @@ const inPersonLow = inPersonItems.filter(r => r.inPersonStatus === 'low').length
                 <line x1="12" y1="17" x2="12" y2="21"/>
             </svg>
             Point of Sale
+        </a>
+        <a href="/admin/orders" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 2h6a1 1 0 0 1 1 1v1h1a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1V3a1 1 0 0 1 1-1z"/>
+                <line x1="9" y1="12" x2="15" y2="12"/>
+                <line x1="9" y1="16" x2="15" y2="16"/>
+            </svg>
+            Orders
+        </a>
+        <a href="/admin/sms" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+            SMS
         </a>
         <a href="/menu" target="_blank" class="admin-nav-link">
             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
@@ -412,6 +431,8 @@ const inPersonLow = inPersonItems.filter(r => r.inPersonStatus === 'low').length
 </main>
 
 <script>
+    import { showToast } from '../../lib/toast';
+
     // ── In-person sales steppers ───────────────────────────────
     const ipTable = document.getElementById('ip-stock-table') as HTMLTableElement | null;
     if (ipTable) {
@@ -456,7 +477,7 @@ const inPersonLow = inPersonItems.filter(r => r.inPersonStatus === 'low').length
                 if (remEl) remEl.textContent = String(Math.max(0, stock - sold));
                 recomputeTotals();
             } catch {
-                alert('Could not update in-person sales. Please try again.');
+                showToast('Could not update in-person sales. Please try again.', 'error');
             } finally {
                 buttons.forEach(b => { b.disabled = false; });
             }

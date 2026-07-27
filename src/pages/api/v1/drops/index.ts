@@ -13,9 +13,8 @@ export const GET: APIRoute = async () => {
 
 export const POST: APIRoute = async ({ request }) => {
     try {
-        const { name, openTime, closeTime, pickupTime, locationName, locationAddress, items } = await request.json();
+        const { name, openTime, closeTime, pickupTime, locationName, locationAddress, lowStockThreshold, items } = await request.json();
 
-        // Single-active model: only one non-archived drop at a time.
         const existingActive = await getActiveDrop();
         if (existingActive) {
             return json({ error: 'Archive the current active drop before creating a new one.' }, 409);
@@ -49,6 +48,14 @@ export const POST: APIRoute = async ({ request }) => {
         const parsed = parseDropItems(items);
         if (!Array.isArray(parsed)) return json({ error: parsed.error }, 400);
 
+        let threshold = 0;
+        if (lowStockThreshold != null && lowStockThreshold !== '') {
+            threshold = Number(lowStockThreshold);
+            if (!Number.isInteger(threshold) || threshold < 0) {
+                return json({ error: 'Low stock threshold must be a non-negative whole number' }, 400);
+            }
+        }
+
         const drop = await createDrop({
             name: name.trim(),
             openTime: open.toISOString(),
@@ -58,6 +65,7 @@ export const POST: APIRoute = async ({ request }) => {
             locationAddress: typeof locationAddress === 'string' ? locationAddress.trim() : '',
             announcedAt: null,
             archivedAt: null,
+            lowStockThreshold: threshold,
         }, parsed);
 
         return json({ drop }, 201);

@@ -1,0 +1,197 @@
+---
+// Site-wide SMS drop-alert signup. Drop it anywhere; it POSTs to
+// /api/v1/sms-signup. Multiple instances on one page are supported (the client
+// script binds by attribute, not id). SMS sending is added later.
+export interface Props {
+  source?: string;
+  heading?: string;
+  sub?: string;
+  compact?: boolean;
+}
+
+const {
+  source = 'footer',
+  heading = 'Get drop alerts by text.',
+  sub = "Be the first to know the moment a drop is announced, when orders open and close, and where to pick up — straight to your phone.",
+  compact = false,
+} = Astro.props;
+
+const fieldId = `sms-phone-${source}`;
+---
+
+<div class:list={["sms-signup", { "sms-signup-compact": compact }]}>
+  {heading && <p class="sms-signup-heading">{heading}</p>}
+  {sub && <p class="sms-signup-sub">{sub}</p>}
+  <form class="sms-signup-form" data-sms-form data-source={source} novalidate>
+    <div class="sms-signup-row">
+      <div class="form-field sms-signup-field">
+        <label for={fieldId}>Phone number</label>
+        <input
+          type="tel"
+          id={fieldId}
+          name="phone"
+          autocomplete="tel"
+          inputmode="tel"
+          placeholder="(555) 123-4567"
+          required
+        />
+      </div>
+      <button type="submit" class="btn-primary sms-signup-btn">Notify me</button>
+    </div>
+    <label class="sms-consent">
+      <input type="checkbox" name="consent" checked />
+      <span>
+        I agree to receive automated text updates from Katered Kneads about drops.
+        Msg &amp; data rates may apply. Reply STOP to opt out. See our
+        <a href="/privacy-policy">Privacy Policy</a>.
+      </span>
+    </label>
+    <p class="sms-signup-msg" data-sms-msg hidden aria-live="polite"></p>
+  </form>
+</div>
+
+<script>
+  function initSmsForms() {
+    const forms = document.querySelectorAll<HTMLFormElement>('[data-sms-form]');
+    forms.forEach((form) => {
+      if (form.dataset.smsBound === 'true') return;
+      form.dataset.smsBound = 'true';
+
+      const msg = form.querySelector<HTMLElement>('[data-sms-msg]');
+      const phoneInput = form.querySelector<HTMLInputElement>('input[name="phone"]');
+      const consentInput = form.querySelector<HTMLInputElement>('input[name="consent"]');
+      const btn = form.querySelector<HTMLButtonElement>('button[type="submit"]');
+      if (!msg || !phoneInput || !btn) return;
+
+      function showMsg(text: string, ok: boolean) {
+        msg!.textContent = text;
+        msg!.hidden = false;
+        msg!.classList.toggle('sms-signup-msg-ok', ok);
+        msg!.classList.toggle('sms-signup-msg-err', !ok);
+      }
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        msg.hidden = true;
+
+        const phone = phoneInput.value.trim();
+        if (!phone) {
+          showMsg('Enter your phone number.', false);
+          return;
+        }
+        if (consentInput && !consentInput.checked) {
+          showMsg('Please agree to receive text updates.', false);
+          return;
+        }
+
+        const original = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = 'Signing up…';
+
+        try {
+          const res = await fetch('/api/v1/sms-signup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              phone,
+              consent: consentInput ? consentInput.checked : true,
+              source: form.dataset.source ?? '',
+            }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (res.ok) {
+            form.reset();
+            showMsg("You're on the list! We'll text you when the next drop lands.", true);
+          } else {
+            showMsg(data.error ?? 'Something went wrong. Please try again.', false);
+          }
+        } catch {
+          showMsg('Something went wrong. Please try again.', false);
+        } finally {
+          btn.disabled = false;
+          btn.textContent = original;
+        }
+      });
+    });
+  }
+
+  initSmsForms();
+</script>
+
+<style>
+  .sms-signup-heading {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 1.5rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 0.75rem;
+  }
+  .sms-signup-sub {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    line-height: 1.7;
+    margin-bottom: 1.1rem;
+    max-width: 520px;
+  }
+  .sms-signup-form {
+    max-width: 520px;
+  }
+  .sms-signup-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 0.75rem;
+  }
+  .sms-signup-field {
+    flex: 1;
+  }
+  .sms-signup-btn {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .sms-consent {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.55rem;
+    margin-top: 0.85rem;
+    font-size: 0.72rem;
+    line-height: 1.55;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .sms-consent input {
+    margin-top: 0.15rem;
+    flex-shrink: 0;
+  }
+  .sms-consent a {
+    color: var(--text-primary);
+    text-decoration: underline;
+  }
+  .sms-signup-msg {
+    margin-top: 0.85rem;
+    font-size: 0.85rem;
+    font-weight: 500;
+    padding: 0.7rem 1rem;
+    border: 1px solid var(--accent);
+  }
+  .sms-signup-msg-ok {
+    background: #F0F7F2;
+    border-color: #4A7C59;
+    color: #2D6A45;
+  }
+  .sms-signup-msg-err {
+    background: #FBF0EC;
+    border-color: #E8C4B4;
+    color: #9A3A1A;
+  }
+
+  @media (max-width: 560px) {
+    .sms-signup-row {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .sms-signup-btn {
+      width: 100%;
+      text-align: center;
+    }
+  }
+</style>

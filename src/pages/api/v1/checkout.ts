@@ -25,14 +25,11 @@ export const POST: APIRoute = async ({ request, url }) => {
             return json({ error: 'Your cart is empty' }, 400);
         }
 
-        // Optional gratuity. The client suggests an amount but the value is
-        // re-validated here; it's never trusted for anything except itself.
         const tipCents = rawTipCents == null ? 0 : Number(rawTipCents);
         if (!Number.isInteger(tipCents) || tipCents < 0) {
             return json({ error: 'Invalid tip amount' }, 400);
         }
 
-        // Verify ordering is currently open for the active drop.
         const drop = await getCurrentDrop();
         if (!drop) return json({ error: 'No active drop' }, 409);
         const now = Date.now();
@@ -45,7 +42,6 @@ export const POST: APIRoute = async ({ request, url }) => {
         const dropItems = await getCurrentDropItems();
         const byId = new Map(dropItems.map(di => [di.menuItem.id, di]));
 
-        // Validate lines and compute the total from server-side prices only.
         let subtotalCents = 0;
         const orderLines = [];
         const seen = new Set<string>();
@@ -84,28 +80,14 @@ export const POST: APIRoute = async ({ request, url }) => {
 
         if (subtotalCents <= 0) return json({ error: 'Order total must be greater than zero' }, 400);
 
-        // Guard against an absurd tip (typo or tampering): cap at the greater of
-        // the order subtotal or $50, so generous tips on small orders still work.
         const maxTipCents = Math.max(subtotalCents, 5000);
         if (tipCents > maxTipCents) return json({ error: 'Tip amount is too large' }, 400);
 
-        // The order isn't persisted until Stripe confirms payment. Everything
-        // needed to build it at finalize time is carried in session metadata:
-        // the cart as `menuItemId:qty` pairs (kept in the same order as
-        // line_items so they can be matched back) plus the customer details.
         const cart = orderLines.map(l => `${l.menuItemId}:${l.quantity}`).join(',');
 
-        // The pickup location/address are NOT taken from the customer or carried
-        // here; they're snapshotted from the drop at finalize time so the exact
-        // address is only ever materialized onto a confirmed (paid) order.
         const stripe = getStripe();
-        // The tip rides in metadata so it can be recovered at finalize time
-        // without re-deriving it from the (item) line totals.
         const metadata = { dropId: drop.id, name, phone, cart, tip: String(tipCents) };
 
-        // Build the charged line items: one per cart line, plus a trailing "Tip"
-        // line when a gratuity was added. Keep the tip LAST so the cart lines stay
-        // index-aligned with the `cart` metadata at finalize time.
         const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = orderLines.map(l => ({
             price_data: {
                 currency: 'usd',
@@ -128,9 +110,6 @@ export const POST: APIRoute = async ({ request, url }) => {
         const session = await stripe.checkout.sessions.create({
             ui_mode: 'elements',
             mode: 'payment',
-            // Card only (Apple Pay / Google Pay ride along automatically). This
-            // also silences the test-mode warning about link/klarna/cashapp/etc.
-            // that aren't activated. Add more types here to offer them.
             payment_method_types: ['card'],
             customer_email: email,
             line_items: lineItems,

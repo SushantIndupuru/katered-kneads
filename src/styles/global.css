@@ -110,6 +110,7 @@ nav.nav-links {
   align-items: center;
   gap: 2rem;
   list-style: none;
+  margin-left: auto;
 }
 
 nav.nav-links a {
@@ -136,6 +137,10 @@ nav.nav-links a::after {
 
 nav.nav-links a:hover::after {
   width: 100%;
+}
+
+.nav-instagram {
+  margin-left: 2rem;
 }
 
 .nav-instagram a {
@@ -1219,6 +1224,12 @@ footer {
   margin-top: 1rem;
 }
 
+.footer-newsletter-social {
+  margin-top: 1.75rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--accent);
+}
+
 /* ── Reviews Grid ────────────────────────────────────────────── */
 .reviews-grid {
   display: grid;
@@ -2000,6 +2011,125 @@ footer {
 @media (min-width: 769px) and (max-width: 1024px) {
   .product-grid {
     grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* Legal pages (privacy, terms, refund) */
+.legal {
+  padding-top: 3.5rem;
+  padding-bottom: 5rem;
+}
+
+.legal-content {
+  max-width: 760px;
+}
+
+.legal-content h2 {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--text-primary);
+  margin: 2.75rem 0 0.85rem;
+}
+
+.legal-content h2:first-child {
+  margin-top: 0;
+}
+
+.legal-content p {
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+}
+
+.legal-content ul {
+  list-style: none;
+  margin: 0 0 1.25rem;
+  padding: 0;
+}
+
+.legal-content ul li {
+  position: relative;
+  padding-left: 1.35rem;
+  color: var(--text-muted);
+  margin-bottom: 0.65rem;
+}
+
+.legal-content ul li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.65rem;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--text-primary);
+  opacity: 0.5;
+}
+
+.legal-content ul li strong,
+.legal-content p strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.legal-content a {
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ── Shared loading spinner (admin dashboard) ─────────────────────────────
+   A circular spinner used anywhere the admin fetches data, so content animates
+   in behind a loading state instead of popping in abruptly. */
+.admin-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.9rem;
+  padding: 3rem;
+  text-align: center;
+}
+
+.admin-loading[hidden] {
+  display: none;
+}
+
+.admin-loading-text {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+
+.admin-spinner {
+  display: inline-block;
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--accent);
+  border-top-color: var(--text-primary);
+  border-radius: 50%;
+  animation: admin-spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+.admin-spinner-sm {
+  width: 18px;
+  height: 18px;
+  border-width: 2px;
+}
+
+@keyframes admin-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Respect reduced-motion preferences: keep a gentle spin rather than a hard
+   snap so the loading state is still legible without rapid motion. */
+@media (prefers-reduced-motion: reduce) {
+  .admin-spinner {
+    animation-duration: 1.6s;
   }
 }
 

@@ -27,13 +27,9 @@ export const POST: APIRoute = async ({ request }) => {
             event.type === 'checkout.session.completed' ||
             event.type === 'checkout.session.async_payment_succeeded'
         ) {
-            // Online orders are paid through Checkout Sessions.
             const session = event.data.object as Stripe.Checkout.Session;
             await finalizeOrderIfPaid(session.id);
         } else if (event.type === 'payment_intent.succeeded') {
-            // In-person POS sales are paid through a bare PaymentIntent (no
-            // Checkout Session) and carry a `kind: in_person` marker. Online
-            // PaymentIntents are ignored here (handled via their session above).
             const intent = event.data.object as Stripe.PaymentIntent;
             if (intent.metadata?.kind === 'in_person') {
                 await finalizeInPersonSaleIfPaid(intent.id);

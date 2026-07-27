@@ -1,17 +1,20 @@
 ---
 import '../styles/global.css';
 import { getCurrentDrop } from '../lib/db';
+import SmsSignup from '../components/SmsSignup.astro';
 
 export interface Props {
   title?: string;
   description?: string;
   activePage?: string;
+  hideFooterSignup?: boolean;
 }
 
 const {
   title = "Katered Kneads - Handmade Campus Cookies",
   description = "Handmade, 100% scratch cookies delivered biweekly to UC Berkeley and UC Davis. Limited orders open every two weeks.",
-  activePage = ""
+  activePage = "",
+  hideFooterSignup = false
 } = Astro.props;
 
 // Whether a drop is currently open for ordering. When it isn't, the client
@@ -87,8 +90,8 @@ const ordersOpen = !!currentDrop
     <footer>
       <div class="footer-inner">
         <div class="footer-newsletter">
-          <p class="footer-newsletter-heading">Stay in the loop.</p>
-          <p class="footer-newsletter-sub">Follow us on Instagram for drop announcements and behind-the-scenes baking — and to know the moment orders open.</p>
+          {!hideFooterSignup && <SmsSignup source="footer" />}
+          <p class="footer-newsletter-sub footer-newsletter-social">Prefer Instagram? Follow along for drop announcements and behind-the-scenes baking.</p>
           <div class="footer-cta-row">
             <a href="https://www.instagram.com/Katered_Kneads" target="_blank" rel="noopener noreferrer" class="cta-link">Instagram @Katered_Kneads →</a>
           </div>

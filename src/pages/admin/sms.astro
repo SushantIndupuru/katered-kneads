@@ -1,0 +1,653 @@
+---
+import '../../styles/global.css';
+import { getAllSmsSubscribers } from '../../lib/db';
+import { formatUsPhone } from '../../lib/phone';
+import type { SmsSubscriber } from '../../types/db-types.ts';
+
+// Route is protected by middleware (src/middleware.ts).
+const user = (Astro.locals as { user?: { email?: string } }).user;
+
+let subscribers: SmsSubscriber[] = [];
+let loadError = false;
+try {
+    subscribers = await getAllSmsSubscribers();
+} catch (e) {
+    loadError = true;
+}
+
+const activeCount = subscribers.filter(s => !s.unsubscribedAt).length;
+const optedOutCount = subscribers.length - activeCount;
+
+function formatDate(iso: string): string {
+    const d = new Date(iso);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+const SOURCE_LABELS: Record<string, string> = {
+    footer: 'Footer',
+    order: 'Checkout',
+    admin: 'Added by admin',
+};
+function sourceLabel(source: string): string {
+    return SOURCE_LABELS[source] ?? (source ? source : 'Unknown');
+}
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
+    <link rel="icon" href="/favicon.ico"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <meta name="robots" content="noindex, nofollow"/>
+    <title>SMS — Katered Kneads</title>
+</head>
+<body class="admin-body">
+
+<!-- Sidebar -->
+<aside class="admin-sidebar">
+    <div class="admin-sidebar-top">
+        <a href="/" class="admin-logo">Katered Kneads</a>
+        <span class="admin-badge">Admin</span>
+    </div>
+
+    <nav class="admin-nav">
+        <a href="/admin" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="7" height="7"/>
+                <rect x="14" y="3" width="7" height="7"/>
+                <rect x="14" y="14" width="7" height="7"/>
+                <rect x="3" y="14" width="7" height="7"/>
+            </svg>
+            Dashboard
+        </a>
+        <a href="/admin/stock" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                <line x1="12" y1="22.08" x2="12" y2="12"/>
+            </svg>
+            Stock
+        </a>
+        <a href="/admin/pos" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="3" width="20" height="14" rx="2"/>
+                <line x1="2" y1="9" x2="22" y2="9"/>
+                <line x1="8" y1="21" x2="16" y2="21"/>
+                <line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+            Point of Sale
+        </a>
+        <a href="/admin/orders" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 2h6a1 1 0 0 1 1 1v1h1a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1V3a1 1 0 0 1 1-1z"/>
+                <line x1="9" y1="12" x2="15" y2="12"/>
+                <line x1="9" y1="16" x2="15" y2="16"/>
+            </svg>
+            Orders
+        </a>
+        <a href="/admin/sms" class="admin-nav-link admin-nav-active">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+            SMS
+        </a>
+        <a href="/menu" target="_blank" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+                <polyline points="10 9 9 9 8 9"/>
+            </svg>
+            View Menu ↗
+        </a>
+    </nav>
+
+    <div class="admin-sidebar-footer">
+        <p class="admin-user-email">{user?.email ?? 'Admin'}</p>
+        <form method="POST" action="/api/v1/auth/logout">
+            <button type="submit" class="admin-logout-btn">Sign Out</button>
+        </form>
+    </div>
+</aside>
+
+<!-- Main content -->
+<main class="admin-main">
+    <div class="admin-topbar">
+        <div>
+            <h1 class="admin-page-title">SMS</h1>
+            <p class="admin-page-sub">Drop-alert subscribers</p>
+        </div>
+    </div>
+
+    <div class="admin-stats">
+        <div class="admin-stat-card">
+            <span class="admin-stat-label">Active</span>
+            <span class="admin-stat-value" id="sms-stat-active">{activeCount}</span>
+        </div>
+        <div class="admin-stat-card">
+            <span class="admin-stat-label">Opted out</span>
+            <span class="admin-stat-value" id="sms-stat-optedout">{optedOutCount}</span>
+        </div>
+        <div class="admin-stat-card">
+            <span class="admin-stat-label">Total</span>
+            <span class="admin-stat-value" id="sms-stat-total">{subscribers.length}</span>
+        </div>
+    </div>
+
+    <!-- Add a number -->
+    <div class="sms-add-card">
+        <div class="sms-add-head">
+            <h2 class="sms-add-title">Add a number</h2>
+            <p class="sms-add-sub">Manually opt a phone number in to drop alerts. US numbers only.</p>
+        </div>
+        <form class="sms-add-form" id="sms-add-form" novalidate>
+            <div class="form-field sms-add-field">
+                <label for="sms-add-phone">Phone number</label>
+                <input
+                    type="tel"
+                    id="sms-add-phone"
+                    name="phone"
+                    autocomplete="off"
+                    inputmode="tel"
+                    placeholder="(555) 123-4567"
+                    required
+                />
+            </div>
+            <button type="submit" class="btn-primary sms-add-btn">Add number</button>
+        </form>
+    </div>
+
+    <div class="admin-table-wrap">
+        {loadError ? (
+            <div class="admin-empty">Couldn’t load subscribers. Refresh to try again.</div>
+        ) : subscribers.length === 0 ? (
+            <div class="admin-empty" id="sms-empty">No subscribers yet. Add a number above or share the signup form.</div>
+        ) : (
+            <table class="admin-table" id="sms-table">
+                <thead>
+                <tr>
+                    <th>Phone</th>
+                    <th>Status</th>
+                    <th>Source</th>
+                    <th>Joined</th>
+                    <th class="sms-actions-col">Actions</th>
+                </tr>
+                </thead>
+                <tbody id="sms-tbody">
+                {subscribers.map(sub => (
+                    <tr data-sms-row data-id={sub.id}>
+                        <td class="admin-td-name">{formatUsPhone(sub.phone)}</td>
+                        <td>
+                            {sub.unsubscribedAt ? (
+                                <span class="admin-stock-pill admin-stock-pill-soldout">Opted out</span>
+                            ) : (
+                                <span class="admin-stock-pill admin-stock-pill-ok">Active</span>
+                            )}
+                        </td>
+                        <td>{sourceLabel(sub.source)}</td>
+                        <td>{formatDate(sub.createdAt)}</td>
+                        <td class="sms-actions-col">
+                            <button type="button" class="sms-remove-btn" data-remove aria-label="Remove number">Remove</button>
+                        </td>
+                    </tr>
+                ))}
+                </tbody>
+            </table>
+        )}
+    </div>
+</main>
+
+<script>
+    import { showToast, confirmDialog } from '../../lib/toast';
+
+    function formatUsPhone(e164: string): string {
+        const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(e164 ?? '');
+        return m ? `(${m[1]}) ${m[2]}-${m[3]}` : e164;
+    }
+    function formatDate(iso: string): string {
+        const d = new Date(iso);
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    }
+
+    const tableWrap = document.querySelector('.admin-table-wrap');
+    const statActive = document.getElementById('sms-stat-active');
+    const statTotal = document.getElementById('sms-stat-total');
+
+    function bumpStat(el: HTMLElement | null, delta: number) {
+        if (!el) return;
+        el.textContent = String(Math.max(0, Number(el.textContent ?? '0') + delta));
+    }
+
+    // ── Add a number ───────────────────────────────────────────
+    const addForm = document.getElementById('sms-add-form') as HTMLFormElement | null;
+    if (addForm) {
+        const input = addForm.querySelector<HTMLInputElement>('input[name="phone"]');
+        const btn = addForm.querySelector<HTMLButtonElement>('button[type="submit"]');
+
+        addForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const phone = (input?.value ?? '').trim();
+            if (!phone) {
+                showToast('Enter a phone number.', 'error');
+                return;
+            }
+            const original = btn?.textContent ?? 'Add number';
+            if (btn) { btn.disabled = true; btn.textContent = 'Adding…'; }
+            try {
+                const res = await fetch('/api/v1/sms-subscribers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone }),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.error ?? 'Could not add number.');
+                addSubscriberRow(data.subscriber);
+                if (input) input.value = '';
+                showToast('Number added to the list.', 'success');
+            } catch (err) {
+                showToast(err instanceof Error ? err.message : 'Could not add number.', 'error');
+            } finally {
+                if (btn) { btn.disabled = false; btn.textContent = original; }
+            }
+        });
+    }
+
+    interface Subscriber {
+        id: string;
+        phone: string;
+        source: string;
+        unsubscribedAt: string | null;
+        createdAt: string;
+    }
+
+    const SOURCE_LABELS: Record<string, string> = {
+        footer: 'Footer', order: 'Checkout', admin: 'Added by admin',
+    };
+    function sourceLabel(source: string): string {
+        return SOURCE_LABELS[source] ?? (source ? source : 'Unknown');
+    }
+
+    // Inserts (or refreshes) a subscriber row, building the table if this is the
+    // first entry. A repeat add re-activates an existing row rather than dupes.
+    function addSubscriberRow(sub: Subscriber) {
+        if (!tableWrap) return;
+        let tbody = document.getElementById('sms-tbody');
+        if (!tbody) {
+            tableWrap.innerHTML = `
+                <table class="admin-table" id="sms-table">
+                    <thead>
+                    <tr>
+                        <th>Phone</th><th>Status</th><th>Source</th><th>Joined</th>
+                        <th class="sms-actions-col">Actions</th>
+                    </tr>
+                    </thead>
+                    <tbody id="sms-tbody"></tbody>
+                </table>`;
+            tbody = document.getElementById('sms-tbody');
+        }
+        if (!tbody) return;
+
+        const existing = tbody.querySelector<HTMLElement>(`[data-sms-row][data-id="${sub.id}"]`);
+        const wasActive = existing
+            ? !existing.querySelector('.admin-stock-pill-soldout')
+            : false;
+        if (existing) existing.remove();
+
+        const tr = document.createElement('tr');
+        tr.setAttribute('data-sms-row', '');
+        tr.dataset.id = sub.id;
+        tr.innerHTML = `
+            <td class="admin-td-name">${formatUsPhone(sub.phone)}</td>
+            <td><span class="admin-stock-pill admin-stock-pill-ok">Active</span></td>
+            <td>${sourceLabel(sub.source)}</td>
+            <td>${formatDate(sub.createdAt)}</td>
+            <td class="sms-actions-col">
+                <button type="button" class="sms-remove-btn" data-remove aria-label="Remove number">Remove</button>
+            </td>`;
+        tbody.prepend(tr);
+
+        // Only bump counts when this is genuinely new / reactivated.
+        if (!existing) {
+            bumpStat(statActive, 1);
+            bumpStat(statTotal, 1);
+        } else if (!wasActive) {
+            bumpStat(statActive, 1);
+            bumpStat(document.getElementById('sms-stat-optedout'), -1);
+        }
+    }
+
+    // ── Remove a number ────────────────────────────────────────
+    tableWrap?.addEventListener('click', async (e) => {
+        const target = e.target as HTMLElement;
+        const btn = target.closest<HTMLButtonElement>('[data-remove]');
+        if (!btn) return;
+        const row = btn.closest<HTMLElement>('[data-sms-row]');
+        if (!row) return;
+        const id = row.dataset.id;
+        if (!id) return;
+
+        const phone = row.querySelector('.admin-td-name')?.textContent ?? 'this number';
+        const ok = await confirmDialog(`Remove ${phone} from the SMS list? This can't be undone.`, {
+            title: 'Remove number',
+            confirmLabel: 'Remove',
+            danger: true,
+        });
+        if (!ok) return;
+
+        btn.disabled = true;
+        try {
+            const res = await fetch(`/api/v1/sms-subscribers/${id}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error('request failed');
+            const wasActive = !row.querySelector('.admin-stock-pill-soldout');
+            row.remove();
+            bumpStat(statTotal, -1);
+            if (wasActive) bumpStat(statActive, -1);
+            else bumpStat(document.getElementById('sms-stat-optedout'), -1);
+            showToast('Number removed.', 'success');
+
+            const tbody = document.getElementById('sms-tbody');
+            if (tbody && tbody.children.length === 0 && tableWrap) {
+                tableWrap.innerHTML = '<div class="admin-empty">No subscribers yet. Add a number above or share the signup form.</div>';
+            }
+        } catch {
+            btn.disabled = false;
+            showToast('Could not remove the number. Please try again.', 'error');
+        }
+    });
+</script>
+
+<style>
+    /* ── Admin layout (mirrors other admin pages) ─────────────── */
+    .admin-body {
+        min-height: 100vh;
+        background: #F3EDE5;
+        display: flex;
+    }
+    .admin-sidebar {
+        width: 220px;
+        flex-shrink: 0;
+        background: var(--bg);
+        border-right: 1px solid var(--accent);
+        display: flex;
+        flex-direction: column;
+        padding: 2rem 1.5rem;
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100vh;
+        overflow-y: auto;
+    }
+    .admin-sidebar-top { margin-bottom: 2.5rem; }
+    .admin-logo {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 1.15rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--text-primary);
+        text-decoration: none;
+        display: block;
+    }
+    .admin-badge {
+        display: inline-block;
+        margin-top: 0.35rem;
+        font-size: 0.62rem;
+        font-weight: 600;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        background: var(--text-primary);
+        color: var(--bg);
+        padding: 0.18rem 0.55rem;
+    }
+    .admin-nav { display: flex; flex-direction: column; gap: 0.25rem; flex: 1; }
+    .admin-nav-link {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        font-size: 0.82rem;
+        font-weight: 500;
+        color: var(--text-muted);
+        text-decoration: none;
+        padding: 0.6rem 0.75rem;
+        border-radius: 2px;
+        transition: background 0.15s, color 0.15s;
+    }
+    .admin-nav-link:hover,
+    .admin-nav-active {
+        background: #EDE8E1;
+        color: var(--text-primary);
+    }
+    .admin-sidebar-footer {
+        border-top: 1px solid var(--accent);
+        padding-top: 1.25rem;
+        margin-top: auto;
+    }
+    .admin-user-email {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-bottom: 0.75rem;
+        word-break: break-all;
+    }
+    .admin-logout-btn {
+        font-size: 0.78rem;
+        font-weight: 500;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        cursor: pointer;
+        background: none;
+        border: 1px solid var(--accent);
+        padding: 0.45rem 0.9rem;
+        transition: border-color 0.15s, color 0.15s;
+        width: 100%;
+    }
+    .admin-logout-btn:hover { border-color: var(--text-primary); color: var(--text-primary); }
+
+    .admin-main {
+        margin-left: 220px;
+        flex: 1;
+        padding: 2.5rem 2rem;
+        min-width: 0;
+    }
+    .admin-topbar {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        margin-bottom: 2rem;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+    .admin-page-title {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 2rem;
+        font-weight: 600;
+        margin: 0;
+    }
+    .admin-page-sub {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        margin: 0.25rem 0 0;
+    }
+
+    /* ── Stats ─────────────────────────────────────────────────── */
+    .admin-stats {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 2rem;
+        flex-wrap: wrap;
+    }
+    .admin-stat-card {
+        background: var(--bg);
+        border: 1px solid var(--accent);
+        padding: 1.25rem 1.75rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.3rem;
+        min-width: 120px;
+    }
+    .admin-stat-label {
+        font-size: 0.68rem;
+        font-weight: 600;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+    }
+    .admin-stat-value {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 2rem;
+        font-weight: 500;
+        color: var(--text-primary);
+        line-height: 1;
+    }
+
+    /* ── Add a number ──────────────────────────────────────────── */
+    .sms-add-card {
+        background: var(--bg);
+        border: 1px solid var(--accent);
+        border-left: 4px solid #4A6FA5;
+        border-radius: 12px;
+        padding: 1.25rem 1.5rem 1.5rem;
+        margin-bottom: 1.5rem;
+    }
+    .sms-add-head { margin-bottom: 1rem; }
+    .sms-add-title {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 1.3rem;
+        font-weight: 600;
+        margin: 0;
+    }
+    .sms-add-sub {
+        font-size: 0.78rem;
+        color: var(--text-muted);
+        margin: 0.2rem 0 0;
+    }
+    .sms-add-form {
+        display: flex;
+        align-items: flex-end;
+        gap: 0.75rem;
+        max-width: 460px;
+    }
+    .sms-add-field { flex: 1; }
+    .sms-add-btn { white-space: nowrap; flex-shrink: 0; }
+
+    /* ── Table ─────────────────────────────────────────────────── */
+    .admin-table-wrap {
+        background: var(--bg);
+        border: 1px solid var(--accent);
+        overflow-x: auto;
+    }
+    .admin-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.875rem;
+    }
+    .admin-table thead { border-bottom: 1px solid var(--accent); }
+    .admin-table th {
+        text-align: left;
+        font-size: 0.65rem;
+        font-weight: 600;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        padding: 0.9rem 1.25rem;
+        white-space: nowrap;
+    }
+    .admin-table td {
+        padding: 1rem 1.25rem;
+        vertical-align: middle;
+        border-bottom: 1px solid var(--accent);
+        color: var(--text-primary);
+    }
+    .admin-table tr:last-child td { border-bottom: none; }
+    .admin-table tr:hover td { background: #FAF7F2; }
+    .admin-td-name { font-weight: 500; white-space: nowrap; }
+
+    .admin-empty {
+        padding: 3rem;
+        text-align: center;
+        font-size: 0.9rem;
+        color: var(--text-muted);
+    }
+
+    .admin-stock-pill {
+        display: inline-block;
+        font-size: 0.63rem;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        padding: 0.2rem 0.55rem;
+        border: 1px solid var(--accent);
+        white-space: nowrap;
+    }
+    .admin-stock-pill-ok { background: #EEF6EE; border-color: #9CC79C; color: #2F6A2F; }
+    .admin-stock-pill-soldout { background: #FDF0EE; border-color: #D9836A; color: #9A3A1A; }
+
+    .sms-actions-col { text-align: right; width: 1%; white-space: nowrap; }
+    .sms-remove-btn {
+        cursor: pointer;
+        border: 1px solid var(--accent);
+        background: #fff;
+        color: #9A3A1A;
+        border-radius: 8px;
+        padding: 0.4rem 0.85rem;
+        font-size: 0.78rem;
+        font-weight: 600;
+        transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .sms-remove-btn:hover:not(:disabled) { background: #FDF0EE; border-color: #D9836A; }
+    .sms-remove-btn:disabled { opacity: 0.5; cursor: default; }
+
+    /* ── Responsive ────────────────────────────────────────────── */
+    @media (max-width: 768px) {
+        .admin-body { flex-direction: column; }
+        .admin-sidebar {
+            position: static;
+            width: 100%;
+            height: auto;
+            flex-flow: row wrap;
+            align-items: center;
+            gap: 0.5rem 1rem;
+            padding: 0.85rem 1rem;
+            border-right: none;
+            border-bottom: 1px solid var(--accent);
+        }
+        .admin-sidebar-top {
+            margin-bottom: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+        .admin-badge { margin-top: 0; }
+        .admin-nav {
+            order: 2;
+            flex-basis: 100%;
+            flex-direction: row;
+            gap: 0.25rem;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        .admin-nav-link { white-space: nowrap; padding: 0.5rem 0.7rem; }
+        .admin-sidebar-footer {
+            margin: 0 0 0 auto;
+            padding-top: 0;
+            border-top: none;
+        }
+        .admin-user-email { display: none; }
+        .admin-logout-btn { width: auto; white-space: nowrap; }
+
+        .admin-main { margin-left: 0; padding: 1.5rem 1rem; }
+        .sms-add-form { flex-direction: column; align-items: stretch; }
+        .sms-add-btn { width: 100%; text-align: center; }
+    }
+</style>
+</body>
+</html>

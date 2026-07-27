@@ -1,3 +1,9 @@
+-- Katered Kneads — main database setup.
+-- Run this once against a fresh Supabase/Postgres database to create the full
+-- schema (tables + stock functions). Safe to re-run: every statement uses
+-- IF NOT EXISTS / CREATE OR REPLACE. Commented ALTER blocks below each table are
+-- one-off migrations for databases created before a column was added.
+
 CREATE
     EXTENSION IF NOT EXISTS "pgcrypto";
 
@@ -31,6 +37,10 @@ CREATE TABLE IF NOT EXISTS drops
     announced_at   TIMESTAMPTZ,
     -- NULL = the single active/focused drop; set = moved to the "older drops" list.
     archived_at    TIMESTAMPTZ,
+    -- When an item's remaining online stock is at or below this number, the
+    -- storefront shows a "Low stock, N left" badge. 0 = never show remaining
+    -- counts (the default): items just read as available until they sell out.
+    low_stock_threshold INT NOT NULL DEFAULT 0 CHECK (low_stock_threshold >= 0),
     CHECK (close_time > open_time)
 );
 
@@ -38,6 +48,9 @@ CREATE TABLE IF NOT EXISTS drops
 -- ALTER TABLE drops ADD COLUMN IF NOT EXISTS pickup_time      TIMESTAMPTZ;
 -- ALTER TABLE drops ADD COLUMN IF NOT EXISTS location_name    TEXT NOT NULL DEFAULT '';
 -- ALTER TABLE drops ADD COLUMN IF NOT EXISTS location_address TEXT NOT NULL DEFAULT '';
+-- Migration: add the per-drop low-stock threshold.
+-- ALTER TABLE drops ADD COLUMN IF NOT EXISTS low_stock_threshold INT NOT NULL DEFAULT 0;
+-- ALTER TABLE drops ADD CONSTRAINT drops_low_stock_threshold_check CHECK (low_stock_threshold >= 0);
 
 CREATE TABLE IF NOT EXISTS drop_items
 (
@@ -50,6 +63,10 @@ CREATE TABLE IF NOT EXISTS drop_items
     -- of the online pool (never touched by online ordering).
     in_person_stock    INT NOT NULL DEFAULT 0 CHECK (in_person_stock >= 0),
     in_person_consumed INT NOT NULL DEFAULT 0,
+    -- Production tracker: how many of this item have physically been baked/made
+    -- so far, against the target (initial_stock + in_person_stock). Independent
+    -- of what's been sold — it just tracks the kitchen's progress.
+    made_stock     INT NOT NULL DEFAULT 0 CHECK (made_stock >= 0),
     -- When true, this item is shown in the drop's pre-open preview (sneak peek).
     preview        BOOLEAN NOT NULL DEFAULT false,
     -- Optional marketing tag shown on the item card (e.g. "Fan Favorite").
@@ -69,6 +86,10 @@ CREATE TABLE IF NOT EXISTS drop_items
 -- ALTER TABLE drop_items ADD CONSTRAINT drop_items_in_person_stock_check    CHECK (in_person_stock >= 0);
 -- ALTER TABLE drop_items ADD CONSTRAINT drop_items_in_person_consumed_check CHECK (in_person_consumed >= 0);
 -- ALTER TABLE drop_items ADD CONSTRAINT drop_items_in_person_max_check      CHECK (in_person_consumed <= in_person_stock);
+
+-- Migration for existing databases: add the production tracker column.
+-- ALTER TABLE drop_items ADD COLUMN IF NOT EXISTS made_stock INT NOT NULL DEFAULT 0;
+-- ALTER TABLE drop_items ADD CONSTRAINT drop_items_made_stock_check CHECK (made_stock >= 0);
 
 CREATE TABLE IF NOT EXISTS orders
 (
@@ -160,6 +181,50 @@ CREATE TABLE IF NOT EXISTS in_person_sales
 -- ALTER TABLE in_person_sales ADD COLUMN IF NOT EXISTS tip_cents INT NOT NULL DEFAULT 0;
 -- ALTER TABLE in_person_sales ADD CONSTRAINT in_person_sales_tip_cents_check CHECK (tip_cents >= 0);
 
+-- Customers who opted in to SMS drop updates (announce / open / close / pickup).
+-- The actual sending is wired up later; this table just captures consented
+-- numbers now. Phone is stored in E.164 (e.g. +15305551234) and is UNIQUE so
+-- re-signups are idempotent (they re-activate rather than duplicate).
+CREATE TABLE IF NOT EXISTS sms_subscribers
+(
+    id              UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
+    phone           TEXT UNIQUE      NOT NULL,
+    -- Explicit consent captured at signup (kept for TCPA compliance records).
+    consent         BOOLEAN          NOT NULL DEFAULT true,
+    -- Where the signup happened (e.g. "footer", "order"), for light analytics.
+    source          TEXT             NOT NULL DEFAULT '',
+    -- NULL = actively subscribed; set = opted out (kept as a suppression list
+    -- so a future STOP handler never texts them again).
+    unsubscribed_at TIMESTAMPTZ,
+    created_at      TIMESTAMPTZ      NOT NULL DEFAULT now()
+);
+
+-- ── Row Level Security ──────────────────────────────────────────────────────
+-- CRITICAL: the site ships a public "publishable"/anon Supabase key to the
+-- browser (PUBLIC_SUPABASE_PUBLISHABLE_KEY). Tables created via raw SQL do NOT
+-- have RLS enabled by default, which would let anyone use that public key to
+-- read/write every table directly through Supabase's REST API — bypassing the
+-- app entirely.
+--
+-- We enable RLS on every table and define NO policies for the anon/authenticated
+-- roles, which makes those roles default-deny (no read, no write). The server-
+-- side code uses the SECRET (service_role) key, which BYPASSES RLS, so the app's
+-- own API routes keep working. Net effect: the only way to touch the DB is
+-- through our server, and those routes are gated by admin auth in middleware.
+ALTER TABLE menu_items      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE drops           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE drop_items      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE orders          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE order_items     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE in_person_sales ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sms_subscribers ENABLE ROW LEVEL SECURITY;
+
+-- Belt-and-suspenders: explicitly revoke all table privileges from the public
+-- API roles. RLS already blocks them, but revoking grants means even a future
+-- accidental policy can't hand them access unless privileges are re-granted too.
+REVOKE ALL ON menu_items, drops, drop_items, orders, order_items, in_person_sales, sms_subscribers
+    FROM anon, authenticated;
+
 -- Atomically record an in-person sale by incrementing in_person_consumed for
 -- each line. `items` is a JSON array of { "menuItemId": uuid, "quantity": int }.
 -- Raises if any line would exceed the in-person allocation so the caller fails
@@ -246,3 +311,39 @@ BEGIN
         END LOOP;
 END;
 $$ LANGUAGE plpgsql;
+
+-- Inverse of increment_in_person_consumed: returns in-person stock to a drop
+-- when a recorded POS sale is deleted. `items` is the same JSON array shape.
+-- Clamped at 0 so it can never drive in_person_consumed negative (respects the
+-- in_person_consumed >= 0 CHECK). Note: this only reverses the stock count — it
+-- does NOT refund the customer's payment.
+CREATE OR REPLACE FUNCTION decrement_in_person_consumed(p_drop_id UUID, items JSONB)
+    RETURNS VOID AS
+$$
+DECLARE
+    line      JSONB;
+    v_menu_id UUID;
+    v_qty     INT;
+BEGIN
+    FOR line IN SELECT * FROM jsonb_array_elements(items)
+        LOOP
+            v_menu_id := (line ->> 'menuItemId')::UUID;
+            v_qty := (line ->> 'quantity')::INT;
+
+            UPDATE drop_items
+            SET in_person_consumed = GREATEST(in_person_consumed - v_qty, 0)
+            WHERE drop_id = p_drop_id
+              AND menu_item_id = v_menu_id;
+        END LOOP;
+END;
+$$ LANGUAGE plpgsql;
+
+-- These stock functions mutate the DB and are only ever invoked server-side via
+-- the service_role key. Postgres grants EXECUTE to PUBLIC by default, so revoke
+-- it from the public API roles to keep them from being called with the anon key.
+REVOKE EXECUTE ON FUNCTION
+    increment_in_person_consumed(UUID, JSONB),
+    decrement_drop_stock(UUID, JSONB),
+    restock_drop_items(UUID, JSONB),
+    decrement_in_person_consumed(UUID, JSONB)
+    FROM anon, authenticated;

@@ -2,8 +2,6 @@ import type { APIRoute } from 'astro';
 import { json, getErrorMessage } from '../../../../lib/http';
 import { getOrderByPickupCode } from '../../../../lib/db';
 
-// Looks up a single order by pickup/confirmation code for the POS counter.
-// Usage: GET /api/v1/orders/lookup?code=AB3K9P
 export const GET: APIRoute = async ({ url }) => {
     try {
         const code = url.searchParams.get('code')?.trim() ?? '';
