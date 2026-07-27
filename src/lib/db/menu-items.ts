@@ -73,4 +73,13 @@ export async function deleteMenuItem(id: string): Promise<void> {
     const supabase = createServerClient();
     const { error } = await supabase.from('menu_items').delete().eq('id', id);
     if (error) throw error;
+
+    // The item's image is stored in the `item_images` bucket keyed by the item id.
+    const { error: storageError } = await supabase.storage
+        .from('item_images')
+        .remove([id]);
+    if (storageError) {
+        // Don't fail the delete if image cleanup fails; the row is already gone.
+        console.error(`Failed to delete image for menu item ${id}:`, storageError.message);
+    }
 }

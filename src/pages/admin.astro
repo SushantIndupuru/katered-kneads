@@ -1085,6 +1085,39 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         });
     }
 
+    // ── Client-side image compression ──────────────────────────
+    // Vercel functions reject request bodies > 4.5 MB (FUNCTION_PAYLOAD_TOO_LARGE),
+    // so downscale + re-encode to WebP in the browser before uploading.
+    async function compressImage(file: File, maxDimension = 1600, quality = 0.82): Promise<File> {
+        if (!file.type.startsWith('image/')) return file;
+
+        const dataUrl = await readFileAsDataURL(file);
+        const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+            const el = new Image();
+            el.onload = () => resolve(el);
+            el.onerror = reject;
+            el.src = dataUrl;
+        });
+
+        const scale = Math.min(1, maxDimension / Math.max(img.width, img.height));
+        const width = Math.round(img.width * scale);
+        const height = Math.round(img.height * scale);
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return file;
+        ctx.drawImage(img, 0, 0, width, height);
+
+        const blob = await new Promise<Blob | null>((resolve) =>
+            canvas.toBlob(resolve, 'image/webp', quality)
+        );
+        if (!blob) return file;
+
+        return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.webp', {type: 'image/webp'});
+    }
+
     function resetUploadField(inputId: string, labelTextId: string, previewId: string, previewImgId: string) {
         const input = document.getElementById(inputId) as HTMLInputElement;
         if (input) input.value = '';
@@ -1173,7 +1206,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
             return;
         }
         const uploadForm = new FormData();
-        uploadForm.append('file', imageFile);
+        uploadForm.append('file', await compressImage(imageFile));
         const uploadRes = await fetch('/api/v1/upload', {method: 'POST', body: uploadForm});
         if (!uploadRes.ok) {
             const err = await uploadRes.json();
@@ -1244,7 +1277,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         const imageFile = (document.getElementById('edit-image') as HTMLInputElement).files?.[0];
         if (imageFile) {
             const uploadForm = new FormData();
-            uploadForm.append('file', imageFile);
+            uploadForm.append('file', await compressImage(imageFile));
             uploadForm.append('id', id);
             const uploadRes = await fetch('/api/v1/upload', {method: 'POST', body: uploadForm});
             if (!uploadRes.ok) {
