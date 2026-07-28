@@ -3029,7 +3029,11 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         max-width: 560px;
         max-height: 90vh;
         overflow-y: auto;
-        padding: 2rem;
+        /* No bottom padding: the sticky .admin-modal-actions footer provides
+           the bottom spacing and sits flush to the modal's edge. Adding bottom
+           padding here leaves a gap below the footer that scrolling content
+           shows through. */
+        padding: 2rem 2rem 0;
         position: relative;
     }
 
@@ -3256,7 +3260,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         display: flex;
         gap: 0.75rem;
         justify-content: flex-end;
-        margin: 1.5rem -2rem -2rem;
+        margin: 1.5rem -2rem 0;
         padding: 1.25rem 2rem;
         background: var(--bg);
         border-top: 1px solid var(--accent);
