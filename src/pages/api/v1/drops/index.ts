@@ -1,6 +1,6 @@
 import type { APIRoute } from 'astro';
 import { json, getErrorMessage } from '../../../../lib/http';
-import { getActiveDrop, getArchivedDrops, createDrop, parseDropItems } from '../../../../lib/db';
+import { getActiveDrop, getArchivedDrops, createDrop, parseDropItems, parsePickupSpots } from '../../../../lib/db';
 
 export const GET: APIRoute = async () => {
     try {
@@ -13,7 +13,7 @@ export const GET: APIRoute = async () => {
 
 export const POST: APIRoute = async ({ request }) => {
     try {
-        const { name, openTime, closeTime, pickupTime, locationName, locationAddress, lowStockThreshold, items } = await request.json();
+        const { name, openTime, closeTime, pickupTime, locationName, locationAddress, lowStockThreshold, items, pickupSpots } = await request.json();
 
         const existingActive = await getActiveDrop();
         if (existingActive) {
@@ -48,6 +48,9 @@ export const POST: APIRoute = async ({ request }) => {
         const parsed = parseDropItems(items);
         if (!Array.isArray(parsed)) return json({ error: parsed.error }, 400);
 
+        const parsedSpots = parsePickupSpots(pickupSpots);
+        if (!Array.isArray(parsedSpots)) return json({ error: parsedSpots.error }, 400);
+
         let threshold = 0;
         if (lowStockThreshold != null && lowStockThreshold !== '') {
             threshold = Number(lowStockThreshold);
@@ -66,7 +69,7 @@ export const POST: APIRoute = async ({ request }) => {
             announcedAt: null,
             archivedAt: null,
             lowStockThreshold: threshold,
-        }, parsed);
+        }, parsed, parsedSpots);
 
         return json({ drop }, 201);
     } catch (err) {

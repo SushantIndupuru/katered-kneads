@@ -10,6 +10,8 @@ export interface Drop {
   name: string;
   openTime: string;
   closeTime: string;
+  // LEGACY single-spot fields, superseded by PickupSpot (see pickup_spots).
+  // Kept as a fallback for drops created before multiple pickup spots existed.
   // When the actual pickup/drop happens, independent of closeTime. Null = unset.
   pickupTime: string | null;
   // Public, general pickup area shown before payment (e.g. "Downtown Davis").
@@ -23,6 +25,22 @@ export interface Drop {
   // When an item's remaining online stock is at or below this number, the
   // storefront shows a "Low stock, N left" badge. 0 = never show counts.
   lowStockThreshold: number;
+}
+
+// One of a drop's pickup spots. A drop can have several; the customer picks
+// exactly one at checkout, and its details are snapshotted onto the order.
+export interface PickupSpot {
+  id: string;
+  dropId: string;
+  // Public, general pickup area shown before payment (e.g. "Downtown Davis").
+  locationName: string;
+  // Exact pickup address — sensitive, only revealed to a customer after payment.
+  locationAddress: string;
+  // The spot's pickup window. pickupEnd is at or after pickupStart.
+  pickupStart: string;
+  pickupEnd: string;
+  // Display order within the drop (lowest first).
+  sortOrder: number;
 }
 
 export interface DropItem {
@@ -68,9 +86,11 @@ export interface Order {
   customerName: string;
   customerEmail: string;
   customerPhone: string;
-  // Snapshot of the drop's scheduled pickup date/time at purchase time.
+  // Snapshot of the chosen pickup spot's window at purchase time. pickupTime is
+  // the start; pickupTimeEnd is the end (null for legacy orders without a window).
   pickupTime: string | null;
-  // Snapshot of the drop's general pickup area at purchase time.
+  pickupTimeEnd: string | null;
+  // Snapshot of the chosen pickup spot's general area at purchase time.
   pickupLocation: string;
   // Snapshot of the exact pickup address — safe to show since the order is paid.
   pickupAddress: string;

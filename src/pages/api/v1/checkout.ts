@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
 import type Stripe from 'stripe';
 import { json, getErrorMessage } from '../../../lib/http';
-import { getCurrentDrop, getCurrentDropItems } from '../../../lib/db';
+import { getCurrentDrop, getCurrentDropItems, getPickupSpots } from '../../../lib/db';
 import { getStripe } from '../../../lib/stripe';
 
 interface CartLine {
@@ -14,7 +14,8 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const POST: APIRoute = async ({ request, url }) => {
     try {
         const body = await request.json();
-        const { items, customer, tipCents: rawTipCents } = body ?? {};
+        const { items, customer, tipCents: rawTipCents, pickupSpotId: rawPickupSpotId } = body ?? {};
+        const pickupSpotId = typeof rawPickupSpotId === 'string' ? rawPickupSpotId : '';
         const name = typeof customer?.name === 'string' ? customer.name.trim() : '';
         const email = typeof customer?.email === 'string' ? customer.email.trim() : '';
         const phone = typeof customer?.phone === 'string' ? customer.phone.trim() : '';
@@ -37,6 +38,17 @@ export const POST: APIRoute = async ({ request, url }) => {
         const close = new Date(drop.closeTime).getTime();
         if (!(now >= open && now < close)) {
             return json({ error: 'Ordering is currently closed' }, 409);
+        }
+
+        // When the drop offers pickup spots, the customer must choose exactly one.
+        // The chosen spot is validated here and carried into the order snapshot at
+        // fulfillment time (its address is never sent to an unpaid customer).
+        const spots = await getPickupSpots(drop.id);
+        if (spots.length > 0) {
+            if (!pickupSpotId) return json({ error: 'Please choose a pickup spot' }, 400);
+            if (!spots.some(s => s.id === pickupSpotId)) {
+                return json({ error: 'That pickup spot is no longer available' }, 409);
+            }
         }
 
         const dropItems = await getCurrentDropItems();
@@ -86,7 +98,8 @@ export const POST: APIRoute = async ({ request, url }) => {
         const cart = orderLines.map(l => `${l.menuItemId}:${l.quantity}`).join(',');
 
         const stripe = getStripe();
-        const metadata = { dropId: drop.id, name, phone, cart, tip: String(tipCents) };
+        const metadata: Record<string, string> = { dropId: drop.id, name, phone, cart, tip: String(tipCents) };
+        if (pickupSpotId) metadata.pickupSpotId = pickupSpotId;
 
         const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = orderLines.map(l => ({
             price_data: {

@@ -2,7 +2,7 @@ import { createServerClient } from '../supabase.ts';
 import type { Order, OrderItem, OrderStatus } from '../../types/db-types.ts';
 
 const ORDER_COLUMNS =
-    'id, drop_id, status, customer_name, customer_email, customer_phone, pickup_time, pickup_location, pickup_address, subtotal_cents, tip_cents, pickup_code, stripe_checkout_session_id, stripe_payment_intent_id, created_at';
+    'id, drop_id, status, customer_name, customer_email, customer_phone, pickup_time, pickup_time_end, pickup_location, pickup_address, subtotal_cents, tip_cents, pickup_code, stripe_checkout_session_id, stripe_payment_intent_id, created_at';
 
 interface OrderRow {
     id: string;
@@ -12,6 +12,7 @@ interface OrderRow {
     customer_email: string;
     customer_phone: string;
     pickup_time: string | null;
+    pickup_time_end: string | null;
     pickup_location: string;
     pickup_address: string;
     subtotal_cents: number;
@@ -48,6 +49,7 @@ function mapOrder(row: OrderRow, items: OrderItemRow[]): Order {
         customerEmail: row.customer_email,
         customerPhone: row.customer_phone,
         pickupTime: row.pickup_time,
+        pickupTimeEnd: row.pickup_time_end,
         pickupLocation: row.pickup_location ?? '',
         pickupAddress: row.pickup_address ?? '',
         subtotalCents: row.subtotal_cents,
@@ -84,6 +86,7 @@ export interface CreateOrderInput {
     customerEmail: string;
     customerPhone: string;
     pickupTime: string | null;
+    pickupTimeEnd: string | null;
     pickupLocation: string;
     pickupAddress: string;
     subtotalCents: number;
@@ -110,6 +113,7 @@ export async function createPaidOrder(input: CreateOrderInput): Promise<Order | 
             customer_email: input.customerEmail,
             customer_phone: input.customerPhone,
             pickup_time: input.pickupTime,
+            pickup_time_end: input.pickupTimeEnd,
             pickup_location: input.pickupLocation,
             pickup_address: input.pickupAddress,
             subtotal_cents: input.subtotalCents,

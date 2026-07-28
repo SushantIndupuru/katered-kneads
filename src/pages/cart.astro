@@ -1,9 +1,10 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import { getCurrentDrop, getDropItems } from '../lib/db';
+import { getCurrentDrop, getDropItems, getPickupSpots } from '../lib/db';
 
 const currentDrop = await getCurrentDrop();
 const dropItems = currentDrop ? await getDropItems(currentDrop.id) : [];
+const pickupSpots = currentDrop ? await getPickupSpots(currentDrop.id) : [];
 
 const now = Date.now();
 const openMs  = currentDrop ? new Date(currentDrop.openTime).getTime()  : null;
@@ -29,7 +30,17 @@ const PICKUP_FMT = new Intl.DateTimeFormat('en-US', {
   weekday: 'short', month: 'short', day: 'numeric',
   hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles',
 });
+const PICKUP_TIME_FMT = new Intl.DateTimeFormat('en-US', {
+  hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles',
+});
 const pickupLabel = currentDrop?.pickupTime ? PICKUP_FMT.format(new Date(currentDrop.pickupTime)) : null;
+
+// A human label for a spot's window, e.g. "Sat, Mar 8 · 2:00 – 3:00 PM".
+function spotWindowLabel(startIso: string, endIso: string): string {
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  return `${PICKUP_FMT.format(start)} – ${PICKUP_TIME_FMT.format(end)}`;
+}
 ---
 
 <Layout
@@ -112,7 +123,29 @@ const pickupLabel = currentDrop?.pickupTime ? PICKUP_FMT.format(new Date(current
                 <label for="co-phone">Phone (optional)</label>
                 <input type="tel" id="co-phone" name="phone" autocomplete="tel" />
               </div>
-              {(currentDrop?.locationName || pickupLabel) && (
+              {pickupSpots.length > 0 ? (
+                <fieldset class="pickup-spot-field" id="pickup-spot-field">
+                  <legend class="pickup-spot-legend">Choose a pickup spot</legend>
+                  <div class="pickup-spot-options">
+                    {pickupSpots.map((spot, i) => (
+                      <label class="pickup-spot-option">
+                        <input
+                          type="radio"
+                          name="pickupSpotId"
+                          value={spot.id}
+                          checked={i === 0}
+                          required
+                        />
+                        <span class="pickup-spot-option-body">
+                          <span class="pickup-spot-area">{spot.locationName}</span>
+                          <span class="pickup-spot-window">{spotWindowLabel(spot.pickupStart, spot.pickupEnd)}</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                  <span class="pickup-location-hint">The exact address is sent to your email and shown on the confirmation page once your order is placed.</span>
+                </fieldset>
+              ) : (currentDrop?.locationName || pickupLabel) && (
                 <div class="pickup-location-note">
                   {pickupLabel && (
                     <>
@@ -357,6 +390,16 @@ const pickupLabel = currentDrop?.pickupTime ? PICKUP_FMT.format(new Date(current
           showError(checkoutError, 'Please choose a tip option (select Custom and enter 0 for no tip).');
           return;
         }
+        const spotField = document.getElementById('pickup-spot-field');
+        let pickupSpotId = '';
+        if (spotField) {
+          const chosen = pickupForm.querySelector('input[name="pickupSpotId"]:checked') as HTMLInputElement | null;
+          if (!chosen) {
+            showError(checkoutError, 'Please choose a pickup spot.');
+            return;
+          }
+          pickupSpotId = chosen.value;
+        }
         if (!STRIPE_PK) {
           showError(checkoutError, 'Payments are not configured. Please try again later.');
           return;
@@ -374,6 +417,7 @@ const pickupLabel = currentDrop?.pickupTime ? PICKUP_FMT.format(new Date(current
           },
           items: lines.map(l => ({ menuItemId: l.id, quantity: l.qty })),
           tipCents: tipCentsFor(subtotal),
+          pickupSpotId,
         };
 
         try {
@@ -664,6 +708,44 @@ const pickupLabel = currentDrop?.pickupTime ? PICKUP_FMT.format(new Date(current
     }
     .pickup-location-value { font-weight: 600; }
     .pickup-location-hint { font-size: 0.8rem; color: var(--text-muted, #6b6257); }
+
+    .pickup-spot-field {
+      border: 1px solid var(--accent, #e4ddd2);
+      border-radius: 8px;
+      padding: 0.85rem;
+      margin: 0;
+    }
+    .pickup-spot-legend {
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #8a7a66;
+      padding: 0 0.35rem;
+    }
+    .pickup-spot-options {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      margin-bottom: 0.5rem;
+    }
+    .pickup-spot-option {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+      border: 1px solid var(--accent, #e4ddd2);
+      border-radius: 8px;
+      padding: 0.6rem 0.75rem;
+      cursor: pointer;
+      transition: border-color 0.15s ease, background 0.15s ease;
+    }
+    .pickup-spot-option:has(input:checked) {
+      border-color: var(--text-primary, #1a1a1a);
+      background: rgba(0, 0, 0, 0.02);
+    }
+    .pickup-spot-option input { margin-top: 0.2rem; }
+    .pickup-spot-option-body { display: flex; flex-direction: column; gap: 0.1rem; }
+    .pickup-spot-area { font-weight: 600; }
+    .pickup-spot-window { font-size: 0.85rem; color: var(--text-muted, #6b6257); }
   </style>
 
 </Layout>

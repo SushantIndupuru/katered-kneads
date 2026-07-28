@@ -24,6 +24,10 @@ CREATE TABLE IF NOT EXISTS drops
     name           TEXT             NOT NULL,
     open_time      TIMESTAMPTZ      NOT NULL,
     close_time     TIMESTAMPTZ      NOT NULL,
+    -- LEGACY single-spot pickup fields. Superseded by the pickup_spots table
+    -- (a drop can now have multiple spots, each with its own time range). These
+    -- are kept for backward compatibility / as a fallback for drops that predate
+    -- pickup_spots; new drops leave them empty and manage spots in pickup_spots.
     -- When the actual pickup/drop happens. Independent of close_time (ordering
     -- can close well before pickup day). NULL = not scheduled yet.
     pickup_time    TIMESTAMPTZ,
@@ -51,6 +55,35 @@ CREATE TABLE IF NOT EXISTS drops
 -- Migration: add the per-drop low-stock threshold.
 -- ALTER TABLE drops ADD COLUMN IF NOT EXISTS low_stock_threshold INT NOT NULL DEFAULT 0;
 -- ALTER TABLE drops ADD CONSTRAINT drops_low_stock_threshold_check CHECK (low_stock_threshold >= 0);
+
+-- A drop can offer several pickup spots, each with its own general area, exact
+-- address, and pickup time window. The customer chooses exactly one spot at
+-- checkout; the chosen spot's details are then snapshotted onto their order
+-- (orders.pickup_location / pickup_address / pickup_time / pickup_time_end).
+-- location_address is sensitive and, like the legacy single-spot field, is only
+-- ever revealed to a customer after their payment is confirmed.
+CREATE TABLE IF NOT EXISTS pickup_spots
+(
+    id               UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
+    drop_id          UUID        NOT NULL,
+    -- Public, general pickup area shown before payment (e.g. "Downtown Davis").
+    location_name    TEXT        NOT NULL DEFAULT '',
+    -- Exact pickup address. Sensitive: only revealed after payment is confirmed.
+    location_address TEXT        NOT NULL DEFAULT '',
+    -- The spot's pickup window. pickup_end must be at or after pickup_start.
+    pickup_start     TIMESTAMPTZ NOT NULL,
+    pickup_end       TIMESTAMPTZ NOT NULL,
+    -- Controls display order of spots within a drop (lowest first).
+    sort_order       INT         NOT NULL DEFAULT 0,
+    CHECK (pickup_end >= pickup_start),
+    FOREIGN KEY (drop_id) REFERENCES drops (id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS pickup_spots_drop_id_idx ON pickup_spots (drop_id);
+
+-- Migration for existing databases: create the pickup_spots table, then
+-- (optionally) seed one spot per drop from the legacy single-spot columns so
+-- existing drops keep a pickup spot. See the runbook at the bottom of this file.
 
 CREATE TABLE IF NOT EXISTS drop_items
 (
@@ -100,9 +133,12 @@ CREATE TABLE IF NOT EXISTS orders
     customer_name            TEXT                  NOT NULL,
     customer_email           TEXT                  NOT NULL,
     customer_phone           TEXT                  NOT NULL DEFAULT '',
-    -- Snapshot of the drop's scheduled pickup date/time at purchase time.
+    -- Snapshot of the chosen pickup spot's window at purchase time. pickup_time
+    -- is the start of the window; pickup_time_end is its end (NULL for legacy
+    -- orders placed before pickup windows existed).
     pickup_time              TIMESTAMPTZ,
-    -- Snapshot of the drop's general pickup area at purchase time.
+    pickup_time_end          TIMESTAMPTZ,
+    -- Snapshot of the chosen pickup spot's general area at purchase time.
     pickup_location          TEXT                  NOT NULL DEFAULT '',
     -- Snapshot of the exact pickup address at purchase time. Captured only on a
     -- confirmed (paid) order, so it is safe to show the customer their address.
@@ -126,6 +162,8 @@ CREATE TABLE IF NOT EXISTS orders
 -- ALTER TABLE orders RENAME COLUMN campus TO pickup_location;
 -- ALTER TABLE orders ADD COLUMN IF NOT EXISTS pickup_address TEXT NOT NULL DEFAULT '';
 -- ALTER TABLE orders ADD COLUMN IF NOT EXISTS pickup_time    TIMESTAMPTZ;
+-- Migration: add the pickup window end (snapshot of the chosen spot's end time).
+-- ALTER TABLE orders ADD COLUMN IF NOT EXISTS pickup_time_end TIMESTAMPTZ;
 -- Migration: add optional customer gratuity.
 -- ALTER TABLE orders ADD COLUMN IF NOT EXISTS tip_cents INT NOT NULL DEFAULT 0;
 -- ALTER TABLE orders ADD CONSTRAINT orders_tip_cents_check CHECK (tip_cents >= 0);
@@ -213,6 +251,7 @@ CREATE TABLE IF NOT EXISTS sms_subscribers
 -- through our server, and those routes are gated by admin auth in middleware.
 ALTER TABLE menu_items      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE drops           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pickup_spots    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE drop_items      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE order_items     ENABLE ROW LEVEL SECURITY;
@@ -222,7 +261,7 @@ ALTER TABLE sms_subscribers ENABLE ROW LEVEL SECURITY;
 -- Belt-and-suspenders: explicitly revoke all table privileges from the public
 -- API roles. RLS already blocks them, but revoking grants means even a future
 -- accidental policy can't hand them access unless privileges are re-granted too.
-REVOKE ALL ON menu_items, drops, drop_items, orders, order_items, in_person_sales, sms_subscribers
+REVOKE ALL ON menu_items, drops, pickup_spots, drop_items, orders, order_items, in_person_sales, sms_subscribers
     FROM anon, authenticated;
 
 -- Atomically record an in-person sale by incrementing in_person_consumed for
@@ -347,3 +386,38 @@ REVOKE EXECUTE ON FUNCTION
     restock_drop_items(UUID, JSONB),
     decrement_in_person_consumed(UUID, JSONB)
     FROM anon, authenticated;
+
+-- ── Migration runbook: multiple pickup spots ────────────────────────────────
+-- Run this block ONCE against a database created before pickup spots existed.
+-- It is additive and safe to re-run (IF NOT EXISTS guards throughout).
+--
+-- CREATE TABLE IF NOT EXISTS pickup_spots
+-- (
+--     id               UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
+--     drop_id          UUID        NOT NULL,
+--     location_name    TEXT        NOT NULL DEFAULT '',
+--     location_address TEXT        NOT NULL DEFAULT '',
+--     pickup_start     TIMESTAMPTZ NOT NULL,
+--     pickup_end       TIMESTAMPTZ NOT NULL,
+--     sort_order       INT         NOT NULL DEFAULT 0,
+--     CHECK (pickup_end >= pickup_start),
+--     FOREIGN KEY (drop_id) REFERENCES drops (id) ON DELETE CASCADE
+-- );
+-- CREATE INDEX IF NOT EXISTS pickup_spots_drop_id_idx ON pickup_spots (drop_id);
+-- ALTER TABLE pickup_spots ENABLE ROW LEVEL SECURITY;
+-- REVOKE ALL ON pickup_spots FROM anon, authenticated;
+--
+-- -- Snapshot of the chosen spot's window end, added to orders.
+-- ALTER TABLE orders ADD COLUMN IF NOT EXISTS pickup_time_end TIMESTAMPTZ;
+--
+-- -- Backfill: give every existing drop that had a legacy single spot one
+-- -- pickup_spots row so it keeps working. Uses pickup_time for both ends when a
+-- -- window was never modeled (a zero-length window still satisfies the CHECK).
+-- -- Skips drops that already have a spot so this is safe to re-run.
+-- INSERT INTO pickup_spots (drop_id, location_name, location_address, pickup_start, pickup_end)
+-- SELECT d.id, d.location_name, d.location_address,
+--        COALESCE(d.pickup_time, d.open_time),
+--        COALESCE(d.pickup_time, d.close_time)
+-- FROM drops d
+-- WHERE (d.location_name <> '' OR d.location_address <> '' OR d.pickup_time IS NOT NULL)
+--   AND NOT EXISTS (SELECT 1 FROM pickup_spots ps WHERE ps.drop_id = d.id);

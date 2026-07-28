@@ -7,6 +7,9 @@ import {
     setDropItems,
     deleteDrop,
     parseDropItems,
+    getPickupSpots,
+    setPickupSpots,
+    parsePickupSpots,
 } from '../../../../lib/db';
 import type { Drop } from '../../../../types/db-types';
 
@@ -15,8 +18,8 @@ export const GET: APIRoute = async ({ params }) => {
         const id = params.id as string;
         const drop = await getDrop(id);
         if (!drop) return json({ error: 'Drop not found' }, 404);
-        const items = await getDropItems(id);
-        return json({ drop, items });
+        const [items, pickupSpots] = await Promise.all([getDropItems(id), getPickupSpots(id)]);
+        return json({ drop, items, pickupSpots });
     } catch (err) {
         return json({ error: getErrorMessage(err) }, 500);
     }
@@ -29,7 +32,7 @@ export const PATCH: APIRoute = async ({ params, request }) => {
         if (!existing) return json({ error: 'Drop not found' }, 404);
 
         const body = await request.json();
-        const { name, openTime, closeTime, pickupTime, locationName, locationAddress, lowStockThreshold, items, announce, archive } = body;
+        const { name, openTime, closeTime, pickupTime, locationName, locationAddress, lowStockThreshold, items, pickupSpots, announce, archive } = body;
 
         const updates: Partial<Omit<Drop, 'id'>> = {};
 
@@ -95,12 +98,23 @@ export const PATCH: APIRoute = async ({ params, request }) => {
             parsedItems = parsed;
         }
 
+        let parsedSpots = null;
+        if (pickupSpots != null) {
+            const parsed = parsePickupSpots(pickupSpots);
+            if (!Array.isArray(parsed)) return json({ error: parsed.error }, 400);
+            parsedSpots = parsed;
+        }
+
         const drop = Object.keys(updates).length > 0
             ? await updateDrop(id, updates)
             : existing;
 
         if (parsedItems != null) {
             await setDropItems(id, parsedItems);
+        }
+
+        if (parsedSpots != null) {
+            await setPickupSpots(id, parsedSpots);
         }
 
         return json({ drop });

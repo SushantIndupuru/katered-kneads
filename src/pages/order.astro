@@ -1,10 +1,11 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import SmsSignup from '../components/SmsSignup.astro';
-import { getCurrentDrop, getDropItems } from '../lib/db';
+import { getCurrentDrop, getDropItems, getPickupSpots } from '../lib/db';
 
 const currentDrop = await getCurrentDrop();
 const dropItems = currentDrop ? await getDropItems(currentDrop.id) : [];
+const pickupSpots = currentDrop ? await getPickupSpots(currentDrop.id) : [];
 
 // ── Drop Configuration ────────────────────────────────────────
 const DATE_LABEL_OPTS = {
@@ -13,6 +14,18 @@ const DATE_LABEL_OPTS = {
 } as const;
 function formatDropDate(iso: string): string {
   return new Date(iso).toLocaleString('en-US', DATE_LABEL_OPTS);
+}
+
+const SPOT_DATE_FMT = new Intl.DateTimeFormat('en-US', {
+  weekday: 'short', month: 'short', day: 'numeric',
+  hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles',
+});
+const SPOT_TIME_FMT = new Intl.DateTimeFormat('en-US', {
+  hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles',
+});
+// A spot's window, e.g. "Sat, Mar 8 · 2:00 PM – 3:00 PM".
+function spotWindowLabel(startIso: string, endIso: string): string {
+  return `${SPOT_DATE_FMT.format(new Date(startIso))} – ${SPOT_TIME_FMT.format(new Date(endIso))}`;
 }
 
 const now = Date.now();
@@ -145,6 +158,31 @@ function formatPrice(n: number): string {
   </section>
   )}
 
+  <!-- Pickup spots — when orders aren't open there's nothing to buy yet, so
+       show the pickup areas/windows right under the countdown. When open, the
+       products come first and this renders after them instead (see below). -->
+  {pickupSpots.length > 0 && !ORDERS_CURRENTLY_OPEN && (
+    <section class="section" id="pickup-spots">
+      <div class="container">
+        <div class="section-header">
+          <p class="eyebrow">Pickup</p>
+          <h2 class="section-heading">Where to pick up</h2>
+          <p class="section-sub">
+            Choose your spot at checkout. The exact address is emailed to you and shown on your confirmation once your order is placed.
+          </p>
+        </div>
+        <ul class="pickup-spots-grid">
+          {pickupSpots.map(spot => (
+            <li class="pickup-spot-card">
+              <span class="pickup-spot-card-area">{spot.locationName}</span>
+              <span class="pickup-spot-card-window">{spotWindowLabel(spot.pickupStart, spot.pickupEnd)}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  )}
+
   <!-- Drop Items (shown when there are items to display) -->
   {displayItems.length > 0 && (
     <section class={`section${ORDERS_CURRENTLY_OPEN ? '' : ' section-tinted'}`} id="drop-items">
@@ -232,6 +270,31 @@ function formatPrice(n: number): string {
           })}
         </div>
 
+      </div>
+    </section>
+  )}
+
+  <!-- Pickup spots — when orders are open, products come first, so the pickup
+       areas/windows render here (after the items) to avoid pushing the drop
+       down. When closed, this instead renders above (under the countdown). -->
+  {pickupSpots.length > 0 && ORDERS_CURRENTLY_OPEN && (
+    <section class="section" id="pickup-spots">
+      <div class="container">
+        <div class="section-header">
+          <p class="eyebrow">Pickup</p>
+          <h2 class="section-heading">Where to pick up</h2>
+          <p class="section-sub">
+            Choose your spot at checkout. The exact address is emailed to you and shown on your confirmation once your order is placed.
+          </p>
+        </div>
+        <ul class="pickup-spots-grid">
+          {pickupSpots.map(spot => (
+            <li class="pickup-spot-card">
+              <span class="pickup-spot-card-area">{spot.locationName}</span>
+              <span class="pickup-spot-card-window">{spotWindowLabel(spot.pickupStart, spot.pickupEnd)}</span>
+            </li>
+          ))}
+        </ul>
       </div>
     </section>
   )}
@@ -521,6 +584,34 @@ function formatPrice(n: number): string {
   }
 
   .stock-badge-soldout { background: #b00020; color: #fff; }
+
+  /* Pickup spots — public areas + windows shown before checkout. */
+  .pickup-spots-grid {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1rem;
+  }
+  .pickup-spot-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    border: 1px solid var(--accent);
+    padding: 1.1rem 1.25rem;
+  }
+  .pickup-spot-card-area {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 1.5rem;
+    font-weight: 500;
+    line-height: 1.1;
+    color: var(--text-primary);
+  }
+  .pickup-spot-card-window {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+  }
 
   /* No-drop state: the SMS signup is the main call to action. */
   .no-drop-signup {

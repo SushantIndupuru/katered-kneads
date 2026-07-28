@@ -1,8 +1,8 @@
 ---
 import '../styles/global.css';
-import {getMenuItems, getActiveDrop, getArchivedDrops, getDropItemCounts, getDropItems} from '../lib/db';
+import {getMenuItems, getActiveDrop, getArchivedDrops, getDropItemCounts, getDropItems, getPickupSpots} from '../lib/db';
 import {createAnonClient} from '../lib/supabase';
-import type {MenuItem, Drop, DropItemWithMenu} from '../types/db-types.ts';
+import type {MenuItem, Drop, DropItemWithMenu, PickupSpot} from '../types/db-types.ts';
 
 const token = Astro.cookies.get('sb-access-token')?.value;
 if (!token) return Astro.redirect('/admin/login');
@@ -26,8 +26,10 @@ try {
     fetchError = 'Could not load menu items.';
 }
 
+let activeSpots: PickupSpot[] = [];
 try {
     activeDrop = await getActiveDrop();
+    if (activeDrop) activeSpots = await getPickupSpots(activeDrop.id);
 } catch (e) {
     // non-fatal
 }
@@ -47,6 +49,10 @@ try {
 
 const dropDateFmt = new Intl.DateTimeFormat('en-US', {
     month: 'short', day: 'numeric', year: 'numeric',
+    hour: 'numeric', minute: '2-digit',
+    timeZone: 'America/Los_Angeles',
+});
+const dropTimeFmt = new Intl.DateTimeFormat('en-US', {
     hour: 'numeric', minute: '2-digit',
     timeZone: 'America/Los_Angeles',
 });
@@ -254,13 +260,19 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
                                 Opens {dropDateFmt.format(new Date(activeDrop.openTime))}
                                 <span class="drop-detail-sep">·</span>
                                 Closes {dropDateFmt.format(new Date(activeDrop.closeTime))}
-                                {activeDrop.pickupTime && (
-                                    <>
-                                        <span class="drop-detail-sep">·</span>
-                                        Pickup {dropDateFmt.format(new Date(activeDrop.pickupTime))}
-                                    </>
-                                )}
                             </p>
+                            {activeSpots.length > 0 && (
+                                <ul class="drop-detail-spots">
+                                    {activeSpots.map(spot => (
+                                        <li class="drop-detail-spot">
+                                            <span class="drop-detail-spot-name">{spot.locationName}</span>
+                                            <span class="drop-detail-spot-window">
+                                                {dropDateFmt.format(new Date(spot.pickupStart))} – {dropTimeFmt.format(new Date(spot.pickupEnd))}
+                                            </span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
                         </div>
                         <div class="drop-detail-actions">
                             {activeStatus === 'draft' && (
@@ -550,16 +562,12 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
                 </div>
             </div>
             <div class="form-field">
-                <label for="drop-pickup">Pickup date &amp; time <span class="admin-field-hint">(when the actual drop/pickup happens — can be after ordering closes)</span></label>
-                <input id="drop-pickup" name="pickupTime" type="datetime-local"/>
-            </div>
-            <div class="form-field">
-                <label for="drop-location-name">Pickup area <span class="admin-field-hint">(shown publicly before payment — keep it general, e.g. "Downtown Davis")</span></label>
-                <input id="drop-location-name" name="locationName" type="text" placeholder="e.g. Downtown Davis"/>
-            </div>
-            <div class="form-field">
-                <label for="drop-location-address">Exact address <span class="admin-field-hint">(private — only revealed to a customer after they pay)</span></label>
-                <textarea id="drop-location-address" name="locationAddress" rows="2" placeholder="e.g. 123 Main St, Davis, CA 95616"></textarea>
+                <div class="drop-items-head">
+                    <label>Pickup spots <span class="admin-field-hint">(each spot has a public area, a private exact address revealed only after payment, and a pickup time window — customers choose one at checkout)</span></label>
+                    <button type="button" class="admin-btn-add-item" id="add-pickup-spot">+ Add pickup spot</button>
+                </div>
+                <div class="pickup-spots-list" id="pickup-spots-list"></div>
+                <p class="drop-items-empty" id="pickup-spots-empty">No pickup spots yet. Add at least one so customers can choose where to pick up.</p>
             </div>
             <div class="form-field">
                 <label for="drop-low-stock">Low stock alert <span class="admin-field-hint">(show "Low stock, N left" once an item's remaining online stock is at or below this — set 0 to never show remaining counts)</span></label>
@@ -1325,12 +1333,93 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         return `${m.year}-${m.month}-${m.day}T${m.hour}:${m.minute}`;
     }
 
+    // ── Pickup spots (repeatable rows in the drop modal) ───────
+    const pickupSpotsList = document.getElementById('pickup-spots-list');
+    const pickupSpotsEmpty = document.getElementById('pickup-spots-empty');
+
+    function refreshPickupSpotsEmpty() {
+        const hasRows = (pickupSpotsList?.querySelectorAll('.pickup-spot-row').length ?? 0) > 0;
+        if (pickupSpotsEmpty) pickupSpotsEmpty.hidden = hasRows;
+    }
+
+    interface PickupSpotSeed {
+        locationName?: string;
+        locationAddress?: string;
+        pickupStart?: string;
+        pickupEnd?: string;
+    }
+
+    function addPickupSpotRow(spot: PickupSpotSeed = {}) {
+        if (!pickupSpotsList) return;
+        const row = document.createElement('div');
+        row.className = 'pickup-spot-row';
+        row.innerHTML = `
+            <div class="pickup-spot-row-fields">
+                <div class="form-field">
+                    <label>Pickup area <span class="admin-field-hint">(public, e.g. "Downtown Davis")</span></label>
+                    <input type="text" class="pickup-spot-name" placeholder="e.g. Downtown Davis" />
+                </div>
+                <div class="form-field">
+                    <label>Exact address <span class="admin-field-hint">(private — revealed only after payment)</span></label>
+                    <textarea class="pickup-spot-address" rows="2" placeholder="e.g. 123 Main St, Davis, CA 95616"></textarea>
+                </div>
+                <div class="admin-form-row">
+                    <div class="form-field">
+                        <label>Window start</label>
+                        <input type="datetime-local" class="pickup-spot-start" />
+                    </div>
+                    <div class="form-field">
+                        <label>Window end</label>
+                        <input type="datetime-local" class="pickup-spot-end" />
+                    </div>
+                </div>
+            </div>
+            <button type="button" class="pickup-spot-remove" title="Remove spot">Remove</button>`;
+        (row.querySelector('.pickup-spot-name') as HTMLInputElement).value = spot.locationName ?? '';
+        (row.querySelector('.pickup-spot-address') as HTMLTextAreaElement).value = spot.locationAddress ?? '';
+        (row.querySelector('.pickup-spot-start') as HTMLInputElement).value = spot.pickupStart ? isoToLocalInput(spot.pickupStart) : '';
+        (row.querySelector('.pickup-spot-end') as HTMLInputElement).value = spot.pickupEnd ? isoToLocalInput(spot.pickupEnd) : '';
+        row.querySelector('.pickup-spot-remove')?.addEventListener('click', () => {
+            row.remove();
+            refreshPickupSpotsEmpty();
+        });
+        pickupSpotsList.appendChild(row);
+        refreshPickupSpotsEmpty();
+    }
+
+    document.getElementById('add-pickup-spot')?.addEventListener('click', () => addPickupSpotRow());
+
+    // Reads the current spot rows into the API payload shape, converting the
+    // Pacific wall-clock inputs to UTC ISO. Returns an { error } string on the
+    // first invalid row so the caller can surface it and stop the submit.
+    function collectPickupSpots(): { spots: Array<{ locationName: string; locationAddress: string; pickupStart: string; pickupEnd: string }> } | { error: string } {
+        const rows = Array.from(pickupSpotsList?.querySelectorAll<HTMLElement>('.pickup-spot-row') ?? []);
+        const spots = [];
+        for (const row of rows) {
+            const name = (row.querySelector('.pickup-spot-name') as HTMLInputElement).value.trim();
+            const address = (row.querySelector('.pickup-spot-address') as HTMLTextAreaElement).value.trim();
+            const startVal = (row.querySelector('.pickup-spot-start') as HTMLInputElement).value;
+            const endVal = (row.querySelector('.pickup-spot-end') as HTMLInputElement).value;
+            if (!name) return { error: 'Each pickup spot needs a pickup area.' };
+            if (!startVal || !endVal) return { error: `Pickup spot "${name}" needs a start and end time.` };
+            const startISO = localInputToISO(startVal);
+            const endISO = localInputToISO(endVal);
+            if (new Date(endISO) < new Date(startISO)) {
+                return { error: `Pickup spot "${name}" ends before it starts.` };
+            }
+            spots.push({ locationName: name, locationAddress: address, pickupStart: startISO, pickupEnd: endISO });
+        }
+        return { spots };
+    }
+
     document.getElementById('open-drop-modal')?.addEventListener('click', () => {
         (document.getElementById('drop-form') as HTMLFormElement)?.reset();
         if (dropIdField) dropIdField.value = '';
         if (dropModalTitle) dropModalTitle.textContent = 'Create Drop';
         if (dropSubmitBtn) dropSubmitBtn.textContent = 'Create Drop';
         if (dropItemsContainer) dropItemsContainer.innerHTML = '';
+        if (pickupSpotsList) pickupSpotsList.innerHTML = '';
+        refreshPickupSpotsEmpty();
         refreshDropItemsEmpty();
         updatePreOpenVisibility();
         clearError('drop-form-error');
@@ -1350,6 +1439,8 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
             (document.getElementById('drop-open') as HTMLInputElement).value = open ? isoToLocalInput(open) : '';
             (document.getElementById('drop-close') as HTMLInputElement).value = close ? isoToLocalInput(close) : '';
             if (dropItemsContainer) dropItemsContainer.innerHTML = '';
+            if (pickupSpotsList) pickupSpotsList.innerHTML = '';
+            refreshPickupSpotsEmpty();
             refreshDropItemsEmpty();
             updatePreOpenVisibility();
             clearError('drop-form-error');
@@ -1361,13 +1452,12 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
             try {
                 const res = await fetch(`/api/v1/drops/${id}`);
                 if (res.ok) {
-                    const {drop, items} = await res.json();
+                    const {drop, items, pickupSpots} = await res.json();
                     if (drop) {
-                        (document.getElementById('drop-pickup') as HTMLInputElement).value = drop.pickupTime ? isoToLocalInput(drop.pickupTime) : '';
-                        (document.getElementById('drop-location-name') as HTMLInputElement).value = drop.locationName ?? '';
-                        (document.getElementById('drop-location-address') as HTMLTextAreaElement).value = drop.locationAddress ?? '';
                         (document.getElementById('drop-low-stock') as HTMLInputElement).value = String(drop.lowStockThreshold ?? 0);
                     }
+                    (pickupSpots ?? []).forEach((sp: PickupSpotSeed) => addPickupSpotRow(sp));
+                    refreshPickupSpotsEmpty();
                     (items ?? []).forEach((it: {menuItem: {id: string; name: string}; initialStock: number; inPersonStock?: number; preview: boolean; tag: string}) => {
                         addSelectedDropItem(it.menuItem.id, it.menuItem.name, it.initialStock, it.preview, it.tag, it.inPersonStock ?? 0);
                     });
@@ -1395,10 +1485,15 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         // the server stores the intended instant regardless of its own timezone.
         const openISO = data.openTime ? localInputToISO(data.openTime) : '';
         const closeISO = data.closeTime ? localInputToISO(data.closeTime) : '';
-        const pickupISO = data.pickupTime ? localInputToISO(data.pickupTime) : null;
 
         if (openISO && closeISO && new Date(closeISO) <= new Date(openISO)) {
             showError('drop-form-error', 'Close time must be after open time.');
+            return;
+        }
+
+        const collectedSpots = collectPickupSpots();
+        if ('error' in collectedSpots) {
+            showError('drop-form-error', collectedSpots.error);
             return;
         }
 
@@ -1421,11 +1516,9 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
                 name: data.name,
                 openTime: openISO,
                 closeTime: closeISO,
-                pickupTime: pickupISO,
-                locationName: data.locationName ?? '',
-                locationAddress: data.locationAddress ?? '',
                 lowStockThreshold: data.lowStockThreshold ?? '0',
                 items: dropItems,
+                pickupSpots: collectedSpots.spots,
             }),
         });
 
@@ -2462,6 +2555,72 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     .drop-items-selected:empty {
         display: none;
     }
+
+    .pickup-spots-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    .pickup-spots-list:empty {
+        display: none;
+    }
+
+    /* Rows are injected via JS, so these selectors are global to reach them. */
+    :global(.pickup-spot-row) {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+        padding: 0.9rem;
+        border: 1px solid var(--accent);
+        background: var(--bg);
+    }
+
+    :global(.pickup-spot-row-fields) {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+    }
+
+    :global(.pickup-spot-remove) {
+        flex-shrink: 0;
+        font-size: 0.75rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #9b2c2c;
+        background: transparent;
+        border: 1px solid currentColor;
+        border-radius: 6px;
+        padding: 0.35rem 0.6rem;
+        cursor: pointer;
+    }
+
+    :global(.pickup-spot-remove:hover) {
+        background: #9b2c2c;
+        color: #fff;
+    }
+
+    .drop-detail-spots {
+        list-style: none;
+        margin: 0.5rem 0 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .drop-detail-spot {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        font-size: 0.9rem;
+    }
+
+    .drop-detail-spot-name { font-weight: 600; }
+    .drop-detail-spot-window { color: var(--text-muted); }
 
     /* Rows are injected via JS, so these selectors are global to apply to them. */
     :global(.drop-selected-row) {

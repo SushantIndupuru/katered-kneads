@@ -22,6 +22,17 @@ function formatPickupTime(iso: string | null): string {
     });
 }
 
+// The pickup window as a single label. With an end time it reads
+// "Saturday, March 8, 2:00 – 3:00 PM"; without one it's just the start.
+function formatPickupWindow(startIso: string | null, endIso: string | null): string {
+    const start = formatPickupTime(startIso);
+    if (!start || !endIso) return start;
+    const end = new Date(endIso).toLocaleString('en-US', {
+        hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles',
+    });
+    return `${start} – ${end}`;
+}
+
 function renderOrderHtml(order: Order): string {
     const rows = order.items
         .map(
@@ -32,7 +43,7 @@ function renderOrderHtml(order: Order): string {
         )
         .join('');
 
-    const pickupTime = formatPickupTime(order.pickupTime);
+    const pickupTime = formatPickupWindow(order.pickupTime, order.pickupTimeEnd);
 
     return `
     <div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:0 auto;color:#2b2b2b;">

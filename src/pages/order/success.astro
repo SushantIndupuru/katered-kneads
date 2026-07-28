@@ -36,7 +36,14 @@ const PICKUP_FMT = new Intl.DateTimeFormat('en-US', {
   weekday: 'long', month: 'long', day: 'numeric',
   hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles',
 });
-const pickupTimeLabel = order?.pickupTime ? PICKUP_FMT.format(new Date(order.pickupTime)) : null;
+const PICKUP_END_FMT = new Intl.DateTimeFormat('en-US', {
+  hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles',
+});
+const pickupTimeLabel = order?.pickupTime
+  ? (order.pickupTimeEnd
+      ? `${PICKUP_FMT.format(new Date(order.pickupTime))} – ${PICKUP_END_FMT.format(new Date(order.pickupTimeEnd))}`
+      : PICKUP_FMT.format(new Date(order.pickupTime)))
+  : null;
 ---
 
 <Layout

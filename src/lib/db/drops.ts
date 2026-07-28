@@ -1,5 +1,5 @@
 import { createServerClient } from '../supabase.ts';
-import type { Drop, MenuItem, DropItemWithMenu, InPersonSale } from '../../types/db-types.ts';
+import type { Drop, MenuItem, DropItemWithMenu, InPersonSale, PickupSpot } from '../../types/db-types.ts';
 
 const DROP_COLUMNS = 'id, name, open_time, close_time, pickup_time, location_name, location_address, announced_at, archived_at, low_stock_threshold';
 
@@ -29,6 +29,127 @@ function mapDrop(row: DropRow): Drop {
         archivedAt: row.archived_at,
         lowStockThreshold: row.low_stock_threshold ?? 0,
     };
+}
+
+const PICKUP_SPOT_COLUMNS = 'id, drop_id, location_name, location_address, pickup_start, pickup_end, sort_order';
+
+interface PickupSpotRow {
+    id: string;
+    drop_id: string;
+    location_name: string | null;
+    location_address: string | null;
+    pickup_start: string;
+    pickup_end: string;
+    sort_order: number | null;
+}
+
+function mapPickupSpot(row: PickupSpotRow): PickupSpot {
+    return {
+        id: row.id,
+        dropId: row.drop_id,
+        locationName: row.location_name ?? '',
+        locationAddress: row.location_address ?? '',
+        pickupStart: row.pickup_start,
+        pickupEnd: row.pickup_end,
+        sortOrder: row.sort_order ?? 0,
+    };
+}
+
+export interface PickupSpotInput {
+    locationName: string;
+    locationAddress: string;
+    pickupStart: string;
+    pickupEnd: string;
+}
+
+// Validates and normalizes a raw pickup-spots payload from the admin API.
+// Every spot must have a public area name and a valid start/end window
+// (end at or after start). Returns the parsed list ordered as received, or an
+// { error } object describing the first problem.
+export function parsePickupSpots(spots: unknown): PickupSpotInput[] | { error: string } {
+    if (spots == null) return [];
+    if (!Array.isArray(spots)) return { error: 'Pickup spots must be an array' };
+
+    const result: PickupSpotInput[] = [];
+    for (const raw of spots) {
+        const spot = raw as {
+            locationName?: unknown;
+            locationAddress?: unknown;
+            pickupStart?: unknown;
+            pickupEnd?: unknown;
+        };
+
+        const locationName = typeof spot?.locationName === 'string' ? spot.locationName.trim() : '';
+        if (!locationName) return { error: 'Each pickup spot needs a pickup area' };
+        const locationAddress = typeof spot?.locationAddress === 'string' ? spot.locationAddress.trim() : '';
+
+        if (typeof spot?.pickupStart !== 'string' || typeof spot?.pickupEnd !== 'string') {
+            return { error: `Pickup spot "${locationName}" needs a start and end time` };
+        }
+        const start = new Date(spot.pickupStart);
+        const end = new Date(spot.pickupEnd);
+        if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+            return { error: `Pickup spot "${locationName}" has an invalid time` };
+        }
+        if (end.getTime() < start.getTime()) {
+            return { error: `Pickup spot "${locationName}" ends before it starts` };
+        }
+
+        result.push({
+            locationName,
+            locationAddress,
+            pickupStart: start.toISOString(),
+            pickupEnd: end.toISOString(),
+        });
+    }
+    return result;
+}
+
+// A drop's pickup spots, ordered for display (sort_order, then start time).
+export async function getPickupSpots(dropId: string): Promise<PickupSpot[]> {
+    const supabase = createServerClient();
+    const { data, error } = await supabase
+        .from('pickup_spots')
+        .select(PICKUP_SPOT_COLUMNS)
+        .eq('drop_id', dropId)
+        .order('sort_order', { ascending: true })
+        .order('pickup_start', { ascending: true });
+    if (error) throw error;
+    return ((data as PickupSpotRow[]) ?? []).map(mapPickupSpot);
+}
+
+// A single pickup spot by id (used to snapshot the chosen spot onto an order).
+export async function getPickupSpot(id: string): Promise<PickupSpot | null> {
+    const supabase = createServerClient();
+    const { data, error } = await supabase
+        .from('pickup_spots')
+        .select(PICKUP_SPOT_COLUMNS)
+        .eq('id', id)
+        .maybeSingle();
+    if (error) throw error;
+    return data ? mapPickupSpot(data as PickupSpotRow) : null;
+}
+
+// Replaces a drop's pickup spots. Spots carry no consumable state (orders
+// snapshot their details at purchase), so a full delete + re-insert is safe.
+export async function setPickupSpots(dropId: string, spots: PickupSpotInput[]): Promise<void> {
+    const supabase = createServerClient();
+    const { error: delError } = await supabase.from('pickup_spots').delete().eq('drop_id', dropId);
+    if (delError) throw delError;
+
+    if (spots.length > 0) {
+        const { error } = await supabase.from('pickup_spots').insert(
+            spots.map((spot, i) => ({
+                drop_id: dropId,
+                location_name: spot.locationName,
+                location_address: spot.locationAddress,
+                pickup_start: spot.pickupStart,
+                pickup_end: spot.pickupEnd,
+                sort_order: i,
+            })),
+        );
+        if (error) throw error;
+    }
 }
 
 export async function getDrops(): Promise<Drop[]> {
@@ -117,6 +238,7 @@ export function parseDropItems(items: unknown): DropItemInput[] | { error: strin
 export async function createDrop(
     data: Omit<Drop, 'id'>,
     items: DropItemInput[] = [],
+    pickupSpots: PickupSpotInput[] = [],
 ): Promise<Drop> {
     const supabase = createServerClient();
     const { data: row, error } = await supabase
@@ -134,6 +256,16 @@ export async function createDrop(
         .single();
     if (error) throw error;
     const drop = mapDrop(row as DropRow);
+
+    if (pickupSpots.length > 0) {
+        try {
+            await setPickupSpots(drop.id, pickupSpots);
+        } catch (spotsError) {
+            // Roll back the drop so a partial failure doesn't leave an orphan.
+            await supabase.from('drops').delete().eq('id', drop.id);
+            throw spotsError;
+        }
+    }
 
     if (items.length > 0) {
         const { error: itemsError } = await supabase.from('drop_items').insert(

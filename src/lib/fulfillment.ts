@@ -9,6 +9,7 @@ import {
     recordInPersonSale,
     getDrop,
     getDropItems,
+    getPickupSpot,
     type CreateOrderLine,
 } from './db/index.ts';
 import { sendOrderConfirmation } from './email.ts';
@@ -102,13 +103,28 @@ export async function finalizeOrderIfPaid(sessionId: string): Promise<FinalizeRe
     const tipCents = Number.isInteger(tipParsed) && tipParsed > 0 ? tipParsed : 0;
     const email = session.customer_details?.email ?? session.customer_email ?? '';
 
-    // Snapshot the pickup location/address from the drop now that payment is
-    // confirmed. The exact address is only ever read into a paid order, so it
-    // never reaches a customer who hasn't paid.
+    // Snapshot the pickup details now that payment is confirmed. The exact
+    // address is only ever read into a paid order, so it never reaches a
+    // customer who hasn't paid. Prefer the spot the customer chose at checkout;
+    // fall back to the drop's legacy single-spot fields for older drops.
     let pickupTime: string | null = null;
+    let pickupTimeEnd: string | null = null;
     let pickupLocation = '';
     let pickupAddress = '';
-    if (meta.dropId) {
+    if (meta.pickupSpotId) {
+        try {
+            const spot = await getPickupSpot(meta.pickupSpotId);
+            if (spot) {
+                pickupTime = spot.pickupStart;
+                pickupTimeEnd = spot.pickupEnd;
+                pickupLocation = spot.locationName;
+                pickupAddress = spot.locationAddress;
+            }
+        } catch (err) {
+            console.error(`finalizeOrderIfPaid: could not load pickup spot ${meta.pickupSpotId}:`, err);
+        }
+    }
+    if (!pickupLocation && !pickupAddress && !pickupTime && meta.dropId) {
         try {
             const drop = await getDrop(meta.dropId);
             if (drop) {
@@ -127,6 +143,7 @@ export async function finalizeOrderIfPaid(sessionId: string): Promise<FinalizeRe
         customerEmail: email,
         customerPhone: meta.phone ?? '',
         pickupTime,
+        pickupTimeEnd,
         pickupLocation,
         pickupAddress,
         subtotalCents,
