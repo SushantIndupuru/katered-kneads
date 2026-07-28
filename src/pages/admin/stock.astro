@@ -83,6 +83,32 @@ const onlineLow = stockItems.filter(r => r.status === 'low').length;
 const inPersonSoldPctTotal = stockTotals.inPersonStock > 0 ? Math.round((stockTotals.inPersonSold / stockTotals.inPersonStock) * 100) : 0;
 const inPersonSoldOut = inPersonItems.filter(r => r.inPersonStatus === 'soldout').length;
 const inPersonLow = inPersonItems.filter(r => r.inPersonStatus === 'low').length;
+
+// ── "To prepare" production tracker ───────────────────────────
+// A drop's stock (online + in-person) is the bake target. Track how much has
+// been made against it so bakers can tick off production as they go. This lives
+// with the rest of the drop's inventory rather than on the Orders page.
+const prepRows = activeDropItems
+    .map(it => {
+        const target = it.initialStock + it.inPersonStock;
+        const made = Math.min(Math.max(0, it.madeStock), target);
+        const pct = target > 0 ? Math.round((made / target) * 100) : 0;
+        return {
+            menuItemId: it.menuItem.id,
+            name: it.menuItem.name,
+            target,
+            made,
+            remaining: Math.max(0, target - made),
+            pct,
+        };
+    })
+    .filter(r => r.target > 0);
+
+const prepTotals = {
+    target: prepRows.reduce((s, r) => s + r.target, 0),
+    made: prepRows.reduce((s, r) => s + r.made, 0),
+    remaining: prepRows.reduce((s, r) => s + r.remaining, 0),
+};
 ---
 
 <!DOCTYPE html>
@@ -192,6 +218,54 @@ const inPersonLow = inPersonItems.filter(r => r.inPersonStatus === 'low').length
                         </div>
                     </div>
 
+                    <!-- ── To prepare (production tracker) ─────────────── -->
+                    <section class="prep-panel">
+                        <div class="prep-head">
+                            <div>
+                                <h2 class="prep-title">To prepare</h2>
+                                <p class="prep-sub">How much of this drop's stock has been baked so far. Tap +/− as you make each item.</p>
+                            </div>
+                            <div class="prep-total" hidden={prepTotals.target === 0}>
+                                <span class="prep-total-num"><span id="prep-total-made">{prepTotals.made}</span> / {prepTotals.target}</span>
+                                <span class="prep-total-label"><span id="prep-total-remaining">{prepTotals.remaining}</span> left to make</span>
+                            </div>
+                        </div>
+
+                        {prepRows.length === 0 ? (
+                            <div class="prep-empty">This drop has no stock set yet. Add items and their stock on the dashboard Drops tab.</div>
+                        ) : (
+                            <ul class="prep-list" id="prep-list" data-drop-id={activeDrop.id}>
+                                {prepRows.map(row => (
+                                    <li
+                                        class:list={['prep-item', { 'prep-item-done': row.remaining === 0 }]}
+                                        data-menu-item-id={row.menuItemId}
+                                        data-target={row.target}
+                                        data-made={row.made}
+                                    >
+                                        <div class="prep-item-main">
+                                            <div class="prep-item-info">
+                                                <span class="prep-name">{row.name}</span>
+                                                <span class="prep-count">
+                                                    <span class="prep-count-nums"><span class="prep-made-val">{row.made}</span> / {row.target} made</span>
+                                                    <span class="prep-remaining-tag" hidden={row.remaining === 0}><span class="prep-remaining-val">{row.remaining}</span> to go</span>
+                                                    <span class="prep-done-tag" hidden={row.remaining !== 0}>Done ✓</span>
+                                                </span>
+                                            </div>
+                                            <div class="prep-stepper">
+                                                <button type="button" class="prep-step prep-step-dec" aria-label="Made one fewer">−</button>
+                                                <button type="button" class="prep-step prep-step-inc" aria-label="Made one more">+</button>
+                                                <button type="button" class="prep-step prep-step-all" aria-label="Mark all made">All</button>
+                                            </div>
+                                        </div>
+                                        <div class="prep-bar">
+                                            <div class="prep-bar-fill" style={`width:${row.pct}%`}></div>
+                                        </div>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+                    </section>
+
                     <!-- ── At a glance (split by channel) ───────────── -->
                     <div class="stock-glance-row">
                         <div class="stock-glance stock-glance-online">
@@ -245,11 +319,11 @@ const inPersonLow = inPersonItems.filter(r => r.inPersonStatus === 'low').length
                                         <>
                                             <div class="stock-glance-figures">
                                                 <div class="stock-figure">
-                                                    <span class="stock-figure-num">{stockTotals.inPersonRemaining}</span>
+                                                    <span class="stock-figure-num" id="ip-total-remaining">{stockTotals.inPersonRemaining}</span>
                                                     <span class="stock-figure-label">left</span>
                                                 </div>
                                                 <div class="stock-figure">
-                                                    <span class="stock-figure-num">{stockTotals.inPersonSold}</span>
+                                                    <span class="stock-figure-num" id="ip-total-sold">{stockTotals.inPersonSold}</span>
                                                     <span class="stock-figure-label">sold</span>
                                                 </div>
                                                 <div class="stock-figure">
@@ -283,72 +357,45 @@ const inPersonLow = inPersonItems.filter(r => r.inPersonStatus === 'low').length
                                 <h3 class="stock-section-title">Online sales</h3>
                                 <span class="stock-section-sub">Sold on the website</span>
                             </div>
-                            <div class="stock-section-mini">
-                                <span><strong>{stockTotals.remaining}</strong> left</span>
-                                <span><strong>{stockTotals.sold}</strong> sold</span>
-                                <span><strong>{stockTotals.initial}</strong> stock</span>
-                            </div>
                         </div>
 
                         {stockItems.length === 0 ? (
                             <div class="admin-table-wrap"><div class="admin-empty">This drop has no items yet. Add items to the drop to track stock.</div></div>
                         ) : (
-                            <>
-                                <div class="stock-cards">
+                            <div class="admin-table-wrap">
+                                <table class="admin-table">
+                                    <thead>
+                                    <tr>
+                                        <th>Item</th>
+                                        <th>Stock</th>
+                                        <th>Sold</th>
+                                        <th>Remaining</th>
+                                        <th class="admin-stock-progress-col">Sold-through</th>
+                                        <th>Status</th>
+                                    </tr>
+                                    </thead>
+                                    <tbody>
                                     {stockItems.map(row => (
-                                        <div class={`stock-card stock-card-${row.status}`}>
-                                            <div class="stock-card-top">
-                                                <span class="stock-card-name">{row.name}</span>
-                                                <span class={`admin-stock-pill admin-stock-pill-${row.status}`}>
-                                                    {row.status === 'soldout' ? 'Sold out' : row.status === 'low' ? 'Low' : 'In stock'}
-                                                </span>
-                                            </div>
-                                            <div class="stock-card-figure">
-                                                <span class="stock-card-remaining">{row.remaining}</span>
-                                                <span class="stock-card-remaining-label">of {row.initial} left</span>
-                                            </div>
-                                            <div class="admin-stock-bar">
-                                                <div class={`admin-stock-bar-fill admin-stock-fill-${row.status}`} style={`width:${row.soldPct}%`}></div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-
-                                <div class="admin-table-wrap">
-                                    <table class="admin-table">
-                                        <thead>
-                                        <tr>
-                                            <th>Item</th>
-                                            <th>Stock</th>
-                                            <th>Sold</th>
-                                            <th>Remaining</th>
-                                            <th class="admin-stock-progress-col">Sold-through</th>
-                                            <th>Status</th>
-                                        </tr>
-                                        </thead>
-                                        <tbody>
-                                        {stockItems.map(row => (
-                                                <tr>
-                                                    <td class="admin-td-name">{row.name}</td>
-                                                    <td>{row.initial}</td>
-                                                    <td>{row.sold}</td>
-                                                    <td>{row.remaining}</td>
-                                                    <td class="admin-stock-progress-col">
-                                                        <div class="admin-stock-bar">
-                                                            <div class={`admin-stock-bar-fill admin-stock-fill-${row.status}`} style={`width:${row.soldPct}%`}></div>
-                                                        </div>
-                                                        <span class="admin-stock-pct">{row.soldPct}%</span>
-                                                    </td>
-                                                    <td>
-                                                        <span class={`admin-stock-pill admin-stock-pill-${row.status}`}>
-                                                            {row.status === 'soldout' ? 'Sold out' : row.status === 'low' ? 'Low' : 'In stock'}
-                                                        </span>
-                                                    </td>
-                                                </tr>))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </>
+                                            <tr>
+                                                <td class="admin-td-name">{row.name}</td>
+                                                <td>{row.initial}</td>
+                                                <td>{row.sold}</td>
+                                                <td>{row.remaining}</td>
+                                                <td class="admin-stock-progress-col">
+                                                    <div class="admin-stock-bar">
+                                                        <div class={`admin-stock-bar-fill admin-stock-fill-${row.status}`} style={`width:${row.soldPct}%`}></div>
+                                                    </div>
+                                                    <span class="admin-stock-pct">{row.soldPct}%</span>
+                                                </td>
+                                                <td>
+                                                    <span class={`admin-stock-pill admin-stock-pill-${row.status}`}>
+                                                        {row.status === 'soldout' ? 'Sold out' : row.status === 'low' ? 'Low' : 'In stock'}
+                                                    </span>
+                                                </td>
+                                            </tr>))}
+                                    </tbody>
+                                </table>
+                            </div>
                         )}
                     </section>
 
@@ -360,37 +407,12 @@ const inPersonLow = inPersonItems.filter(r => r.inPersonStatus === 'low').length
                                 <h3 class="stock-section-title">In-person sales</h3>
                                 <span class="stock-section-sub">Sold by hand at the table</span>
                             </div>
-                            <div class="stock-section-mini">
-                                <span><strong id="ip-total-remaining">{stockTotals.inPersonRemaining}</strong> left</span>
-                                <span><strong id="ip-total-sold">{stockTotals.inPersonSold}</strong> sold</span>
-                                <span><strong>{stockTotals.inPersonStock}</strong> stock</span>
-                            </div>
                         </div>
 
                         {stockTotals.inPersonStock === 0 ? (
                             <div class="admin-table-wrap"><div class="admin-empty">No in-person stock set aside for this drop. Add some via “Edit items” on the Drops tab.</div></div>
                         ) : (
                             <>
-                                <div class="stock-cards">
-                                    {inPersonItems.map(row => (
-                                        <div class={`stock-card stock-card-${row.inPersonStatus}`}>
-                                            <div class="stock-card-top">
-                                                <span class="stock-card-name">{row.name}</span>
-                                                <span class={`admin-stock-pill admin-stock-pill-${row.inPersonStatus}`}>
-                                                    {row.inPersonStatus === 'soldout' ? 'Sold out' : row.inPersonStatus === 'low' ? 'Low' : 'In stock'}
-                                                </span>
-                                            </div>
-                                            <div class="stock-card-figure">
-                                                <span class="stock-card-remaining">{row.inPersonRemaining}</span>
-                                                <span class="stock-card-remaining-label">of {row.inPersonStock} left</span>
-                                            </div>
-                                            <div class="admin-stock-bar">
-                                                <div class={`admin-stock-bar-fill admin-stock-fill-${row.inPersonStatus}`} style={`width:${row.inPersonSoldPct}%`}></div>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-
                                 <div class="admin-table-wrap">
                                     <table class="admin-table" id="ip-stock-table" data-drop-id={activeDrop.id}>
                                         <thead>
@@ -432,6 +454,81 @@ const inPersonLow = inPersonItems.filter(r => r.inPersonStatus === 'low').length
 
 <script>
     import { showToast } from '../../lib/toast';
+
+    // ── Production tracker (how much has been made) ────────────
+    const prepList = document.getElementById('prep-list') as HTMLElement | null;
+    if (prepList) {
+        const dropId = prepList.dataset.dropId ?? '';
+        const totalMadeEl = document.getElementById('prep-total-made');
+        const totalRemainingEl = document.getElementById('prep-total-remaining');
+
+        const recomputePrepTotals = () => {
+            let made = 0;
+            let remaining = 0;
+            prepList.querySelectorAll<HTMLElement>('.prep-item').forEach(row => {
+                const m = Number(row.dataset.made ?? '0');
+                const t = Number(row.dataset.target ?? '0');
+                made += m;
+                remaining += Math.max(0, t - m);
+            });
+            if (totalMadeEl) totalMadeEl.textContent = String(made);
+            if (totalRemainingEl) totalRemainingEl.textContent = String(remaining);
+        };
+
+        const applyPrepRow = (row: HTMLElement, made: number) => {
+            const target = Number(row.dataset.target ?? '0');
+            row.dataset.made = String(made);
+            const remaining = Math.max(0, target - made);
+            const pct = target > 0 ? Math.round((made / target) * 100) : 0;
+            (row.querySelector('.prep-made-val') as HTMLElement).textContent = String(made);
+            (row.querySelector('.prep-remaining-val') as HTMLElement).textContent = String(remaining);
+            (row.querySelector('.prep-bar-fill') as HTMLElement).style.width = `${pct}%`;
+            const done = remaining === 0;
+            row.classList.toggle('prep-item-done', done);
+            (row.querySelector('.prep-remaining-tag') as HTMLElement).hidden = done;
+            (row.querySelector('.prep-done-tag') as HTMLElement).hidden = !done;
+            recomputePrepTotals();
+        };
+
+        const setMade = async (row: HTMLElement, next: number) => {
+            const target = Number(row.dataset.target ?? '0');
+            const current = Number(row.dataset.made ?? '0');
+            const clamped = Math.max(0, Math.min(next, target));
+            if (clamped === current) return;
+
+            // Optimistic update, reverted on failure.
+            applyPrepRow(row, clamped);
+            const buttons = row.querySelectorAll<HTMLButtonElement>('.prep-step');
+            buttons.forEach(b => { b.disabled = true; });
+            try {
+                const res = await fetch(`/api/v1/drops/${dropId}/made`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ menuItemId: row.dataset.menuItemId, madeStock: clamped }),
+                });
+                if (!res.ok) throw new Error('request failed');
+                const data = await res.json();
+                applyPrepRow(row, Number(data.madeStock ?? clamped));
+            } catch {
+                applyPrepRow(row, current);
+                showToast('Could not save production count. Please try again.', 'error');
+            } finally {
+                buttons.forEach(b => { b.disabled = false; });
+            }
+        };
+
+        prepList.addEventListener('click', (e) => {
+            const btn = (e.target as HTMLElement).closest('.prep-step') as HTMLButtonElement | null;
+            if (!btn) return;
+            const row = btn.closest<HTMLElement>('.prep-item');
+            if (!row) return;
+            const current = Number(row.dataset.made ?? '0');
+            const target = Number(row.dataset.target ?? '0');
+            if (btn.classList.contains('prep-step-inc')) setMade(row, current + 1);
+            else if (btn.classList.contains('prep-step-dec')) setMade(row, current - 1);
+            else if (btn.classList.contains('prep-step-all')) setMade(row, target);
+        });
+    }
 
     // ── In-person sales steppers ───────────────────────────────
     const ipTable = document.getElementById('ip-stock-table') as HTMLTableElement | null;
@@ -681,6 +778,162 @@ const inPersonLow = inPersonItems.filter(r => r.inPersonStatus === 'low').length
         color: var(--text-muted);
     }
 
+    /* ── To prepare (bake list) ────────────────────────────────── */
+    .prep-panel {
+        background: var(--bg);
+        border: 1px solid var(--accent);
+        border-left: 4px solid #C6792B;
+        border-radius: 12px;
+        padding: 1.5rem 1.75rem;
+        margin-bottom: 1.5rem;
+    }
+    .prep-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+        flex-wrap: wrap;
+        margin-bottom: 1.1rem;
+    }
+    .prep-title {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 1.5rem;
+        font-weight: 600;
+        margin: 0;
+    }
+    .prep-sub {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        margin: 0.15rem 0 0;
+    }
+    .prep-total {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        line-height: 1;
+    }
+    .prep-total[hidden] { display: none; }
+    .prep-total-num {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 2rem;
+        font-weight: 600;
+        color: #9A5A1A;
+        font-variant-numeric: tabular-nums;
+    }
+    .prep-total-label {
+        font-size: 0.66rem;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        margin-top: 0.3rem;
+    }
+    .prep-empty {
+        font-size: 0.88rem;
+        color: var(--text-muted);
+        background: #fff;
+        border: 1px dashed var(--accent);
+        border-radius: 10px;
+        padding: 1.25rem;
+        text-align: center;
+    }
+    .prep-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 0.85rem;
+    }
+    .prep-item {
+        display: flex;
+        flex-direction: column;
+        gap: 0.85rem;
+        background: #fff;
+        border: 1px solid var(--accent);
+        border-left: 3px solid #C6792B;
+        border-radius: 10px;
+        padding: 1rem 1.1rem;
+    }
+    .prep-item-done { border-left-color: #2F6A2F; }
+    .prep-item-main {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+    }
+    .prep-item-info { min-width: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+    .prep-name {
+        font-weight: 600;
+        font-size: 1.02rem;
+        line-height: 1.2;
+        overflow-wrap: anywhere;
+    }
+    .prep-count {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        font-variant-numeric: tabular-nums;
+    }
+    .prep-count-nums { white-space: nowrap; }
+    .prep-count .prep-made-val { font-weight: 700; color: var(--text-primary); }
+    .prep-remaining-tag,
+    .prep-done-tag {
+        white-space: nowrap;
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        padding: 0.15rem 0.5rem;
+        border-radius: 999px;
+    }
+    .prep-remaining-tag { color: #7A4A1A; background: #FBF1E4; }
+    .prep-done-tag { color: #2F6A2F; background: #EAF3EA; }
+    .prep-remaining-tag[hidden], .prep-done-tag[hidden] { display: none; }
+    .prep-bar {
+        height: 0.5rem;
+        background: var(--accent);
+        border-radius: 999px;
+        overflow: hidden;
+    }
+    .prep-bar-fill {
+        height: 100%;
+        background: #C6792B;
+        border-radius: 999px;
+        transition: width 0.2s ease;
+    }
+    .prep-item-done .prep-bar-fill { background: #2F6A2F; }
+    .prep-stepper { display: flex; align-items: center; gap: 0.35rem; flex-shrink: 0; }
+    .prep-step {
+        cursor: pointer;
+        border: 1px solid var(--accent);
+        background: #fff;
+        color: var(--text-primary);
+        border-radius: 8px;
+        width: 2.2rem;
+        height: 2.2rem;
+        font-size: 1.15rem;
+        font-weight: 600;
+        line-height: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.15s ease, border-color 0.15s ease;
+    }
+    .prep-step-all {
+        width: auto;
+        padding: 0 0.65rem;
+        font-size: 0.68rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+    }
+    .prep-step:hover:not(:disabled) { background: #F6F2EA; border-color: #C6792B; }
+    .prep-step:disabled { opacity: 0.5; cursor: default; }
+
     /* ── Stock dashboard ───────────────────────────────────────── */
     .admin-stock-head {
         display: flex;
@@ -902,49 +1155,6 @@ const inPersonLow = inPersonItems.filter(r => r.inPersonStatus === 'low').length
         color: var(--text-muted);
     }
 
-    /* ── Glance cards ──────────────────────────────────────────── */
-    .stock-cards {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-        gap: 0.85rem;
-        margin-bottom: 0.5rem;
-    }
-    .stock-card {
-        background: var(--bg);
-        border: 1px solid var(--accent);
-        border-left: 3px solid var(--accent);
-        border-radius: 10px;
-        padding: 0.9rem 1rem;
-        display: flex;
-        flex-direction: column;
-        gap: 0.6rem;
-    }
-    .stock-card-ok { border-left-color: #2F6A2F; }
-    .stock-card-low { border-left-color: #C0792B; }
-    .stock-card-soldout { border-left-color: #9A3A1A; }
-    .stock-card-top {
-        display: flex;
-        align-items: flex-start;
-        justify-content: space-between;
-        gap: 0.5rem;
-    }
-    .stock-card-name { font-weight: 600; font-size: 0.92rem; line-height: 1.2; }
-    .stock-card-figure { display: flex; align-items: baseline; gap: 0.4rem; }
-    .stock-card-remaining {
-        font-family: 'Cormorant Garamond', serif;
-        font-size: 2rem;
-        font-weight: 600;
-        line-height: 1;
-        color: var(--text-primary);
-    }
-    .stock-card-remaining-label { font-size: 0.75rem; color: var(--text-muted); }
-    .stock-card .admin-stock-bar { width: 100%; }
-    .stock-card-ip {
-        font-size: 0.72rem;
-        color: var(--text-muted);
-        padding-top: 0.1rem;
-        border-top: 1px solid #efe9e0;
-    }
     /* ── Channel sections (online / in-person) ─────────────────── */
     .stock-section {
         border: 1px solid var(--accent);
@@ -984,19 +1194,6 @@ const inPersonLow = inPersonItems.filter(r => r.inPersonStatus === 'low').length
         font-size: 0.72rem;
         color: var(--text-muted);
     }
-    .stock-section-mini {
-        margin-left: auto;
-        display: flex;
-        gap: 1.25rem;
-        font-size: 0.8rem;
-        color: var(--text-muted);
-    }
-    .stock-section-mini strong {
-        font-size: 1.05rem;
-        color: var(--text-primary);
-        font-variant-numeric: tabular-nums;
-    }
-    .stock-cards { margin-bottom: 1rem; }
 
     /* ── Responsive ────────────────────────────────────────────── */
     @media (max-width: 768px) {
