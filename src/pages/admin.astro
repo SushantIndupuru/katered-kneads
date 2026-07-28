@@ -3250,10 +3250,16 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     }
 
     .admin-modal-actions {
+        position: sticky;
+        bottom: 0;
+        z-index: 1;
         display: flex;
         gap: 0.75rem;
         justify-content: flex-end;
-        margin-top: 0.5rem;
+        margin: 1.5rem -2rem -2rem;
+        padding: 1.25rem 2rem;
+        background: var(--bg);
+        border-top: 1px solid var(--accent);
     }
 
     .admin-btn-cancel {

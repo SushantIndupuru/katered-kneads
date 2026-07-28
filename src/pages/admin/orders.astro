@@ -1017,16 +1017,19 @@ const prepTotals = {
         padding: 0.9rem 1.25rem;
         white-space: nowrap;
     }
-    .admin-table td {
+    /* Table rows are injected at runtime via innerHTML (see renderRow), so they
+       don't receive Astro's scoped-style attribute. These selectors must be
+       :global() or they silently fail to apply to the generated cells. */
+    :global(.admin-table td) {
         padding: 1rem 1.25rem;
         vertical-align: middle;
         border-bottom: 1px solid var(--accent);
         color: var(--text-primary);
     }
-    .admin-table tr:last-child td { border-bottom: none; }
-    .admin-table tr:hover td { background: #FAF7F2; }
-    .admin-td-name { font-weight: 500; white-space: nowrap; }
-    .admin-td-desc {
+    :global(.admin-table tr:last-child td) { border-bottom: none; }
+    :global(.admin-table tr:hover td) { background: #FAF7F2; }
+    :global(.admin-td-name) { font-weight: 500; white-space: nowrap; }
+    :global(.admin-td-desc) {
         max-width: 240px;
         color: var(--text-muted);
         font-size: 0.82rem;
@@ -1034,7 +1037,7 @@ const prepTotals = {
         overflow: hidden;
         text-overflow: ellipsis;
     }
-    .admin-td-actions { white-space: nowrap; }
+    :global(.admin-td-actions) { white-space: nowrap; }
     .admin-no-image { color: var(--text-muted); }
 
     .admin-empty {
@@ -1043,13 +1046,13 @@ const prepTotals = {
         font-size: 0.9rem;
         color: var(--text-muted);
     }
-    .admin-field-hint {
+    :global(.admin-field-hint) {
         font-size: 0.78rem;
         color: var(--text-muted);
     }
 
     /* ── Order status pills + delete button ────────────────────── */
-    .admin-drop-status {
+    :global(.admin-drop-status) {
         display: inline-block;
         font-size: 0.63rem;
         font-weight: 600;
@@ -1219,10 +1222,16 @@ const prepTotals = {
     }
     .admin-modal-close:hover { color: var(--text-primary); }
     .admin-modal-actions {
+        position: sticky;
+        bottom: 0;
+        z-index: 1;
         display: flex;
         gap: 0.75rem;
         justify-content: flex-end;
-        margin-top: 0.5rem;
+        margin: 1.5rem -2rem -2rem;
+        padding: 1.25rem 2rem;
+        background: var(--bg);
+        border-top: 1px solid var(--accent);
     }
     .admin-btn-cancel {
         font-size: 0.82rem;

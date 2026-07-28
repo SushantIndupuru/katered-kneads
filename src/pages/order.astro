@@ -38,9 +38,11 @@ const BEFORE_OPEN = openMs !== null && now < openMs;
 // An active drop always shows its countdown before it opens.
 const SHOW_COUNTDOWN = BEFORE_OPEN;
 
-// The "no drop scheduled" panel already carries its own SMS signup box, so
-// suppress the footer one to avoid two identical boxes on the same page.
-const SHOW_NO_DROP_SIGNUP = !ORDERS_CURRENTLY_OPEN && !SHOW_COUNTDOWN;
+// Both closed states carry their own inline SMS signup box — the "no drop
+// scheduled" panel and the pre-open countdown panel for an announced drop — so
+// suppress the footer signup whenever orders aren't open to avoid two identical
+// boxes on the same page. The footer signup only shows while orders are live.
+const HIDE_FOOTER_SIGNUP = !ORDERS_CURRENTLY_OPEN;
 
 // When open, show everything in the drop; before open, only the preview picks.
 const displayItems = ORDERS_CURRENTLY_OPEN ? dropItems : dropItems.filter(i => i.preview);
@@ -65,7 +67,7 @@ function formatPrice(n: number): string {
   title="Order — Katered Kneads"
   description="Order handmade cookies delivered to UC Berkeley or UC Davis. Ordering is open only during each drop window — about every two weeks."
   activePage="order"
-  hideFooterSignup={SHOW_NO_DROP_SIGNUP}
+  hideFooterSignup={HIDE_FOOTER_SIGNUP}
 >
 
   <!-- Page Header -->
@@ -138,6 +140,15 @@ function formatPrice(n: number): string {
           </div>
 
           <p class="status-date">Opens {NEXT_DROP_OPEN_LABEL}</p>
+
+          <div class="no-drop-signup">
+            <p class="status-text">Don't want to watch the clock? Drop your number and we'll text you the moment {DROP_NAME} opens, plus a reminder before orders close.</p>
+            <SmsSignup
+              source="order-countdown"
+              heading=""
+              sub=""
+            />
+          </div>
         </div>
       ) : (
         <div class="status-panel status-closed no-drop-panel">
@@ -156,31 +167,6 @@ function formatPrice(n: number): string {
 
     </div>
   </section>
-  )}
-
-  <!-- Pickup spots — when orders aren't open there's nothing to buy yet, so
-       show the pickup areas/windows right under the countdown. When open, the
-       products come first and this renders after them instead (see below). -->
-  {pickupSpots.length > 0 && !ORDERS_CURRENTLY_OPEN && (
-    <section class="section" id="pickup-spots">
-      <div class="container">
-        <div class="section-header">
-          <p class="eyebrow">Pickup</p>
-          <h2 class="section-heading">Where to pick up</h2>
-          <p class="section-sub">
-            Choose your spot at checkout. The exact address is emailed to you and shown on your confirmation once your order is placed.
-          </p>
-        </div>
-        <ul class="pickup-spots-grid">
-          {pickupSpots.map(spot => (
-            <li class="pickup-spot-card">
-              <span class="pickup-spot-card-area">{spot.locationName}</span>
-              <span class="pickup-spot-card-window">{spotWindowLabel(spot.pickupStart, spot.pickupEnd)}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </section>
   )}
 
   <!-- Drop Items (shown when there are items to display) -->
@@ -274,10 +260,10 @@ function formatPrice(n: number): string {
     </section>
   )}
 
-  <!-- Pickup spots — when orders are open, products come first, so the pickup
-       areas/windows render here (after the items) to avoid pushing the drop
-       down. When closed, this instead renders above (under the countdown). -->
-  {pickupSpots.length > 0 && ORDERS_CURRENTLY_OPEN && (
+  <!-- Pickup spots — always render after the items (the live drop when open,
+       or the sneak-peek preview when closed) so "Where to pick up" sits under
+       them rather than pushing the drop/preview down the page. -->
+  {pickupSpots.length > 0 && (
     <section class="section" id="pickup-spots">
       <div class="container">
         <div class="section-header">
