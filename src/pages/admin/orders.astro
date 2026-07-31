@@ -114,6 +114,11 @@ try {
             <h1 class="admin-page-title">Orders</h1>
             <p class="admin-page-sub">{activeDrop ? activeDrop.name : 'No active drop'}</p>
         </div>
+        <div class="orders-revenue-card">
+            <span class="orders-revenue-label">Made this drop</span>
+            <span class="orders-revenue-amount" id="orders-revenue">—</span>
+            <span class="orders-revenue-hint" id="orders-revenue-hint"></span>
+        </div>
     </div>
 
     <!-- Online orders -->
@@ -323,6 +328,31 @@ try {
     const ordersEsc = (s: string) => s.replace(/[&<>"]/g, c =>
         ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] ?? c));
 
+    // ── Revenue for the active (non-archived) drop ─────────────
+    // Online and in-person totals load independently, so track each
+    // and re-render whenever either resolves.
+    let onlineRevenueCents: number | null = null;
+    let inPersonRevenueCents: number | null = null;
+    const centsFmt = new Intl.NumberFormat('en-US', {
+        style: 'currency', currency: 'USD',
+    });
+    function refreshRevenue() {
+        const amountEl = document.getElementById('orders-revenue');
+        const hintEl = document.getElementById('orders-revenue-hint');
+        if (!amountEl) return;
+        const online = onlineRevenueCents ?? 0;
+        const inPerson = inPersonRevenueCents ?? 0;
+        amountEl.textContent = centsFmt.format((online + inPerson) / 100);
+        if (hintEl) {
+            if (onlineRevenueCents === null && inPersonRevenueCents === null) {
+                hintEl.textContent = '';
+            } else {
+                hintEl.textContent =
+                    `${centsFmt.format(online / 100)} online · ${centsFmt.format(inPerson / 100)} in-person`;
+            }
+        }
+    }
+
     let archivedOnlineCount = 0;
     let archivedInPersonCount = 0;
     function refreshArchivedVisibility() {
@@ -355,6 +385,10 @@ try {
             const orders = allOrders.filter((o: any) => !isArchivedDrop(o.dropId));
             const archived = allOrders.filter((o: any) => isArchivedDrop(o.dropId));
 
+            onlineRevenueCents = orders.reduce(
+                (sum: number, o: any) => sum + (o.subtotalCents ?? 0) + (o.tipCents ?? 0), 0);
+            refreshRevenue();
+
             const renderRow = (o: any, withDrop: boolean) => {
                 const itemsLabel = (o.items ?? [])
                     .map((i: any) => `${i.quantity}× ${ordersEsc(i.nameSnapshot)}`).join(', ');
@@ -371,7 +405,7 @@ try {
                     <td class="admin-td-name">${o.pickupCode ? ordersEsc(o.pickupCode) : '—'}</td>
                     <td>${ordersEsc(o.customerName)}<br><span class="admin-field-hint">${ordersEsc(o.customerEmail)}</span></td>
                     <td>${ordersEsc(o.pickupLocation || '—')}</td>
-                    <td class="admin-td-desc">${itemsLabel}</td>
+                    <td class="admin-td-items">${itemsLabel}</td>
                     <td>${total}</td>
                     <td><span class="admin-drop-status admin-order-${o.status}">${o.status}</span></td>
                     <td class="admin-td-actions">
@@ -427,6 +461,10 @@ try {
             const sales = allSales.filter((s: any) => !isArchivedDrop(s.dropId));
             const archived = allSales.filter((s: any) => isArchivedDrop(s.dropId));
 
+            inPersonRevenueCents = sales.reduce(
+                (sum: number, s: any) => sum + (s.subtotalCents ?? 0) + (s.tipCents ?? 0), 0);
+            refreshRevenue();
+
             const renderRow = (s: any, withDrop: boolean) => {
                 const itemsLabel = (s.items ?? [])
                     .map((i: any) => `${i.quantity}× ${ordersEsc(i.nameSnapshot || 'Item')}`).join(', ');
@@ -442,7 +480,7 @@ try {
                 return `<tr>
                     <td class="admin-td-desc">${ordersFmt.format(new Date(s.createdAt))}</td>
                     ${dropCell}
-                    <td class="admin-td-desc">${itemsLabel || '—'}</td>
+                    <td class="admin-td-items">${itemsLabel || '—'}</td>
                     <td>${total}</td>
                     <td><span class="admin-field-hint">${ref}</span></td>
                     <td class="admin-td-actions">
@@ -673,6 +711,36 @@ try {
         color: var(--text-muted);
         margin: 0.25rem 0 0;
     }
+    .orders-revenue-card {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        text-align: right;
+        background: var(--bg);
+        border: 1px solid var(--accent);
+        padding: 0.9rem 1.25rem;
+        min-width: 180px;
+    }
+    .orders-revenue-label {
+        font-size: 0.62rem;
+        font-weight: 600;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+    }
+    .orders-revenue-amount {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 1.9rem;
+        font-weight: 600;
+        line-height: 1.1;
+        color: var(--text-primary);
+        margin: 0.2rem 0 0.15rem;
+    }
+    .orders-revenue-hint {
+        font-size: 0.72rem;
+        color: var(--text-muted);
+    }
+    .orders-revenue-hint:empty { display: none; }
 
     /* ── Table ─────────────────────────────────────────────────── */
     .admin-table-wrap {
@@ -717,6 +785,14 @@ try {
         text-overflow: ellipsis;
     }
     :global(.admin-td-actions) { white-space: nowrap; }
+    :global(.admin-td-items) {
+        max-width: 320px;
+        color: var(--text-muted);
+        font-size: 0.82rem;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        line-height: 1.5;
+    }
     .admin-no-image { color: var(--text-muted); }
 
     .admin-empty {

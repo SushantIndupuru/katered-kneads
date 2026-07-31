@@ -30,6 +30,10 @@ const SHOW_COUNTDOWN = BEFORE_OPEN;
 const SHOW_DROP = ORDERS_CURRENTLY_OPEN || SHOW_COUNTDOWN;
 const displayItems = ORDERS_CURRENTLY_OPEN ? dropItems : dropItems.filter(i => i.preview);
 
+// Every item in the live drop has sold out (no online stock left anywhere).
+const ALL_SOLD_OUT = ORDERS_CURRENTLY_OPEN && dropItems.length > 0
+  && dropItems.every(i => i.initialStock - i.consumedStock <= 0);
+
 const NEXT_DROP_OPEN_LABEL = currentDrop ? formatDropDate(currentDrop.openTime) : 'soon';
 const ORDERS_CLOSE_LABEL   = currentDrop ? formatDropDate(currentDrop.closeTime) : '';
 const DROP_NAME            = currentDrop?.name ?? 'Next Drop';
@@ -40,9 +44,11 @@ const CDN_URL              = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL;
 
   <!-- Drop Announcement Bar -->
   {SHOW_DROP && (
-    <div class={`drop-bar${ORDERS_CURRENTLY_OPEN ? ' drop-bar-open' : ''}`}>
+    <div class={`drop-bar${ORDERS_CURRENTLY_OPEN ? (ALL_SOLD_OUT ? ' drop-bar-soldout' : ' drop-bar-open') : ''}`}>
       {ORDERS_CURRENTLY_OPEN
-        ? <span>● Orders are <strong>OPEN NOW</strong> — closes {ORDERS_CLOSE_LABEL} <a href="/order">Order Now →</a></span>
+        ? ALL_SOLD_OUT
+          ? <span>● <strong>OUT OF STOCK</strong> — {DROP_NAME} is sold out</span>
+          : <span>● Orders are <strong>OPEN NOW</strong> — closes {ORDERS_CLOSE_LABEL} <a href="/order">Order Now →</a></span>
         : <span>{DROP_NAME} opens <strong>{NEXT_DROP_OPEN_LABEL}</strong> <a href="/order">See Details →</a></span>
       }
     </div>

@@ -1384,6 +1384,7 @@ footer {
 
 .status-badge-open   { color: #2D6A45; }
 .status-badge-closed { color: #9A4A2A; }
+.status-badge-soldout { color: #b00020; }
 
 .status-heading {
   font-family: 'Cormorant Garamond', serif;
@@ -1668,6 +1669,10 @@ footer {
 
 .drop-bar-open {
   background-color: #2D6A45;
+}
+
+.drop-bar-soldout {
+  background-color: #b00020;
 }
 
 /* ── Hero without top padding (paired with drop-bar) ───────── */
