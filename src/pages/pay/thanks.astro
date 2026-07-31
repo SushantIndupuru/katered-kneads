@@ -13,6 +13,7 @@ const canceled = Astro.url.searchParams.get('canceled') === '1';
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <meta name="robots" content="noindex, nofollow"/>
     <title>{canceled ? 'Payment canceled' : 'Payment received'} — Katered Kneads</title>
+    <meta name="robots" content="noindex,follow">
 </head>
 <body class="pay-body">
     <main class="pay-panel">

@@ -8,13 +8,15 @@ export interface Props {
   description?: string;
   activePage?: string;
   hideFooterSignup?: boolean;
+  noIndex?: boolean;
 }
 
 const {
   title = "Katered Kneads - Handmade Campus Cookies",
   description = "Handmade, 100% scratch cookies delivered biweekly to UC Berkeley and UC Davis. Limited orders open every two weeks.",
   activePage = "",
-  hideFooterSignup = false
+  hideFooterSignup = false,
+  noIndex = false
 } = Astro.props;
 
 // Whether a drop is currently open for ordering. When it isn't, the client
@@ -36,6 +38,7 @@ const ordersOpen = !!currentDrop
     <meta name="generator" content={Astro.generator} />
     <meta name="description" content={description} />
     <link rel="sitemap" href="/sitemap-index.xml" />
+    {noIndex && <meta name="robots" content="noindex,follow"/>}
     <title>{title}</title>
   </head>
   <body data-orders-open={ordersOpen ? '1' : '0'}>

@@ -7,20 +7,33 @@ import vercel from '@astrojs/vercel';
 
 import sitemap from '@astrojs/sitemap';
 
+const hiddenPages = [
+  'https://kateredkneads.com/admin/',
+  'https://kateredkneads.com/admin/login/',
+  'https://kateredkneads.com/admin/orders/',
+  'https://kateredkneads.com/admin/pos/',
+  'https://kateredkneads.com/admin/sms/',
+  'https://kateredkneads.com/admin/stock/',
+  'https://kateredkneads.com/order/success/',
+  'https://kateredkneads.com/pay/in-person/',
+  'https://kateredkneads.com/pay/thanks/',
+  'https://kateredkneads.com/cart/'
+];
+
+
 // https://astro.build/config
 export default defineConfig({
-  site: 'http://kateredkneads.com/',
+  site: 'https://kateredkneads.com/',
   output: 'server',
 
   vite: {
     plugins: [tailwindcss()]
   },
 
-  server: {
-      host: true,
-      allowedHosts: ['preview.sushant.art'],
-    },
-
   adapter: vercel(),
-  integrations: [sitemap()]
+  integrations: [sitemap(
+    {
+      filter: (page) => !hiddenPages.includes(page),
+    }
+  )]
 });
