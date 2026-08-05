@@ -1,13 +1,20 @@
 import { createServerClient } from '../supabase.ts';
 import type { MenuItem } from '../../types/db-types.ts';
 
-const MENU_COLUMNS = 'id, name, description, price';
+const MENU_COLUMNS = 'id, name, description, price, sale_price';
 
 interface MenuItemRow {
     id: string;
     name: string;
     description: string;
     price: number | string | null;
+    sale_price: number | string | null;
+}
+
+function parseSalePrice(raw: number | string | null | undefined): number | null {
+    if (raw == null || raw === '') return null;
+    const n = Number(raw);
+    return Number.isFinite(n) ? n : null;
 }
 
 export function mapMenuItem(row: MenuItemRow): MenuItem {
@@ -16,6 +23,7 @@ export function mapMenuItem(row: MenuItemRow): MenuItem {
         name: row.name,
         description: row.description,
         price: Number(row.price ?? 0),
+        salePrice: parseSalePrice(row.sale_price),
     };
 }
 
@@ -36,6 +44,7 @@ export async function createMenuItem(
         name: data.name,
         description: data.description,
         price: Number.isFinite(data.price) ? data.price : 0,
+        sale_price: data.salePrice == null || !Number.isFinite(data.salePrice) ? null : data.salePrice,
     };
     // Use the provided id (matches the uploaded image's storage key) when present.
     if (data.id) row.id = data.id;
@@ -58,6 +67,11 @@ export async function updateMenuItem(
     if (updates.name !== undefined) patch.name = updates.name;
     if (updates.description !== undefined) patch.description = updates.description;
     if (updates.price !== undefined) patch.price = Number(updates.price) || 0;
+    if (updates.salePrice !== undefined) {
+        patch.sale_price = updates.salePrice == null || !Number.isFinite(updates.salePrice)
+            ? null
+            : updates.salePrice;
+    }
 
     const { data: item, error } = await supabase
         .from('menu_items')

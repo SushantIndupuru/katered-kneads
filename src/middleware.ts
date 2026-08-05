@@ -27,6 +27,7 @@ function isPublicApiRoute(pathname: string) {
     p === '/api/v1/auth/login' ||
     p === '/api/v1/auth/logout' ||
     p === '/api/v1/checkout' ||
+    p === '/api/v1/coupons/validate' ||
     p === '/api/v1/sms-signup' ||
     p === '/api/v1/stripe/webhook' ||
     // Customer pays an in-person QR order on their own phone (no admin session).

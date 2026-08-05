@@ -154,6 +154,14 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
             </svg>
             Orders
         </a>
+        <a href="/admin/coupons" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                <line x1="7" y1="7" x2="7.01" y2="7"/>
+            </svg>
+            Coupons
+        </a>
         <a href="/admin/sms" class="admin-nav-link">
             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
                  stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -221,7 +229,12 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
                                 <tr data-id={item.id}>
                                     <td class="admin-td-name">{item.name}</td>
                                     <td class="admin-td-desc">{item.description || '—'}</td>
-                                    <td class="admin-td-price">${item.price.toFixed(2)}</td>
+                                    <td class="admin-td-price">
+                                        ${item.price.toFixed(2)}
+                                        {item.salePrice != null && item.salePrice < item.price && (
+                                            <br /><span class="admin-field-hint">sale ${item.salePrice.toFixed(2)}</span>
+                                        )}
+                                    </td>
                                     <td class="admin-td-image">
                                         <a href={storageUrl + item.id} target="_blank" class="admin-image-thumb-link"
                                            title={storageUrl + item.id}>
@@ -236,6 +249,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
                                                     data-name={item.name}
                                                     data-description={item.description}
                                                     data-price={item.price}
+                                                    data-sale-price={item.salePrice ?? ''}
                                                     data-image={storageUrl + item.id}
                                             >Edit
                                             </button>
@@ -423,6 +437,11 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
                 <label for="add-price">Price (USD) *</label>
                 <input id="add-price" name="price" type="number" min="0" step="0.01" placeholder="0.00" required/>
             </div>
+            <div class="form-field">
+                <label for="add-sale-price">Sale price (USD)</label>
+                <input id="add-sale-price" name="salePrice" type="number" min="0" step="0.01" placeholder="Optional — leave blank for no sale"/>
+                <span class="admin-field-hint">Must be lower than the regular price when set.</span>
+            </div>
             <div class="form-field" id="add-image-field">
                 <label for="add-image">Image</label>
                 <label class="upload-label" id="add-upload-label" for="add-image">
@@ -470,6 +489,11 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
             <div class="form-field">
                 <label for="edit-price">Price (USD) *</label>
                 <input id="edit-price" name="price" type="number" min="0" step="0.01" required/>
+            </div>
+            <div class="form-field">
+                <label for="edit-sale-price">Sale price (USD)</label>
+                <input id="edit-sale-price" name="salePrice" type="number" min="0" step="0.01" placeholder="Optional — leave blank for no sale"/>
+                <span class="admin-field-hint">Must be lower than the regular price when set. Clear to remove the sale.</span>
             </div>
             <div class="form-field" id="edit-image-field">
                 <label for="edit-image">Image</label>
@@ -914,6 +938,9 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
             name: data.name,
             description: data.description,
             price: Number(data.price) || 0,
+            salePrice: data.salePrice === '' || data.salePrice == null
+                ? null
+                : Number(data.salePrice),
         };
 
         const res = await fetch('/api/v1/menu', {
@@ -933,11 +960,12 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     // ── Edit modal ─────────────────────────────────────────────
     document.querySelectorAll<HTMLButtonElement>('.admin-btn-edit').forEach(btn => {
         btn.addEventListener('click', () => {
-            const {id, name, description, price, image} = btn.dataset;
+            const {id, name, description, price, salePrice, image} = btn.dataset;
             (document.getElementById('edit-id') as HTMLInputElement).value = id ?? '';
             (document.getElementById('edit-name') as HTMLInputElement).value = name ?? '';
             (document.getElementById('edit-description') as HTMLTextAreaElement).value = description ?? '';
             (document.getElementById('edit-price') as HTMLInputElement).value = price ?? '0';
+            (document.getElementById('edit-sale-price') as HTMLInputElement).value = salePrice ?? '';
 
             // Always show the current image (url = storageUrl + id)
             const currentImg = document.getElementById('edit-current-image-img') as HTMLImageElement;
@@ -982,7 +1010,12 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
         }
 
         const payload = {
-            name: data.name, description: data.description, price: Number(data.price) || 0,
+            name: data.name,
+            description: data.description,
+            price: Number(data.price) || 0,
+            salePrice: data.salePrice === '' || data.salePrice == null
+                ? null
+                : Number(data.salePrice),
         };
 
         const res = await fetch(`/api/v1/menu/${id}`, {

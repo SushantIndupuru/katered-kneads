@@ -79,6 +79,14 @@ try {
             </svg>
             Orders
         </a>
+        <a href="/admin/coupons" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                <line x1="7" y1="7" x2="7.01" y2="7"/>
+            </svg>
+            Coupons
+        </a>
         <a href="/admin/sms" class="admin-nav-link">
             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
                  stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -386,15 +394,22 @@ try {
             const archived = allOrders.filter((o: any) => isArchivedDrop(o.dropId));
 
             onlineRevenueCents = orders.reduce(
-                (sum: number, o: any) => sum + (o.subtotalCents ?? 0) + (o.tipCents ?? 0), 0);
+                (sum: number, o: any) => sum + (o.subtotalCents ?? 0) - (o.discountCents ?? 0) + (o.tipCents ?? 0), 0);
             refreshRevenue();
 
             const renderRow = (o: any, withDrop: boolean) => {
                 const itemsLabel = (o.items ?? [])
                     .map((i: any) => `${i.quantity}× ${ordersEsc(i.nameSnapshot)}`).join(', ');
                 const tipCents = o.tipCents ?? 0;
-                const total = '$' + ((o.subtotalCents + tipCents) / 100).toFixed(2)
-                    + (tipCents > 0 ? `<br><span class="admin-field-hint">incl. $${(tipCents / 100).toFixed(2)} tip</span>` : '');
+                const discountCents = o.discountCents ?? 0;
+                const charged = (o.subtotalCents ?? 0) - discountCents + tipCents;
+                const hints: string[] = [];
+                if (discountCents > 0) {
+                    hints.push(`${o.couponCode ? ordersEsc(o.couponCode) + ' ' : ''}−$${(discountCents / 100).toFixed(2)}`);
+                }
+                if (tipCents > 0) hints.push(`incl. $${(tipCents / 100).toFixed(2)} tip`);
+                const total = '$' + (charged / 100).toFixed(2)
+                    + (hints.length ? `<br><span class="admin-field-hint">${hints.join(' · ')}</span>` : '');
                 const label = o.pickupCode ? ordersEsc(o.pickupCode) : ordersEsc(o.customerName);
                 const dropCell = withDrop
                     ? `<td class="admin-td-desc">${ordersEsc(archivedDropNames.get(o.dropId) ?? '—')}</td>`
@@ -462,15 +477,22 @@ try {
             const archived = allSales.filter((s: any) => isArchivedDrop(s.dropId));
 
             inPersonRevenueCents = sales.reduce(
-                (sum: number, s: any) => sum + (s.subtotalCents ?? 0) + (s.tipCents ?? 0), 0);
+                (sum: number, s: any) => sum + (s.subtotalCents ?? 0) - (s.discountCents ?? 0) + (s.tipCents ?? 0), 0);
             refreshRevenue();
 
             const renderRow = (s: any, withDrop: boolean) => {
                 const itemsLabel = (s.items ?? [])
                     .map((i: any) => `${i.quantity}× ${ordersEsc(i.nameSnapshot || 'Item')}`).join(', ');
                 const tipCents = s.tipCents ?? 0;
-                const total = '$' + ((s.subtotalCents + tipCents) / 100).toFixed(2)
-                    + (tipCents > 0 ? `<br><span class="admin-field-hint">incl. $${(tipCents / 100).toFixed(2)} tip</span>` : '');
+                const discountCents = s.discountCents ?? 0;
+                const charged = (s.subtotalCents ?? 0) - discountCents + tipCents;
+                const hints: string[] = [];
+                if (discountCents > 0) {
+                    hints.push(`${s.couponCode ? ordersEsc(s.couponCode) + ' ' : ''}−$${(discountCents / 100).toFixed(2)}`);
+                }
+                if (tipCents > 0) hints.push(`incl. $${(tipCents / 100).toFixed(2)} tip`);
+                const total = '$' + (charged / 100).toFixed(2)
+                    + (hints.length ? `<br><span class="admin-field-hint">${hints.join(' · ')}</span>` : '');
                 const refRaw = s.stripePaymentIntentId ? s.stripePaymentIntentId.slice(-8) : '';
                 const ref = refRaw ? ordersEsc(refRaw) : '—';
                 const label = refRaw ? `#${refRaw}` : ordersFmt.format(new Date(s.createdAt));

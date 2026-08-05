@@ -30,6 +30,11 @@ const paymentIntentId = Astro.url.searchParams.get('pi') ?? '';
                 <span id="pay-subtotal"></span>
             </div>
 
+            <div class="pay-summary-row" id="pay-discount-row" hidden>
+                <span id="pay-discount-label">Discount</span>
+                <span id="pay-discount"></span>
+            </div>
+
             <div class="pay-tip" id="pay-tip">
                 <p class="pay-tip-label">Add a tip <span class="pay-tip-required">(required)</span></p>
                 <div class="pay-tip-options" id="pay-tip-options">
@@ -89,6 +94,9 @@ const paymentIntentId = Astro.url.searchParams.get('pi') ?? '';
         const summaryEl = document.getElementById('pay-summary') as HTMLElement;
         const summaryListEl = document.getElementById('pay-summary-list') as HTMLElement;
         const subtotalEl = document.getElementById('pay-subtotal') as HTMLElement;
+        const discountRowEl = document.getElementById('pay-discount-row') as HTMLElement;
+        const discountLabelEl = document.getElementById('pay-discount-label') as HTMLElement;
+        const discountEl = document.getElementById('pay-discount') as HTMLElement;
         const tipRowEl = document.getElementById('pay-tip-row') as HTMLElement;
         const tipAmountEl = document.getElementById('pay-tip-amount') as HTMLElement;
         const tipOptionsEl = document.getElementById('pay-tip-options') as HTMLElement;
@@ -103,6 +111,8 @@ const paymentIntentId = Astro.url.searchParams.get('pi') ?? '';
 
         // ── Tip state (mirrors the online cart) ───────────────────
         let subtotalCents = 0;
+        let discountCents = 0;
+        let couponCode: string | null = null;
         let tipMode: 'pct' | 'custom' = 'pct';
         let tipPct = 0;
         let tipCustomCents = 0;
@@ -110,25 +120,43 @@ const paymentIntentId = Astro.url.searchParams.get('pi') ?? '';
         // is how a customer opts out of tipping.
         let tipChosen = false;
 
+        function tipBaseCents(): number {
+            return Math.max(subtotalCents - discountCents, 0);
+        }
+
         function currentTipCents(): number {
             if (tipMode === 'custom') return tipCustomCents;
-            return Math.round((subtotalCents * tipPct) / 100);
+            return Math.round((tipBaseCents() * tipPct) / 100);
         }
 
         function updateTotals() {
             const tip = currentTipCents();
             subtotalEl.textContent = money(subtotalCents);
+            if (discountCents > 0) {
+                discountRowEl.hidden = false;
+                discountLabelEl.textContent = couponCode ? `Discount (${couponCode})` : 'Discount';
+                discountEl.textContent = '−' + money(discountCents);
+            } else {
+                discountRowEl.hidden = true;
+            }
             tipAmountEl.textContent = money(tip);
             tipRowEl.hidden = tip <= 0;
-            amountEl.textContent = money(subtotalCents + tip);
+            amountEl.textContent = money(tipBaseCents() + tip);
             const hint = document.getElementById('pay-tip-hint');
             if (hint) hint.hidden = tipChosen;
             // Only enable paying once a tip choice has been made.
             submitBtn.disabled = !tipChosen;
         }
 
-        function renderSummary(items: SummaryItem[], subtotal: number) {
+        function renderSummary(
+            items: SummaryItem[],
+            subtotal: number,
+            discount = 0,
+            code: string | null = null,
+        ) {
             subtotalCents = subtotal;
+            discountCents = discount;
+            couponCode = code;
             if (items && items.length > 0) {
                 summaryListEl.innerHTML = items.map(i =>
                     `<li class="pay-summary-line">
@@ -217,7 +245,12 @@ const paymentIntentId = Astro.url.searchParams.get('pi') ?? '';
                 return;
             }
 
-            renderSummary(data.items ?? [], data.subtotalCents ?? data.amountCents ?? 0);
+            renderSummary(
+                data.items ?? [],
+                data.subtotalCents ?? data.amountCents ?? 0,
+                data.discountCents ?? 0,
+                data.couponCode ?? null,
+            );
 
             const stripe = await loadStripe(PK);
             if (!stripe) {

@@ -1,7 +1,8 @@
 import type { APIRoute } from 'astro';
 import QRCode from 'qrcode';
 import { json, getErrorMessage } from '../../../../../../lib/http';
-import { getDropItems } from '../../../../../../lib/db';
+import { getDropItems, validateCouponForCheckout } from '../../../../../../lib/db';
+import { unitPriceCents } from '../../../../../../lib/pricing';
 import { getStripe } from '../../../../../../lib/stripe';
 import { finalizeInPersonSaleIfPaid } from '../../../../../../lib/fulfillment';
 
@@ -15,6 +16,7 @@ export const POST: APIRoute = async ({ params, request, url }) => {
         const dropId = params.id as string;
         const body = await request.json();
         const items = body?.items;
+        const couponCodeRaw = typeof body?.couponCode === 'string' ? body.couponCode : '';
         if (!Array.isArray(items) || items.length === 0) {
             return json({ error: 'Cart is empty' }, 400);
         }
@@ -45,27 +47,51 @@ export const POST: APIRoute = async ({ params, request, url }) => {
                 return json({ error: `Only ${remaining} of ${di.menuItem.name} left` }, 409);
             }
 
-            const unitPriceCents = Math.round(di.menuItem.price * 100);
-            if (unitPriceCents <= 0) {
+            const unit = unitPriceCents(di.menuItem);
+            if (unit <= 0) {
                 return json({ error: `${di.menuItem.name} is not available for purchase` }, 409);
             }
-            subtotalCents += unitPriceCents * quantity;
+            subtotalCents += unit * quantity;
             orderLines.push({
                 menuItemId,
                 nameSnapshot: di.menuItem.name,
-                unitPriceCents,
+                unitPriceCents: unit,
                 quantity,
             });
         }
 
         if (subtotalCents <= 0) return json({ error: 'Total must be greater than zero' }, 400);
 
+        let discountCents = 0;
+        let couponCode: string | null = null;
+        let couponId: string | null = null;
+        if (couponCodeRaw.trim()) {
+            const result = await validateCouponForCheckout(couponCodeRaw, subtotalCents);
+            if (!result.ok) return json({ error: result.message }, 400);
+            discountCents = result.discountCents;
+            couponCode = result.coupon.code;
+            couponId = result.coupon.id;
+        }
+
+        const chargeCents = Math.max(subtotalCents - discountCents, 0);
+        if (chargeCents <= 0) {
+            return json({ error: 'Total must be greater than zero after discount' }, 400);
+        }
+
         const cart = orderLines.map(l => `${l.menuItemId}:${l.quantity}`).join(',');
-        const metadata = { kind: 'in_person', dropId, cart, subtotal: String(subtotalCents) };
+        const metadata: Record<string, string> = {
+            kind: 'in_person',
+            dropId,
+            cart,
+            subtotal: String(subtotalCents),
+            discount: String(discountCents),
+        };
+        if (couponCode) metadata.coupon = couponCode;
+        if (couponId) metadata.couponId = couponId;
 
         const stripe = getStripe();
         const intent = await stripe.paymentIntents.create({
-            amount: subtotalCents,
+            amount: chargeCents,
             currency: 'usd',
             payment_method_types: ['card'],
             metadata,
@@ -83,6 +109,9 @@ export const POST: APIRoute = async ({ params, request, url }) => {
             url: payUrl,
             qrDataUrl,
             subtotalCents,
+            discountCents,
+            couponCode,
+            totalCents: chargeCents,
         });
     } catch (err) {
         console.error('In-person checkout error:', getErrorMessage(err));
@@ -100,6 +129,7 @@ export const GET: APIRoute = async ({ url }) => {
             status: result.paid ? 'paid' : 'pending',
             recorded: result.recorded,
             subtotalCents: result.subtotalCents,
+            discountCents: result.discountCents,
             tipCents: result.tipCents,
             totalCents: result.totalCents,
         });

@@ -10,8 +10,10 @@ import {
     getDrop,
     getDropItems,
     getPickupSpot,
+    incrementCouponRedemption,
     type CreateOrderLine,
 } from './db/index.ts';
+import { unitPriceCents } from './pricing.ts';
 import { sendOrderConfirmation } from './email.ts';
 
 export interface FinalizeResult {
@@ -31,6 +33,11 @@ function parseCart(raw: string | undefined | null): { menuItemId: string; quanti
             return { menuItemId, quantity: Number(qty) };
         })
         .filter(p => p.menuItemId && Number.isInteger(p.quantity) && p.quantity > 0);
+}
+
+function parseNonNegInt(raw: string | undefined | null): number {
+    const n = Number(raw);
+    return Number.isInteger(n) && n > 0 ? n : 0;
 }
 
 // Idempotently finalize an order from a paid Checkout Session: create the paid
@@ -69,7 +76,9 @@ export async function finalizeOrderIfPaid(sessionId: string): Promise<FinalizeRe
     }
 
     // Use the real charged line items as the price/name snapshot. They are
-    // returned in creation order, matching the cart pairs we encoded.
+    // returned in creation order, matching the cart pairs we encoded. Tip is a
+    // trailing line (after cart items); Stripe coupons are session-level and do
+    // not appear as line items.
     let lineItems: Stripe.LineItem[];
     try {
         const res = await stripe.checkout.sessions.listLineItems(sessionId, { limit: 100 });
@@ -79,28 +88,54 @@ export async function finalizeOrderIfPaid(sessionId: string): Promise<FinalizeRe
         return { order: null, finalized: false };
     }
 
-    const items: CreateOrderLine[] = cartPairs.map((pair, idx) => {
-        const li = lineItems[idx];
-        const quantity = li?.quantity ?? pair.quantity;
-        const unitPriceCents = li?.price?.unit_amount
-            ?? (li?.amount_total && quantity ? Math.round(li.amount_total / quantity) : 0);
-        return {
-            menuItemId: pair.menuItemId,
-            nameSnapshot: li?.description ?? '',
-            unitPriceCents,
-            quantity,
-        };
-    });
+    // Prefer current drop prices (incl. sale prices) for the order snapshot so
+    // coupon discounts stay separate in discount_cents rather than baked into
+    // unit prices (Stripe line amounts may already be post-discount).
+    let items: CreateOrderLine[] = [];
+    if (meta.dropId) {
+        try {
+            const dropItems = await getDropItems(meta.dropId);
+            const byId = new Map(dropItems.map(di => [di.menuItem.id, di.menuItem]));
+            items = cartPairs.map((pair, idx) => {
+                const mi = byId.get(pair.menuItemId);
+                const li = lineItems[idx];
+                return {
+                    menuItemId: pair.menuItemId,
+                    nameSnapshot: mi?.name ?? li?.description ?? '',
+                    unitPriceCents: mi ? unitPriceCents(mi) : (li?.price?.unit_amount ?? 0),
+                    quantity: pair.quantity,
+                };
+            });
+        } catch (err) {
+            console.error(`finalizeOrderIfPaid: could not load drop items for ${meta.dropId}:`, err);
+        }
+    }
+    if (items.length === 0) {
+        items = cartPairs.map((pair, idx) => {
+            const li = lineItems[idx];
+            const quantity = li?.quantity ?? pair.quantity;
+            const unit = li?.price?.unit_amount
+                ?? (li?.amount_total && quantity ? Math.round(li.amount_total / quantity) : 0);
+            return {
+                menuItemId: pair.menuItemId,
+                nameSnapshot: li?.description ?? '',
+                unitPriceCents: unit,
+                quantity,
+            };
+        });
+    }
 
     const paymentIntentId = typeof session.payment_intent === 'string'
         ? session.payment_intent
         : session.payment_intent?.id ?? null;
-    // Subtotal is items-only (the tip is a separate trailing line item and is
-    // carried in metadata), so it's summed from the matched cart lines here
-    // rather than read from session.amount_total (which includes the tip).
+    // Subtotal is items at sale/list unit price (pre-coupon). Tip and discount
+    // come from metadata.
     const subtotalCents = items.reduce((sum, i) => sum + i.unitPriceCents * i.quantity, 0);
-    const tipParsed = Number(meta.tip);
-    const tipCents = Number.isInteger(tipParsed) && tipParsed > 0 ? tipParsed : 0;
+    const tipCents = parseNonNegInt(meta.tip);
+    const discountCents = Math.min(parseNonNegInt(meta.discount), subtotalCents);
+    const couponCode = typeof meta.coupon === 'string' && meta.coupon.trim()
+        ? meta.coupon.trim().toUpperCase()
+        : null;
     const email = session.customer_details?.email ?? session.customer_email ?? '';
 
     // Snapshot the pickup details now that payment is confirmed. The exact
@@ -147,6 +182,8 @@ export async function finalizeOrderIfPaid(sessionId: string): Promise<FinalizeRe
         pickupLocation,
         pickupAddress,
         subtotalCents,
+        discountCents,
+        couponCode,
         tipCents,
         stripeCheckoutSessionId: sessionId,
         stripePaymentIntentId: paymentIntentId,
@@ -174,6 +211,14 @@ export async function finalizeOrderIfPaid(sessionId: string): Promise<FinalizeRe
         }
     }
 
+    if (meta.couponId && discountCents > 0) {
+        try {
+            await incrementCouponRedemption(meta.couponId);
+        } catch (couponErr) {
+            console.error(`finalizeOrderIfPaid: coupon redemption failed for order ${order.id}:`, couponErr);
+        }
+    }
+
     try {
         await sendOrderConfirmation(order);
     } catch (emailErr) {
@@ -190,6 +235,7 @@ export interface InPersonFinalizeResult {
     // and incremented the in-person pool). False on repeat calls.
     recorded: boolean;
     subtotalCents: number;
+    discountCents: number;
     tipCents: number;
     totalCents: number;
 }
@@ -207,41 +253,48 @@ export async function finalizeInPersonSaleIfPaid(paymentIntentId: string): Promi
         intent = await stripe.paymentIntents.retrieve(paymentIntentId);
     } catch (err) {
         console.error(`finalizeInPersonSaleIfPaid: could not retrieve PaymentIntent ${paymentIntentId}:`, err);
-        return { paid: false, recorded: false, subtotalCents: 0, tipCents: 0, totalCents: 0 };
+        return { paid: false, recorded: false, subtotalCents: 0, discountCents: 0, tipCents: 0, totalCents: 0 };
     }
 
     const meta = intent.metadata ?? {};
     if (meta.kind !== 'in_person') {
-        return { paid: false, recorded: false, subtotalCents: 0, tipCents: 0, totalCents: 0 };
+        return { paid: false, recorded: false, subtotalCents: 0, discountCents: 0, tipCents: 0, totalCents: 0 };
     }
 
-    // The charged amount (intent.amount) is subtotal + tip; split it back out
-    // using the tip carried in metadata so each is recorded separately.
-    const tipParsed = Number(meta.tip);
-    const tipCents = Number.isInteger(tipParsed) && tipParsed > 0 ? tipParsed : 0;
-    const subtotalCents = Math.max((intent.amount ?? 0) - tipCents, 0);
-    const totalCents = subtotalCents + tipCents;
+    // Prefer metadata amounts (pre-coupon subtotal + discount + tip) so totals
+    // stay correct when a promo was applied. Fall back to intent.amount - tip.
+    const tipCents = parseNonNegInt(meta.tip);
+    const discountCents = parseNonNegInt(meta.discount);
+    let subtotalCents = parseNonNegInt(meta.subtotal);
+    if (!subtotalCents) {
+        subtotalCents = Math.max((intent.amount ?? 0) - tipCents + discountCents, 0);
+    }
+    const totalCents = Math.max(subtotalCents - discountCents, 0) + tipCents;
+    const couponCode = typeof meta.coupon === 'string' && meta.coupon.trim()
+        ? meta.coupon.trim().toUpperCase()
+        : null;
 
     if (intent.status !== 'succeeded') {
-        return { paid: false, recorded: false, subtotalCents, tipCents, totalCents };
+        return { paid: false, recorded: false, subtotalCents, discountCents, tipCents, totalCents };
     }
 
     const cartPairs = parseCart(meta.cart);
     if (cartPairs.length === 0) {
         console.error(`finalizeInPersonSaleIfPaid: PaymentIntent ${paymentIntentId} has no cart metadata`);
-        return { paid: true, recorded: false, subtotalCents, tipCents, totalCents };
+        return { paid: true, recorded: false, subtotalCents, discountCents, tipCents, totalCents };
     }
 
     const dropId = meta.dropId ?? null;
 
-    // Rebuild the item name/price snapshot from the drop's current menu items.
+    // Rebuild the item name/price snapshot from the drop's current menu items
+    // (including active sale prices).
     let priceById = new Map<string, { name: string; unitPriceCents: number }>();
     if (dropId) {
         try {
             const dropItems = await getDropItems(dropId);
             priceById = new Map(dropItems.map(di => [di.menuItem.id, {
                 name: di.menuItem.name,
-                unitPriceCents: Math.round(di.menuItem.price * 100),
+                unitPriceCents: unitPriceCents(di.menuItem),
             }]));
         } catch (err) {
             console.error(`finalizeInPersonSaleIfPaid: could not load drop items for ${dropId}:`, err);
@@ -261,13 +314,15 @@ export async function finalizeInPersonSaleIfPaid(paymentIntentId: string): Promi
     const recorded = await recordInPersonSale({
         dropId,
         subtotalCents,
+        discountCents,
+        couponCode,
         tipCents,
         stripePaymentIntentId: paymentIntentId,
         items,
     });
 
     // Lost the race — already recorded by another caller; don't double-count.
-    if (!recorded) return { paid: true, recorded: false, subtotalCents, tipCents, totalCents };
+    if (!recorded) return { paid: true, recorded: false, subtotalCents, discountCents, tipCents, totalCents };
 
     if (dropId) {
         const lines = items.map(i => ({ menuItemId: i.menuItemId, quantity: i.quantity }));
@@ -278,5 +333,13 @@ export async function finalizeInPersonSaleIfPaid(paymentIntentId: string): Promi
         }
     }
 
-    return { paid: true, recorded: true, subtotalCents, tipCents, totalCents };
+    if (meta.couponId && discountCents > 0) {
+        try {
+            await incrementCouponRedemption(meta.couponId);
+        } catch (couponErr) {
+            console.error(`finalizeInPersonSaleIfPaid: coupon redemption failed for ${paymentIntentId}:`, couponErr);
+        }
+    }
+
+    return { paid: true, recorded: true, subtotalCents, discountCents, tipCents, totalCents };
 }

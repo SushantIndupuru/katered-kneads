@@ -1,6 +1,7 @@
 ---
 import '../../styles/global.css';
 import { getActiveDrop, getDropItems, getOrders } from '../../lib/db';
+import { unitPriceCents } from '../../lib/pricing';
 import type { Drop, DropItemWithMenu, Order } from '../../types/db-types.ts';
 
 // Route is protected by middleware (src/middleware.ts) — any logged-in admin
@@ -23,14 +24,21 @@ if (activeDrop) {
     }
 }
 
-const ipRows = inPersonItems.map(item => ({
-    menuItemId: item.menuItem.id,
-    name: item.menuItem.name,
-    price: item.menuItem.price,
-    stock: item.inPersonStock,
-    sold: item.inPersonConsumed,
-    remaining: item.inPersonStock - item.inPersonConsumed,
-}));
+const ipRows = inPersonItems.map(item => {
+    const listPrice = item.menuItem.price;
+    const chargeCents = unitPriceCents(item.menuItem);
+    const salePrice = item.menuItem.salePrice;
+    return {
+        menuItemId: item.menuItem.id,
+        name: item.menuItem.name,
+        price: listPrice,
+        salePrice,
+        priceCents: chargeCents,
+        stock: item.inPersonStock,
+        sold: item.inPersonConsumed,
+        remaining: item.inPersonStock - item.inPersonConsumed,
+    };
+});
 const ipTotals = {
     stock: ipRows.reduce((s, r) => s + r.stock, 0),
     sold: ipRows.reduce((s, r) => s + r.sold, 0),
@@ -105,6 +113,14 @@ const remainingJson = JSON.stringify(remainingOrders);
                 <line x1="9" y1="16" x2="15" y2="16"/>
             </svg>
             Orders
+        </a>
+        <a href="/admin/coupons" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                <line x1="7" y1="7" x2="7.01" y2="7"/>
+            </svg>
+            Coupons
         </a>
         <a href="/admin/sms" class="admin-nav-link">
             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
@@ -249,13 +265,23 @@ const remainingJson = JSON.stringify(remainingOrders);
                                 class="pos-product"
                                 data-menu-item-id={row.menuItemId}
                                 data-name={row.name}
-                                data-price-cents={Math.round(row.price * 100)}
+                                data-price-cents={row.priceCents}
                                 data-stock={row.stock}
                                 data-sold={row.sold}
                                 disabled={row.remaining <= 0}
                             >
                                 <span class="pos-product-name">{row.name}</span>
-                                <span class="pos-product-price">${row.price.toFixed(2)}</span>
+                                <span class="pos-product-price">
+                                    {row.salePrice != null && row.salePrice < row.price ? (
+                                        <>
+                                            <span class="pos-price-was">${row.price.toFixed(2)}</span>
+                                            {' '}
+                                            ${(row.priceCents / 100).toFixed(2)}
+                                        </>
+                                    ) : (
+                                        `$${row.price.toFixed(2)}`
+                                    )}
+                                </span>
                                 <span class="pos-product-left"><span class="pos-product-remaining">{row.remaining}</span> left</span>
                             </button>
                         ))}
@@ -271,6 +297,13 @@ const remainingJson = JSON.stringify(remainingOrders);
 
                     <div class="pos-cart-empty" id="cart-empty">Tap items on the left to build a sale.</div>
                     <ul class="pos-cart-lines" id="cart-lines"></ul>
+
+                    <div class="pos-promo">
+                        <label class="pos-promo-label" for="pos-promo-input">Promo code</label>
+                        <div class="pos-promo-row">
+                            <input type="text" id="pos-promo-input" autocomplete="off" spellcheck="false" placeholder="Optional" />
+                        </div>
+                    </div>
 
                     <div class="pos-cart-foot">
                         <div class="pos-cart-total-row">
@@ -678,6 +711,7 @@ const remainingJson = JSON.stringify(remainingOrders);
         const cartLinesEl = document.getElementById('cart-lines') as HTMLElement;
         const cartEmptyEl = document.getElementById('cart-empty') as HTMLElement;
         const cartTotalEl = document.getElementById('cart-total') as HTMLElement;
+        const promoInput = document.getElementById('pos-promo-input') as HTMLInputElement;
         const chargeBtn = document.getElementById('charge-btn') as HTMLButtonElement;
         const clearBtn = document.getElementById('cart-clear') as HTMLButtonElement;
         const ipTotalSold = document.getElementById('ip-total-sold') as HTMLElement;
@@ -793,7 +827,7 @@ const remainingJson = JSON.stringify(remainingOrders);
             changeQty(id, stepBtn.classList.contains('pos-cart-plus') ? 1 : -1);
         });
 
-        clearBtn.addEventListener('click', () => { cart = []; renderCart(); });
+        clearBtn.addEventListener('click', () => { cart = []; promoInput.value = ''; renderCart(); });
 
         // ── Charge modal + QR polling ──────────────────────────
         const chargeModal = document.getElementById('charge-modal') as HTMLElement;
@@ -838,6 +872,7 @@ const remainingJson = JSON.stringify(remainingOrders);
                 if (p) p.sold = Math.min(p.stock, p.sold + c.quantity);
             }
             cart = [];
+            promoInput.value = '';
             renderCart();
             refreshTotals();
         }
@@ -880,7 +915,10 @@ const remainingJson = JSON.stringify(remainingOrders);
                 const res = await fetch(`/api/v1/drops/${dropId}/in-person/checkout`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ items: cart }),
+                    body: JSON.stringify({
+                        items: cart,
+                        couponCode: promoInput.value.trim() || undefined,
+                    }),
                 });
                 const data = await res.json();
                 if (!res.ok) {
@@ -892,7 +930,8 @@ const remainingJson = JSON.stringify(remainingOrders);
                 qrImg.hidden = false;
                 if (qrLoading) qrLoading.hidden = true;
                 chargeLink.href = data.url;
-                chargeAmount.textContent = money(data.subtotalCents ?? 0);
+                chargeAmount.textContent = money(data.totalCents ?? data.subtotalCents ?? 0);
+                if (data.couponCode) promoInput.value = data.couponCode;
                 activePaymentIntentId = data.paymentIntentId;
                 pollStatus();
             } catch {
@@ -1360,6 +1399,13 @@ const remainingJson = JSON.stringify(remainingOrders);
     .pos-product:disabled { opacity: 0.45; cursor: default; }
     .pos-product-name { font-weight: 600; font-size: 0.95rem; line-height: 1.2; }
     .pos-product-price { font-size: 1.05rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .pos-price-was {
+        font-weight: 500;
+        text-decoration: line-through;
+        color: var(--text-muted, #6b6257);
+        font-size: 0.85em;
+        margin-right: 0.25rem;
+    }
     .pos-product-left { font-size: 0.72rem; color: var(--text-muted); }
 
     /* Cart / ticket */
@@ -1407,6 +1453,29 @@ const remainingJson = JSON.stringify(remainingOrders);
         font-variant-numeric: tabular-nums;
     }
 
+    .pos-promo {
+        margin-top: 0.85rem;
+        padding-top: 0.85rem;
+        border-top: 1px solid #efe9e0;
+    }
+    .pos-promo-label {
+        display: block;
+        font-size: 0.72rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        margin-bottom: 0.4rem;
+    }
+    .pos-promo-row input {
+        width: 100%;
+        padding: 0.55rem 0.7rem;
+        border: 1px solid var(--accent);
+        border-radius: 8px;
+        font: inherit;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        box-sizing: border-box;
+    }
     .pos-cart-foot {
         margin-top: 1rem;
         padding-top: 1rem;

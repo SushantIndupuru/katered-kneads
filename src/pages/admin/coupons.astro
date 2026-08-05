@@ -1,35 +1,34 @@
 ---
 import '../../styles/global.css';
-import { getAllSmsSubscribers } from '../../lib/db';
-import { formatUsPhone } from '../../lib/phone';
-import type { SmsSubscriber } from '../../types/db-types.ts';
+import { listCoupons } from '../../lib/db';
+import type { Coupon } from '../../types/db-types.ts';
 
-// Route is protected by middleware (src/middleware.ts).
 const user = (Astro.locals as { user?: { email?: string } }).user;
 
-let subscribers: SmsSubscriber[] = [];
+let coupons: Coupon[] = [];
 let loadError = false;
 try {
-    subscribers = await getAllSmsSubscribers();
-} catch (e) {
+    coupons = await listCoupons();
+} catch {
     loadError = true;
 }
 
-const activeCount = subscribers.filter(s => !s.unsubscribedAt).length;
-const optedOutCount = subscribers.length - activeCount;
-
-function formatDate(iso: string): string {
-    const d = new Date(iso);
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+function formatValue(c: Coupon): string {
+    if (c.type === 'percent') return `${c.value}% off`;
+    return `$${(c.value / 100).toFixed(2)} off`;
 }
 
-const SOURCE_LABELS: Record<string, string> = {
-    footer: 'Footer',
-    order: 'Checkout',
-    admin: 'Added by admin',
-};
-function sourceLabel(source: string): string {
-    return SOURCE_LABELS[source] ?? (source ? source : 'Unknown');
+function formatDate(iso: string | null): string {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric',
+        hour: 'numeric', minute: '2-digit', timeZone: 'America/Los_Angeles',
+    });
+}
+
+function usageLabel(c: Coupon): string {
+    if (c.maxRedemptions == null) return `${c.redemptionCount} used`;
+    return `${c.redemptionCount} / ${c.maxRedemptions}`;
 }
 ---
 
@@ -41,11 +40,10 @@ function sourceLabel(source: string): string {
     <link rel="icon" href="/favicon.ico"/>
     <meta name="viewport" content="width=device-width, initial-scale=1"/>
     <meta name="robots" content="noindex, nofollow"/>
-    <title>SMS — Katered Kneads</title>
+    <title>Coupons — Katered Kneads</title>
 </head>
 <body class="admin-body">
 
-<!-- Sidebar -->
 <aside class="admin-sidebar">
     <div class="admin-sidebar-top">
         <a href="/" class="admin-logo">Katered Kneads</a>
@@ -91,7 +89,7 @@ function sourceLabel(source: string): string {
             </svg>
             Orders
         </a>
-        <a href="/admin/coupons" class="admin-nav-link">
+        <a href="/admin/coupons" class="admin-nav-link admin-nav-active">
             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
                  stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
@@ -99,7 +97,7 @@ function sourceLabel(source: string): string {
             </svg>
             Coupons
         </a>
-        <a href="/admin/sms" class="admin-nav-link admin-nav-active">
+        <a href="/admin/sms" class="admin-nav-link">
             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
                  stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
@@ -127,84 +125,93 @@ function sourceLabel(source: string): string {
     </div>
 </aside>
 
-<!-- Main content -->
 <main class="admin-main">
     <div class="admin-topbar">
         <div>
-            <h1 class="admin-page-title">SMS</h1>
-            <p class="admin-page-sub">Drop-alert subscribers</p>
+            <h1 class="admin-page-title">Coupons</h1>
+            <p class="admin-page-sub">Promo codes for online checkout and POS</p>
         </div>
     </div>
 
-    <div class="admin-stats">
-        <div class="admin-stat-card">
-            <span class="admin-stat-label">Active</span>
-            <span class="admin-stat-value" id="sms-stat-active">{activeCount}</span>
-        </div>
-        <div class="admin-stat-card">
-            <span class="admin-stat-label">Opted out</span>
-            <span class="admin-stat-value" id="sms-stat-optedout">{optedOutCount}</span>
-        </div>
-        <div class="admin-stat-card">
-            <span class="admin-stat-label">Total</span>
-            <span class="admin-stat-value" id="sms-stat-total">{subscribers.length}</span>
-        </div>
-    </div>
-
-    <!-- Add a number -->
     <div class="sms-add-card">
         <div class="sms-add-head">
-            <h2 class="sms-add-title">Add a number</h2>
-            <p class="sms-add-sub">Manually opt a phone number in to drop alerts. US numbers only.</p>
+            <h2 class="sms-add-title">Create a promo code</h2>
+            <p class="sms-add-sub">Percent or fixed-dollar off the post-sale subtotal. Codes are case-insensitive.</p>
         </div>
-        <form class="sms-add-form" id="sms-add-form" novalidate>
-            <div class="form-field sms-add-field">
-                <label for="sms-add-phone">Phone number</label>
-                <input
-                    type="tel"
-                    id="sms-add-phone"
-                    name="phone"
-                    autocomplete="off"
-                    inputmode="tel"
-                    placeholder="(555) 123-4567"
-                    required
-                />
+        <form class="coupon-add-form" id="coupon-add-form" novalidate>
+            <div class="coupon-add-grid">
+                <div class="form-field">
+                    <label for="coupon-code">Code *</label>
+                    <input id="coupon-code" name="code" type="text" required placeholder="e.g. BERKELEY10" autocomplete="off" spellcheck="false" />
+                </div>
+                <div class="form-field">
+                    <label for="coupon-type">Type *</label>
+                    <select id="coupon-type" name="type" required>
+                        <option value="percent">Percent off</option>
+                        <option value="fixed">Fixed $ off</option>
+                    </select>
+                </div>
+                <div class="form-field">
+                    <label for="coupon-value" id="coupon-value-label">Percent (1–100) *</label>
+                    <input id="coupon-value" name="value" type="number" min="1" step="1" required placeholder="10" />
+                </div>
+                <div class="form-field">
+                    <label for="coupon-max">Max uses</label>
+                    <input id="coupon-max" name="maxRedemptions" type="number" min="1" step="1" placeholder="Unlimited" />
+                </div>
+                <div class="form-field">
+                    <label for="coupon-min">Min subtotal ($)</label>
+                    <input id="coupon-min" name="minSubtotal" type="number" min="0" step="0.01" placeholder="None" />
+                </div>
+                <div class="form-field">
+                    <label for="coupon-expires">Expires</label>
+                    <input id="coupon-expires" name="expiresAt" type="datetime-local" />
+                </div>
             </div>
-            <button type="submit" class="btn-primary sms-add-btn">Add number</button>
+            <button type="submit" class="btn-primary sms-add-btn">Create code</button>
         </form>
     </div>
 
     <div class="admin-table-wrap">
         {loadError ? (
-            <div class="admin-empty">Couldn’t load subscribers. Refresh to try again.</div>
-        ) : subscribers.length === 0 ? (
-            <div class="admin-empty" id="sms-empty">No subscribers yet. Add a number above or share the signup form.</div>
+            <div class="admin-empty">Couldn’t load coupons. Refresh to try again.</div>
+        ) : coupons.length === 0 ? (
+            <div class="admin-empty" id="coupons-empty">No promo codes yet. Create one above.</div>
         ) : (
-            <table class="admin-table" id="sms-table">
+            <table class="admin-table" id="coupons-table">
                 <thead>
                 <tr>
-                    <th>Phone</th>
+                    <th>Code</th>
+                    <th>Discount</th>
+                    <th>Usage</th>
+                    <th>Min</th>
+                    <th>Expires</th>
                     <th>Status</th>
-                    <th>Source</th>
-                    <th>Joined</th>
-                    <th class="sms-actions-col">Actions</th>
+                    <th>Actions</th>
                 </tr>
                 </thead>
-                <tbody id="sms-tbody">
-                {subscribers.map(sub => (
-                    <tr data-sms-row data-id={sub.id}>
-                        <td class="admin-td-name">{formatUsPhone(sub.phone)}</td>
+                <tbody id="coupons-tbody">
+                {coupons.map(c => (
+                    <tr data-coupon-row data-id={c.id}>
+                        <td class="admin-td-name">{c.code}</td>
+                        <td>{formatValue(c)}</td>
+                        <td>{usageLabel(c)}</td>
+                        <td>{c.minSubtotalCents != null ? `$${(c.minSubtotalCents / 100).toFixed(2)}` : '—'}</td>
+                        <td class="admin-td-desc">{formatDate(c.expiresAt)}</td>
                         <td>
-                            {sub.unsubscribedAt ? (
-                                <span class="admin-stock-pill admin-stock-pill-soldout">Opted out</span>
-                            ) : (
+                            {c.active ? (
                                 <span class="admin-stock-pill admin-stock-pill-ok">Active</span>
+                            ) : (
+                                <span class="admin-stock-pill admin-stock-pill-soldout">Inactive</span>
                             )}
                         </td>
-                        <td>{sourceLabel(sub.source)}</td>
-                        <td>{formatDate(sub.createdAt)}</td>
-                        <td class="sms-actions-col">
-                            <button type="button" class="sms-remove-btn" data-remove aria-label="Remove number">Remove</button>
+                        <td class="admin-td-actions">
+                            <div class="admin-td-actions-inner">
+                                <button type="button" class="admin-btn-edit" data-toggle-active data-active={c.active ? '1' : '0'}>
+                                    {c.active ? 'Deactivate' : 'Activate'}
+                                </button>
+                                <button type="button" class="admin-btn-delete" data-delete>Delete</button>
+                            </div>
                         </td>
                     </tr>
                 ))}
@@ -217,158 +224,105 @@ function sourceLabel(source: string): string {
 <script>
     import { showToast, confirmDialog } from '../../lib/toast';
 
-    function formatUsPhone(e164: string): string {
-        const m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(e164 ?? '');
-        return m ? `(${m[1]}) ${m[2]}-${m[3]}` : e164;
-    }
-    function formatDate(iso: string): string {
-        const d = new Date(iso);
-        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-    }
+    const typeEl = document.getElementById('coupon-type') as HTMLSelectElement;
+    const valueLabel = document.getElementById('coupon-value-label') as HTMLLabelElement;
+    const valueEl = document.getElementById('coupon-value') as HTMLInputElement;
 
-    const tableWrap = document.querySelector('.admin-table-wrap');
-    const statActive = document.getElementById('sms-stat-active');
-    const statTotal = document.getElementById('sms-stat-total');
-
-    function bumpStat(el: HTMLElement | null, delta: number) {
-        if (!el) return;
-        el.textContent = String(Math.max(0, Number(el.textContent ?? '0') + delta));
-    }
-
-    // ── Add a number ───────────────────────────────────────────
-    const addForm = document.getElementById('sms-add-form') as HTMLFormElement | null;
-    if (addForm) {
-        const input = addForm.querySelector<HTMLInputElement>('input[name="phone"]');
-        const btn = addForm.querySelector<HTMLButtonElement>('button[type="submit"]');
-
-        addForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const phone = (input?.value ?? '').trim();
-            if (!phone) {
-                showToast('Enter a phone number.', 'error');
-                return;
-            }
-            const original = btn?.textContent ?? 'Add number';
-            if (btn) { btn.disabled = true; btn.textContent = 'Adding…'; }
-            try {
-                const res = await fetch('/api/v1/sms-subscribers', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ phone }),
-                });
-                const data = await res.json().catch(() => ({}));
-                if (!res.ok) throw new Error(data.error ?? 'Could not add number.');
-                addSubscriberRow(data.subscriber);
-                if (input) input.value = '';
-                showToast('Number added to the list.', 'success');
-            } catch (err) {
-                showToast(err instanceof Error ? err.message : 'Could not add number.', 'error');
-            } finally {
-                if (btn) { btn.disabled = false; btn.textContent = original; }
-            }
-        });
-    }
-
-    interface Subscriber {
-        id: string;
-        phone: string;
-        source: string;
-        unsubscribedAt: string | null;
-        createdAt: string;
-    }
-
-    const SOURCE_LABELS: Record<string, string> = {
-        footer: 'Footer', order: 'Checkout', admin: 'Added by admin',
-    };
-    function sourceLabel(source: string): string {
-        return SOURCE_LABELS[source] ?? (source ? source : 'Unknown');
-    }
-
-    // Inserts (or refreshes) a subscriber row, building the table if this is the
-    // first entry. A repeat add re-activates an existing row rather than dupes.
-    function addSubscriberRow(sub: Subscriber) {
-        if (!tableWrap) return;
-        let tbody = document.getElementById('sms-tbody');
-        if (!tbody) {
-            tableWrap.innerHTML = `
-                <table class="admin-table" id="sms-table">
-                    <thead>
-                    <tr>
-                        <th>Phone</th><th>Status</th><th>Source</th><th>Joined</th>
-                        <th class="sms-actions-col">Actions</th>
-                    </tr>
-                    </thead>
-                    <tbody id="sms-tbody"></tbody>
-                </table>`;
-            tbody = document.getElementById('sms-tbody');
-        }
-        if (!tbody) return;
-
-        const existing = tbody.querySelector<HTMLElement>(`[data-sms-row][data-id="${sub.id}"]`);
-        const wasActive = existing
-            ? !existing.querySelector('.admin-stock-pill-soldout')
-            : false;
-        if (existing) existing.remove();
-
-        const tr = document.createElement('tr');
-        tr.setAttribute('data-sms-row', '');
-        tr.dataset.id = sub.id;
-        tr.innerHTML = `
-            <td class="admin-td-name">${formatUsPhone(sub.phone)}</td>
-            <td><span class="admin-stock-pill admin-stock-pill-ok">Active</span></td>
-            <td>${sourceLabel(sub.source)}</td>
-            <td>${formatDate(sub.createdAt)}</td>
-            <td class="sms-actions-col">
-                <button type="button" class="sms-remove-btn" data-remove aria-label="Remove number">Remove</button>
-            </td>`;
-        tbody.prepend(tr);
-
-        // Only bump counts when this is genuinely new / reactivated.
-        if (!existing) {
-            bumpStat(statActive, 1);
-            bumpStat(statTotal, 1);
-        } else if (!wasActive) {
-            bumpStat(statActive, 1);
-            bumpStat(document.getElementById('sms-stat-optedout'), -1);
+    function syncValueField() {
+        if (typeEl.value === 'fixed') {
+            valueLabel.textContent = 'Amount ($) *';
+            valueEl.step = '0.01';
+            valueEl.min = '0.01';
+            valueEl.placeholder = '5.00';
+        } else {
+            valueLabel.textContent = 'Percent (1–100) *';
+            valueEl.step = '1';
+            valueEl.min = '1';
+            valueEl.placeholder = '10';
         }
     }
+    typeEl.addEventListener('change', syncValueField);
+    syncValueField();
 
-    // ── Remove a number ────────────────────────────────────────
-    tableWrap?.addEventListener('click', async (e) => {
+    const addForm = document.getElementById('coupon-add-form') as HTMLFormElement;
+    addForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const fd = new FormData(addForm);
+        const code = String(fd.get('code') ?? '').trim();
+        const type = String(fd.get('type') ?? 'percent');
+        const value = Number(fd.get('value'));
+        const maxRaw = String(fd.get('maxRedemptions') ?? '').trim();
+        const minRaw = String(fd.get('minSubtotal') ?? '').trim();
+        const expiresRaw = String(fd.get('expiresAt') ?? '').trim();
+
+        const payload: Record<string, unknown> = { code, type, value };
+        if (maxRaw) payload.maxRedemptions = Number(maxRaw);
+        if (minRaw) payload.minSubtotalCents = Math.round(Number(minRaw) * 100);
+        if (expiresRaw) payload.expiresAt = new Date(expiresRaw).toISOString();
+
+        const btn = addForm.querySelector('button[type="submit"]') as HTMLButtonElement;
+        const original = btn.textContent ?? 'Create code';
+        btn.disabled = true;
+        btn.textContent = 'Creating…';
+        try {
+            const res = await fetch('/api/v1/coupons', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error ?? 'Could not create coupon.');
+            location.reload();
+        } catch (err) {
+            showToast(err instanceof Error ? err.message : 'Could not create coupon.', 'error');
+            btn.disabled = false;
+            btn.textContent = original;
+        }
+    });
+
+    document.getElementById('coupons-tbody')?.addEventListener('click', async (e) => {
         const target = e.target as HTMLElement;
-        const btn = target.closest<HTMLButtonElement>('[data-remove]');
-        if (!btn) return;
-        const row = btn.closest<HTMLElement>('[data-sms-row]');
+        const row = target.closest('[data-coupon-row]') as HTMLElement | null;
         if (!row) return;
         const id = row.dataset.id;
         if (!id) return;
 
-        const phone = row.querySelector('.admin-td-name')?.textContent ?? 'this number';
-        const ok = await confirmDialog(`Remove ${phone} from the SMS list? This can't be undone.`, {
-            title: 'Remove number',
-            confirmLabel: 'Remove',
-            danger: true,
-        });
-        if (!ok) return;
-
-        btn.disabled = true;
-        try {
-            const res = await fetch(`/api/v1/sms-subscribers/${id}`, { method: 'DELETE' });
-            if (!res.ok) throw new Error('request failed');
-            const wasActive = !row.querySelector('.admin-stock-pill-soldout');
-            row.remove();
-            bumpStat(statTotal, -1);
-            if (wasActive) bumpStat(statActive, -1);
-            else bumpStat(document.getElementById('sms-stat-optedout'), -1);
-            showToast('Number removed.', 'success');
-
-            const tbody = document.getElementById('sms-tbody');
-            if (tbody && tbody.children.length === 0 && tableWrap) {
-                tableWrap.innerHTML = '<div class="admin-empty">No subscribers yet. Add a number above or share the signup form.</div>';
+        if (target.closest('[data-toggle-active]')) {
+            const btn = target.closest('[data-toggle-active]') as HTMLButtonElement;
+            const currentlyActive = btn.dataset.active === '1';
+            btn.disabled = true;
+            try {
+                const res = await fetch(`/api/v1/coupons/${id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ active: !currentlyActive }),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.error ?? 'Update failed');
+                location.reload();
+            } catch (err) {
+                showToast(err instanceof Error ? err.message : 'Update failed.', 'error');
+                btn.disabled = false;
             }
-        } catch {
-            btn.disabled = false;
-            showToast('Could not remove the number. Please try again.', 'error');
+            return;
+        }
+
+        if (target.closest('[data-delete]')) {
+            const ok = await confirmDialog(
+                'This permanently removes the code. Past orders keep their discount snapshot.',
+                { title: 'Delete promo code?', confirmLabel: 'Delete', danger: true },
+            );
+            if (!ok) return;
+            try {
+                const res = await fetch(`/api/v1/coupons/${id}`, { method: 'DELETE' });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.error ?? 'Delete failed');
+                row.remove();
+                showToast('Promo code deleted.', 'success');
+                if (!document.querySelector('[data-coupon-row]')) location.reload();
+            } catch (err) {
+                showToast(err instanceof Error ? err.message : 'Delete failed.', 'error');
+            }
         }
     });
 </script>
@@ -486,38 +440,7 @@ function sourceLabel(source: string): string {
         margin: 0.25rem 0 0;
     }
 
-    /* ── Stats ─────────────────────────────────────────────────── */
-    .admin-stats {
-        display: flex;
-        gap: 1rem;
-        margin-bottom: 2rem;
-        flex-wrap: wrap;
-    }
-    .admin-stat-card {
-        background: var(--bg);
-        border: 1px solid var(--accent);
-        padding: 1.25rem 1.75rem;
-        display: flex;
-        flex-direction: column;
-        gap: 0.3rem;
-        min-width: 120px;
-    }
-    .admin-stat-label {
-        font-size: 0.68rem;
-        font-weight: 600;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-        color: var(--text-muted);
-    }
-    .admin-stat-value {
-        font-family: 'Cormorant Garamond', serif;
-        font-size: 2rem;
-        font-weight: 500;
-        color: var(--text-primary);
-        line-height: 1;
-    }
-
-    /* ── Add a number ──────────────────────────────────────────── */
+    /* ── Create form card ──────────────────────────────────────── */
     .sms-add-card {
         background: var(--bg);
         border: 1px solid var(--accent);
@@ -538,14 +461,46 @@ function sourceLabel(source: string): string {
         color: var(--text-muted);
         margin: 0.2rem 0 0;
     }
-    .sms-add-form {
-        display: flex;
-        align-items: flex-end;
-        gap: 0.75rem;
-        max-width: 460px;
+    .sms-add-btn {
+        white-space: nowrap;
+        flex-shrink: 0;
+        align-self: flex-start;
+        cursor: pointer;
     }
-    .sms-add-field { flex: 1; }
-    .sms-add-btn { white-space: nowrap; flex-shrink: 0; }
+    .coupon-add-form { display: flex; flex-direction: column; gap: 1rem; }
+    .coupon-add-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        gap: 0.85rem 1rem;
+    }
+    .form-field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+    .form-field label {
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+    }
+    .form-field input,
+    .form-field select {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 0.55rem 0.7rem;
+        border: 1px solid var(--accent);
+        border-radius: 8px;
+        background: #fff;
+        font: inherit;
+        color: var(--text-primary);
+    }
+    .form-field input:focus,
+    .form-field select:focus {
+        outline: none;
+        border-color: var(--text-primary);
+    }
 
     /* ── Table ─────────────────────────────────────────────────── */
     .admin-table-wrap {
@@ -578,6 +533,13 @@ function sourceLabel(source: string): string {
     .admin-table tr:last-child td { border-bottom: none; }
     .admin-table tr:hover td { background: #FAF7F2; }
     .admin-td-name { font-weight: 500; white-space: nowrap; }
+    .admin-td-desc { color: var(--text-muted); font-size: 0.85rem; }
+    .admin-td-actions { white-space: nowrap; }
+    .admin-td-actions-inner {
+        display: flex;
+        gap: 0.4rem;
+        flex-wrap: wrap;
+    }
 
     .admin-empty {
         padding: 3rem;
@@ -599,20 +561,27 @@ function sourceLabel(source: string): string {
     .admin-stock-pill-ok { background: #EEF6EE; border-color: #9CC79C; color: #2F6A2F; }
     .admin-stock-pill-soldout { background: #FDF0EE; border-color: #D9836A; color: #9A3A1A; }
 
-    .sms-actions-col { text-align: right; width: 1%; white-space: nowrap; }
-    .sms-remove-btn {
+    .admin-btn-edit,
+    .admin-btn-delete {
         cursor: pointer;
         border: 1px solid var(--accent);
         background: #fff;
-        color: #9A3A1A;
         border-radius: 8px;
         padding: 0.4rem 0.85rem;
         font-size: 0.78rem;
         font-weight: 600;
         transition: background 0.15s ease, border-color 0.15s ease;
     }
-    .sms-remove-btn:hover:not(:disabled) { background: #FDF0EE; border-color: #D9836A; }
-    .sms-remove-btn:disabled { opacity: 0.5; cursor: default; }
+    .admin-btn-edit {
+        color: var(--text-primary);
+    }
+    .admin-btn-edit:hover:not(:disabled) { background: #EDE8E1; }
+    .admin-btn-delete {
+        color: #9A3A1A;
+    }
+    .admin-btn-delete:hover:not(:disabled) { background: #FDF0EE; border-color: #D9836A; }
+    .admin-btn-edit:disabled,
+    .admin-btn-delete:disabled { opacity: 0.5; cursor: default; }
 
     /* ── Responsive ────────────────────────────────────────────── */
     @media (max-width: 768px) {
@@ -653,9 +622,9 @@ function sourceLabel(source: string): string {
         .admin-logout-btn { width: auto; white-space: nowrap; }
 
         .admin-main { margin-left: 0; padding: 1.5rem 1rem; }
-        .sms-add-form { flex-direction: column; align-items: stretch; }
         .sms-add-btn { width: 100%; text-align: center; }
     }
 </style>
+
 </body>
 </html>

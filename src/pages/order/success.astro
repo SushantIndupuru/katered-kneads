@@ -96,21 +96,29 @@ const pickupTimeLabel = order?.pickupTime
                 </li>
               ))}
             </ul>
-            {order.tipCents > 0 && (
+            {order.tipCents > 0 || order.discountCents > 0 ? (
               <>
                 <div class="success-subtotal">
                   <span>Subtotal</span>
                   <span>{money(order.subtotalCents)}</span>
                 </div>
-                <div class="success-subtotal">
-                  <span>Tip</span>
-                  <span>{money(order.tipCents)}</span>
-                </div>
+                {order.discountCents > 0 && (
+                  <div class="success-subtotal">
+                    <span>{order.couponCode ? `Discount (${order.couponCode})` : 'Discount'}</span>
+                    <span>−{money(order.discountCents)}</span>
+                  </div>
+                )}
+                {order.tipCents > 0 && (
+                  <div class="success-subtotal">
+                    <span>Tip</span>
+                    <span>{money(order.tipCents)}</span>
+                  </div>
+                )}
               </>
-            )}
+            ) : null}
             <div class="success-total">
               <span>Total</span>
-              <span>{money(order.subtotalCents + order.tipCents)}</span>
+              <span>{money(order.subtotalCents - order.discountCents + order.tipCents)}</span>
             </div>
           </div>
 

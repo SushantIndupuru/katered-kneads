@@ -1,7 +1,8 @@
 import type { APIRoute } from 'astro';
 import type Stripe from 'stripe';
 import { json, getErrorMessage } from '../../../lib/http';
-import { getCurrentDrop, getCurrentDropItems, getPickupSpots } from '../../../lib/db';
+import { getCurrentDrop, getCurrentDropItems, getPickupSpots, validateCouponForCheckout } from '../../../lib/db';
+import { unitPriceCents } from '../../../lib/pricing';
 import { getStripe } from '../../../lib/stripe';
 
 interface CartLine {
@@ -14,11 +15,18 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const POST: APIRoute = async ({ request, url }) => {
     try {
         const body = await request.json();
-        const { items, customer, tipCents: rawTipCents, pickupSpotId: rawPickupSpotId } = body ?? {};
+        const {
+            items,
+            customer,
+            tipCents: rawTipCents,
+            pickupSpotId: rawPickupSpotId,
+            couponCode: rawCouponCode,
+        } = body ?? {};
         const pickupSpotId = typeof rawPickupSpotId === 'string' ? rawPickupSpotId : '';
         const name = typeof customer?.name === 'string' ? customer.name.trim() : '';
         const email = typeof customer?.email === 'string' ? customer.email.trim() : '';
         const phone = typeof customer?.phone === 'string' ? customer.phone.trim() : '';
+        const couponCodeRaw = typeof rawCouponCode === 'string' ? rawCouponCode : '';
 
         if (!name) return json({ error: 'Name is required' }, 400);
         if (!EMAIL_RE.test(email)) return json({ error: 'A valid email is required' }, 400);
@@ -77,38 +85,89 @@ export const POST: APIRoute = async ({ request, url }) => {
                 return json({ error: `Only ${remaining} of ${di.menuItem.name} left` }, 409);
             }
 
-            const unitPriceCents = Math.round(di.menuItem.price * 100);
-            if (unitPriceCents <= 0) {
+            const unit = unitPriceCents(di.menuItem);
+            if (unit <= 0) {
                 return json({ error: `${di.menuItem.name} is not available for purchase` }, 409);
             }
-            subtotalCents += unitPriceCents * quantity;
+            subtotalCents += unit * quantity;
             orderLines.push({
                 menuItemId,
                 nameSnapshot: di.menuItem.name,
-                unitPriceCents,
+                unitPriceCents: unit,
                 quantity,
             });
         }
 
         if (subtotalCents <= 0) return json({ error: 'Order total must be greater than zero' }, 400);
 
-        const maxTipCents = Math.max(subtotalCents, 5000);
+        let discountCents = 0;
+        let couponCode: string | null = null;
+        let couponId: string | null = null;
+        let couponType: string | null = null;
+        let couponValue: number | null = null;
+        if (couponCodeRaw.trim()) {
+            const result = await validateCouponForCheckout(couponCodeRaw, subtotalCents);
+            if (!result.ok) return json({ error: result.message }, 400);
+            discountCents = result.discountCents;
+            couponCode = result.coupon.code;
+            couponId = result.coupon.id;
+            couponType = result.coupon.type;
+            couponValue = result.coupon.value;
+        }
+
+        const itemsAfterDiscount = Math.max(subtotalCents - discountCents, 0);
+        const maxTipCents = Math.max(itemsAfterDiscount, 5000);
         if (tipCents > maxTipCents) return json({ error: 'Tip amount is too large' }, 400);
+
+        const totalCents = itemsAfterDiscount + tipCents;
+        if (totalCents <= 0) {
+            return json({ error: 'Order total must be greater than zero' }, 400);
+        }
 
         const cart = orderLines.map(l => `${l.menuItemId}:${l.quantity}`).join(',');
 
         const stripe = getStripe();
-        const metadata: Record<string, string> = { dropId: drop.id, name, phone, cart, tip: String(tipCents) };
+        const metadata: Record<string, string> = {
+            dropId: drop.id,
+            name,
+            phone,
+            cart,
+            tip: String(tipCents),
+            discount: String(discountCents),
+            subtotal: String(subtotalCents),
+        };
         if (pickupSpotId) metadata.pickupSpotId = pickupSpotId;
+        if (couponCode) metadata.coupon = couponCode;
+        if (couponId) metadata.couponId = couponId;
 
-        const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = orderLines.map(l => ({
-            price_data: {
-                currency: 'usd',
-                product_data: { name: l.nameSnapshot },
-                unit_amount: l.unitPriceCents,
-            },
-            quantity: l.quantity,
-        }));
+        // Stripe Checkout coupons would also discount a tip line item. Bake the
+        // promo into the charged product total instead: either per-item lines
+        // (no discount) or one consolidated line for the post-discount amount.
+        const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [];
+        if (discountCents > 0) {
+            const label = couponCode
+                ? `Order (${couponCode} applied)`
+                : 'Order';
+            lineItems.push({
+                price_data: {
+                    currency: 'usd',
+                    product_data: { name: label },
+                    unit_amount: itemsAfterDiscount,
+                },
+                quantity: 1,
+            });
+        } else {
+            for (const l of orderLines) {
+                lineItems.push({
+                    price_data: {
+                        currency: 'usd',
+                        product_data: { name: l.nameSnapshot },
+                        unit_amount: l.unitPriceCents,
+                    },
+                    quantity: l.quantity,
+                });
+            }
+        }
         if (tipCents > 0) {
             lineItems.push({
                 price_data: {
@@ -138,8 +197,12 @@ export const POST: APIRoute = async ({ request, url }) => {
         return json({
             clientSecret: session.client_secret,
             subtotalCents,
+            discountCents,
+            couponCode,
+            couponType,
+            couponValue,
             tipCents,
-            totalCents: subtotalCents + tipCents,
+            totalCents,
         });
     } catch (err) {
         console.error('Checkout error:', getErrorMessage(err));

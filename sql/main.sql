@@ -12,8 +12,17 @@ CREATE TABLE IF NOT EXISTS menu_items
     id          UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
     name        TEXT             NOT NULL,
     description TEXT             NOT NULL DEFAULT '',
-    price       NUMERIC(10, 2)   NOT NULL DEFAULT 0.00
+    price       NUMERIC(10, 2)   NOT NULL DEFAULT 0.00,
+    -- Optional sale price. When set (and lower than price), checkout charges
+    -- this instead of the list price. NULL = no sale.
+    sale_price  NUMERIC(10, 2),
+    CHECK (sale_price IS NULL OR (sale_price > 0 AND sale_price < price))
 );
+
+-- Migration for existing databases: add optional sale price.
+-- ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS sale_price NUMERIC(10, 2);
+-- ALTER TABLE menu_items ADD CONSTRAINT menu_items_sale_price_check
+--     CHECK (sale_price IS NULL OR (sale_price > 0 AND sale_price < price));
 
 -- The active/focused drop is not stored as a pointer; it is derived from the
 -- columns below. Active drop = the single row with archived_at IS NULL; it
@@ -144,8 +153,13 @@ CREATE TABLE IF NOT EXISTS orders
     -- confirmed (paid) order, so it is safe to show the customer their address.
     pickup_address           TEXT                  NOT NULL DEFAULT '',
     subtotal_cents           INT                   NOT NULL CHECK (subtotal_cents >= 0),
+    -- Coupon discount applied at checkout (0 if none). Charged amount is
+    -- subtotal_cents - discount_cents + tip_cents.
+    discount_cents           INT                   NOT NULL DEFAULT 0 CHECK (discount_cents >= 0),
+    -- Snapshot of the promo code used (uppercase), if any.
+    coupon_code              TEXT,
     -- Optional gratuity added by the customer at checkout. Stored separately from
-    -- subtotal_cents; the amount charged is subtotal_cents + tip_cents.
+    -- subtotal_cents; the amount charged is subtotal_cents - discount_cents + tip_cents.
     tip_cents                INT                   NOT NULL DEFAULT 0 CHECK (tip_cents >= 0),
     -- Short code the customer brings to pickup; set once payment is confirmed.
     pickup_code                 TEXT UNIQUE,
@@ -167,6 +181,10 @@ CREATE TABLE IF NOT EXISTS orders
 -- Migration: add optional customer gratuity.
 -- ALTER TABLE orders ADD COLUMN IF NOT EXISTS tip_cents INT NOT NULL DEFAULT 0;
 -- ALTER TABLE orders ADD CONSTRAINT orders_tip_cents_check CHECK (tip_cents >= 0);
+-- Migration: add coupon discount fields.
+-- ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount_cents INT NOT NULL DEFAULT 0;
+-- ALTER TABLE orders ADD CONSTRAINT orders_discount_cents_check CHECK (discount_cents >= 0);
+-- ALTER TABLE orders ADD COLUMN IF NOT EXISTS coupon_code TEXT;
 
 CREATE TABLE IF NOT EXISTS order_items
 (
@@ -204,8 +222,13 @@ CREATE TABLE IF NOT EXISTS in_person_sales
     id                       UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
     drop_id                  UUID,
     subtotal_cents           INT              NOT NULL CHECK (subtotal_cents >= 0),
+    -- Coupon discount applied at checkout (0 if none). Charged amount is
+    -- subtotal_cents - discount_cents + tip_cents.
+    discount_cents           INT              NOT NULL DEFAULT 0 CHECK (discount_cents >= 0),
+    -- Snapshot of the promo code used (uppercase), if any.
+    coupon_code              TEXT,
     -- Optional gratuity the customer added on the pay page; the amount charged is
-    -- subtotal_cents + tip_cents.
+    -- subtotal_cents - discount_cents + tip_cents.
     tip_cents                INT              NOT NULL DEFAULT 0 CHECK (tip_cents >= 0),
     stripe_payment_intent_id TEXT UNIQUE      NOT NULL,
     -- Snapshot of the sold cart as a JSON array of
@@ -218,6 +241,41 @@ CREATE TABLE IF NOT EXISTS in_person_sales
 -- Migration for existing databases: add the in-person gratuity column.
 -- ALTER TABLE in_person_sales ADD COLUMN IF NOT EXISTS tip_cents INT NOT NULL DEFAULT 0;
 -- ALTER TABLE in_person_sales ADD CONSTRAINT in_person_sales_tip_cents_check CHECK (tip_cents >= 0);
+-- Migration: add coupon discount fields.
+-- ALTER TABLE in_person_sales ADD COLUMN IF NOT EXISTS discount_cents INT NOT NULL DEFAULT 0;
+-- ALTER TABLE in_person_sales ADD CONSTRAINT in_person_sales_discount_cents_check CHECK (discount_cents >= 0);
+-- ALTER TABLE in_person_sales ADD COLUMN IF NOT EXISTS coupon_code TEXT;
+
+-- Promo codes managed in admin. Validated server-side at checkout; redemption
+-- count is incremented only when payment is confirmed (not at session create).
+CREATE TABLE IF NOT EXISTS coupons
+(
+    id                 UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
+    -- Stored uppercase; lookups normalize input to uppercase.
+    code               TEXT             NOT NULL,
+    -- percent = value is 1–100; fixed = value is cents off.
+    type               TEXT             NOT NULL CHECK (type IN ('percent', 'fixed')),
+    value              INT              NOT NULL CHECK (value > 0),
+    active             BOOLEAN          NOT NULL DEFAULT true,
+    expires_at         TIMESTAMPTZ,
+    max_redemptions    INT              CHECK (max_redemptions IS NULL OR max_redemptions > 0),
+    redemption_count   INT              NOT NULL DEFAULT 0 CHECK (redemption_count >= 0),
+    -- Optional minimum post-sale subtotal (cents) required to use the code.
+    min_subtotal_cents INT              CHECK (min_subtotal_cents IS NULL OR min_subtotal_cents >= 0),
+    created_at         TIMESTAMPTZ      NOT NULL DEFAULT now(),
+    UNIQUE (code),
+    CHECK (
+        (type = 'percent' AND value <= 100)
+        OR (type = 'fixed')
+    )
+);
+
+CREATE INDEX IF NOT EXISTS coupons_code_idx ON coupons (code);
+
+-- Migration for existing databases: create the coupons table.
+-- CREATE TABLE IF NOT EXISTS coupons ( ... );  -- see CREATE above
+-- ALTER TABLE coupons ENABLE ROW LEVEL SECURITY;
+-- REVOKE ALL ON coupons FROM anon, authenticated;
 
 -- Customers who opted in to SMS drop updates (announce / open / close / pickup).
 -- The actual sending is wired up later; this table just captures consented
@@ -257,12 +315,36 @@ ALTER TABLE orders          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE order_items     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE in_person_sales ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sms_subscribers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE coupons         ENABLE ROW LEVEL SECURITY;
 
 -- Belt-and-suspenders: explicitly revoke all table privileges from the public
 -- API roles. RLS already blocks them, but revoking grants means even a future
 -- accidental policy can't hand them access unless privileges are re-granted too.
-REVOKE ALL ON menu_items, drops, pickup_spots, drop_items, orders, order_items, in_person_sales, sms_subscribers
+REVOKE ALL ON menu_items, drops, pickup_spots, drop_items, orders, order_items, in_person_sales, sms_subscribers, coupons
     FROM anon, authenticated;
+
+-- Atomically bump a coupon's redemption_count when payment is confirmed.
+-- Fails if the coupon is inactive, expired, or at max redemptions so callers
+-- can log and reconcile (payment already captured).
+CREATE OR REPLACE FUNCTION increment_coupon_redemption(p_coupon_id UUID)
+    RETURNS VOID AS
+$$
+DECLARE
+    v_updated INT;
+BEGIN
+    UPDATE coupons
+    SET redemption_count = redemption_count + 1
+    WHERE id = p_coupon_id
+      AND active = true
+      AND (expires_at IS NULL OR expires_at > now())
+      AND (max_redemptions IS NULL OR redemption_count < max_redemptions);
+
+    GET DIAGNOSTICS v_updated = ROW_COUNT;
+    IF v_updated = 0 THEN
+        RAISE EXCEPTION 'Coupon % cannot be redeemed (inactive, expired, or at max uses)', p_coupon_id;
+    END IF;
+END;
+$$ LANGUAGE plpgsql;
 
 -- Atomically record an in-person sale by incrementing in_person_consumed for
 -- each line. `items` is a JSON array of { "menuItemId": uuid, "quantity": int }.
@@ -384,7 +466,8 @@ REVOKE EXECUTE ON FUNCTION
     increment_in_person_consumed(UUID, JSONB),
     decrement_drop_stock(UUID, JSONB),
     restock_drop_items(UUID, JSONB),
-    decrement_in_person_consumed(UUID, JSONB)
+    decrement_in_person_consumed(UUID, JSONB),
+    increment_coupon_redemption(UUID)
     FROM anon, authenticated;
 
 -- ── Migration runbook: multiple pickup spots ────────────────────────────────

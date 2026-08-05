@@ -3,6 +3,9 @@ export interface MenuItem {
   name: string;
   description: string;
   price: number;
+  // Optional sale price. When set and lower than price, checkout charges this.
+  // Null = no sale.
+  salePrice: number | null;
 }
 
 export interface Drop {
@@ -94,15 +97,37 @@ export interface Order {
   pickupLocation: string;
   // Snapshot of the exact pickup address — safe to show since the order is paid.
   pickupAddress: string;
+  // Sum of line totals at the charged unit price (sale price if active).
   subtotalCents: number;
-  // Optional gratuity added at checkout. The amount charged is
-  // subtotalCents + tipCents.
+  // Coupon discount applied at checkout (0 if none). Charged amount is
+  // subtotalCents - discountCents + tipCents.
+  discountCents: number;
+  // Snapshot of the promo code used (uppercase), if any.
+  couponCode: string | null;
+  // Optional gratuity added at checkout.
   tipCents: number;
   pickupCode: string | null;
   stripeCheckoutSessionId: string | null;
   stripePaymentIntentId: string | null;
   createdAt: string;
   items: OrderItem[];
+}
+
+export type CouponType = 'percent' | 'fixed';
+
+export interface Coupon {
+  id: string;
+  // Stored uppercase.
+  code: string;
+  type: CouponType;
+  // percent: 1–100; fixed: cents off.
+  value: number;
+  active: boolean;
+  expiresAt: string | null;
+  maxRedemptions: number | null;
+  redemptionCount: number;
+  minSubtotalCents: number | null;
+  createdAt: string;
 }
 
 // A customer who opted in to SMS drop updates. The sending side is added
@@ -125,8 +150,10 @@ export interface InPersonSale {
   id: string;
   dropId: string | null;
   subtotalCents: number;
+  discountCents: number;
+  couponCode: string | null;
   // Optional gratuity added by the customer on the pay page. The amount charged
-  // is subtotalCents + tipCents.
+  // is subtotalCents - discountCents + tipCents.
   tipCents: number;
   stripePaymentIntentId: string;
   createdAt: string;

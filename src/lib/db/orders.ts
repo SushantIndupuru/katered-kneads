@@ -2,7 +2,7 @@ import { createServerClient } from '../supabase.ts';
 import type { Order, OrderItem, OrderStatus } from '../../types/db-types.ts';
 
 const ORDER_COLUMNS =
-    'id, drop_id, status, customer_name, customer_email, customer_phone, pickup_time, pickup_time_end, pickup_location, pickup_address, subtotal_cents, tip_cents, pickup_code, stripe_checkout_session_id, stripe_payment_intent_id, created_at';
+    'id, drop_id, status, customer_name, customer_email, customer_phone, pickup_time, pickup_time_end, pickup_location, pickup_address, subtotal_cents, discount_cents, coupon_code, tip_cents, pickup_code, stripe_checkout_session_id, stripe_payment_intent_id, created_at';
 
 interface OrderRow {
     id: string;
@@ -16,6 +16,8 @@ interface OrderRow {
     pickup_location: string;
     pickup_address: string;
     subtotal_cents: number;
+    discount_cents: number;
+    coupon_code: string | null;
     tip_cents: number;
     pickup_code: string | null;
     stripe_checkout_session_id: string | null;
@@ -53,6 +55,8 @@ function mapOrder(row: OrderRow, items: OrderItemRow[]): Order {
         pickupLocation: row.pickup_location ?? '',
         pickupAddress: row.pickup_address ?? '',
         subtotalCents: row.subtotal_cents,
+        discountCents: row.discount_cents ?? 0,
+        couponCode: row.coupon_code ?? null,
         tipCents: row.tip_cents ?? 0,
         pickupCode: row.pickup_code,
         stripeCheckoutSessionId: row.stripe_checkout_session_id,
@@ -90,6 +94,8 @@ export interface CreateOrderInput {
     pickupLocation: string;
     pickupAddress: string;
     subtotalCents: number;
+    discountCents: number;
+    couponCode: string | null;
     tipCents: number;
     stripeCheckoutSessionId: string;
     stripePaymentIntentId: string | null;
@@ -117,6 +123,8 @@ export async function createPaidOrder(input: CreateOrderInput): Promise<Order | 
             pickup_location: input.pickupLocation,
             pickup_address: input.pickupAddress,
             subtotal_cents: input.subtotalCents,
+            discount_cents: input.discountCents,
+            coupon_code: input.couponCode,
             tip_cents: input.tipCents,
             pickup_code: generatePickupCode(),
             stripe_checkout_session_id: input.stripeCheckoutSessionId,

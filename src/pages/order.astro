@@ -2,6 +2,7 @@
 import Layout from '../layouts/Layout.astro';
 import SmsSignup from '../components/SmsSignup.astro';
 import { getCurrentDrop, getDropItems, getPickupSpots } from '../lib/db';
+import { unitPriceCents } from '../lib/pricing';
 
 const currentDrop = await getCurrentDrop();
 const dropItems = currentDrop ? await getDropItems(currentDrop.id) : [];
@@ -266,11 +267,21 @@ function formatPrice(n: number): string {
                       class="product-card-actions"
                       data-item-id={item.menuItem.id}
                       data-item-name={item.menuItem.name}
-                      data-item-price-cents={Math.round(item.menuItem.price * 100)}
+                      data-item-price-cents={unitPriceCents(item.menuItem)}
                       data-item-remaining={remaining}
                     >
                       <div class="product-card-buy">
-                        <span class="product-price">{formatPrice(item.menuItem.price)}</span>
+                        <span class="product-price">
+                          {item.menuItem.salePrice != null && item.menuItem.salePrice < item.menuItem.price ? (
+                            <>
+                              <span class="product-price-was">{formatPrice(item.menuItem.price)}</span>
+                              {' '}
+                              <span class="product-price-sale">{formatPrice(item.menuItem.salePrice)}</span>
+                            </>
+                          ) : (
+                            formatPrice(item.menuItem.price)
+                          )}
+                        </span>
                         <div class="qty-stepper">
                           <button type="button" class="qty-btn qty-minus" aria-label={`Decrease quantity of ${item.menuItem.name}`} disabled={soldOut}>−</button>
                           <span class="qty-value" aria-live="polite">0</span>
@@ -564,6 +575,16 @@ function formatPrice(n: number): string {
     font-size: 1.75rem;
     line-height: 1;
     color: var(--text-primary);
+  }
+  .product-price-was {
+    font-size: 0.85em;
+    font-weight: 400;
+    text-decoration: line-through;
+    color: var(--text-muted, #6b6257);
+    margin-right: 0.35rem;
+  }
+  .product-price-sale {
+    color: #9a3412;
   }
   .add-to-cart-btn { width: 100%; }
   .add-to-cart-btn:disabled { opacity: 0.55; cursor: not-allowed; }

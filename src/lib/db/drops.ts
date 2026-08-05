@@ -1,5 +1,6 @@
 import { createServerClient } from '../supabase.ts';
-import type { Drop, MenuItem, DropItemWithMenu, InPersonSale, PickupSpot } from '../../types/db-types.ts';
+import type { Drop, DropItemWithMenu, InPersonSale, PickupSpot } from '../../types/db-types.ts';
+import { mapMenuItem } from './menu-items.ts';
 
 const DROP_COLUMNS = 'id, name, open_time, close_time, pickup_time, location_name, location_address, announced_at, archived_at, low_stock_threshold';
 
@@ -327,13 +328,13 @@ export async function getDropItems(dropId: string): Promise<DropItemWithMenu[]> 
     const ids = itemRows.map(r => r.menu_item_id);
     const { data: menuItems, error: miError } = await supabase
         .from('menu_items')
-        .select('id, name, description, price')
+        .select('id, name, description, price, sale_price')
         .in('id', ids);
     if (miError) throw miError;
 
     const map = new Map(
-        ((menuItems as { id: string; name: string; description: string; price: number | string | null }[]) ?? [])
-            .map(m => [m.id, { id: m.id, name: m.name, description: m.description, price: Number(m.price ?? 0) } satisfies MenuItem]),
+        ((menuItems as Parameters<typeof mapMenuItem>[0][]) ?? [])
+            .map(m => [m.id, mapMenuItem(m)]),
     );
 
     return itemRows
@@ -546,6 +547,8 @@ export interface InPersonSaleLine {
 export async function recordInPersonSale(input: {
     dropId: string | null;
     subtotalCents: number;
+    discountCents: number;
+    couponCode: string | null;
     tipCents: number;
     stripePaymentIntentId: string;
     items: InPersonSaleLine[];
@@ -554,6 +557,8 @@ export async function recordInPersonSale(input: {
     const { error } = await supabase.from('in_person_sales').insert({
         drop_id: input.dropId,
         subtotal_cents: input.subtotalCents,
+        discount_cents: input.discountCents,
+        coupon_code: input.couponCode,
         tip_cents: input.tipCents,
         stripe_payment_intent_id: input.stripePaymentIntentId,
         items: input.items,
@@ -570,13 +575,16 @@ interface InPersonSaleRow {
     id: string;
     drop_id: string | null;
     subtotal_cents: number;
+    discount_cents: number;
+    coupon_code: string | null;
     tip_cents: number;
     stripe_payment_intent_id: string;
     items: unknown;
     created_at: string;
 }
 
-const IN_PERSON_SALE_COLUMNS = 'id, drop_id, subtotal_cents, tip_cents, stripe_payment_intent_id, items, created_at';
+const IN_PERSON_SALE_COLUMNS =
+    'id, drop_id, subtotal_cents, discount_cents, coupon_code, tip_cents, stripe_payment_intent_id, items, created_at';
 
 function mapInPersonSale(row: InPersonSaleRow): InPersonSale {
     const rawItems = Array.isArray(row.items) ? (row.items as Record<string, unknown>[]) : [];
@@ -584,6 +592,8 @@ function mapInPersonSale(row: InPersonSaleRow): InPersonSale {
         id: row.id,
         dropId: row.drop_id,
         subtotalCents: row.subtotal_cents,
+        discountCents: row.discount_cents ?? 0,
+        couponCode: row.coupon_code ?? null,
         tipCents: row.tip_cents ?? 0,
         stripePaymentIntentId: row.stripe_payment_intent_id,
         createdAt: row.created_at,

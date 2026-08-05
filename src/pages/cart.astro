@@ -1,6 +1,7 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import { getCurrentDrop, getDropItems, getPickupSpots } from '../lib/db';
+import { unitPriceCents } from '../lib/pricing';
 
 const currentDrop = await getCurrentDrop();
 const dropItems = currentDrop ? await getDropItems(currentDrop.id) : [];
@@ -13,12 +14,13 @@ const ORDERS_CURRENTLY_OPEN = openMs !== null && closeMs !== null && now >= open
 
 // Authoritative map the client reconciles its localStorage cart against:
 // id -> { name, priceCents, remaining }. Only populated while orders are open.
+// priceCents already reflects any active sale price.
 const availableItems: Record<string, { name: string; priceCents: number; remaining: number }> = {};
 if (ORDERS_CURRENTLY_OPEN) {
   for (const item of dropItems) {
     availableItems[item.menuItem.id] = {
       name: item.menuItem.name,
-      priceCents: Math.round(item.menuItem.price * 100),
+      priceCents: unitPriceCents(item.menuItem),
       remaining: item.initialStock - item.consumedStock,
     };
   }
@@ -77,6 +79,20 @@ function spotWindowLabel(startIso: string, endIso: string): string {
               <div class="cart-summary-row">
                 <span>Subtotal</span>
                 <span id="cart-subtotal">$0.00</span>
+              </div>
+
+              <div class="promo-section" id="promo-section">
+                <label class="promo-label" for="promo-input">Promo code</label>
+                <div class="promo-row">
+                  <input type="text" id="promo-input" autocomplete="off" spellcheck="false" placeholder="Enter code" />
+                  <button type="button" class="promo-apply-btn" id="promo-apply-btn">Apply</button>
+                </div>
+                <p class="promo-msg" id="promo-msg" hidden></p>
+              </div>
+
+              <div class="cart-summary-row discount-row" id="discount-row" hidden>
+                <span id="discount-label">Discount</span>
+                <span id="cart-discount">−$0.00</span>
               </div>
 
               <div class="tip-section" id="tip-section">
@@ -219,6 +235,12 @@ function spotWindowLabel(startIso: string, endIso: string): string {
 
       const totalEl = document.getElementById('cart-total')!;
       const subtotalEl = document.getElementById('cart-subtotal')!;
+      const discountRowEl = document.getElementById('discount-row')!;
+      const discountLabelEl = document.getElementById('discount-label')!;
+      const discountAmountEl = document.getElementById('cart-discount')!;
+      const promoInput = document.getElementById('promo-input') as HTMLInputElement;
+      const promoApplyBtn = document.getElementById('promo-apply-btn') as HTMLButtonElement;
+      const promoMsg = document.getElementById('promo-msg')!;
       const tipRowEl = document.getElementById('tip-row')!;
       const tipAmountEl = document.getElementById('cart-tip')!;
       const tipOptions = document.getElementById('tip-options')!;
@@ -239,10 +261,52 @@ function spotWindowLabel(startIso: string, endIso: string): string {
 
       function money(cents: number) { return '$' + (cents / 100).toFixed(2); }
 
+      // ── Promo state (client estimate; server re-validates at checkout) ──
+      let appliedCouponCode = '';
+      // Tentative discount shown before checkout confirms; cleared when cart changes.
+      let pendingDiscountCents = 0;
+      // Percent value when type is percent (null for fixed / none).
+      let pendingDiscountPercent: number | null = null;
+      let lastSubtotalForPromo = -1;
+
+      function clearPromoEstimate() {
+        pendingDiscountCents = 0;
+        pendingDiscountPercent = null;
+        lastSubtotalForPromo = -1;
+        promoMsg.hidden = true;
+        promoMsg.textContent = '';
+        promoMsg.classList.remove('is-error', 'is-ok');
+      }
+
+      function applyPromoFromResponse(data: {
+        couponCode?: string;
+        discountCents?: number;
+        type?: string;
+        value?: number;
+      }, fallbackCode: string) {
+        appliedCouponCode = data.couponCode ?? fallbackCode;
+        pendingDiscountCents = Number(data.discountCents) || 0;
+        pendingDiscountPercent = data.type === 'percent' && Number.isFinite(Number(data.value))
+          ? Number(data.value)
+          : null;
+        promoInput.value = appliedCouponCode;
+        // Discount amount/percent are shown in the summary row; no separate success line.
+        promoMsg.hidden = true;
+        promoMsg.textContent = '';
+        promoMsg.classList.remove('is-error', 'is-ok');
+      }
+
+      function discountLabel(code: string): string {
+        if (pendingDiscountPercent != null && pendingDiscountPercent > 0) {
+          return `Discount (${code} · ${pendingDiscountPercent}% off)`;
+        }
+        return `Discount (${code})`;
+      }
+
       // ── Tip state ─────────────────────────────────────────────
-      // Either a percentage of the subtotal (0 = no tip) or a fixed custom
+      // Either a percentage of the post-discount subtotal or a fixed custom
       // amount in cents. The resolved tip is always recomputed from the live
-      // subtotal so it stays correct as the cart changes.
+      // post-discount total so it stays correct as the cart/promo changes.
       let tipMode: 'pct' | 'custom' = 'pct';
       let tipPct = 0;
       let tipCustomCents = 0;
@@ -250,9 +314,9 @@ function spotWindowLabel(startIso: string, endIso: string): string {
       // is how a customer opts out of tipping.
       let tipChosen = false;
 
-      function tipCentsFor(subtotalCents: number): number {
+      function tipCentsFor(baseCents: number): number {
         if (tipMode === 'custom') return tipCustomCents;
-        return Math.round((subtotalCents * tipPct) / 100);
+        return Math.round((baseCents * tipPct) / 100);
       }
 
       // The cart lines that are still purchasable, with quantities clamped to
@@ -295,19 +359,30 @@ function spotWindowLabel(startIso: string, endIso: string): string {
         `).join('');
 
         const subtotal = lines.reduce((sum, l) => sum + l.priceCents * l.qty, 0);
-        const tip = tipCentsFor(subtotal);
+        const discount = Math.min(pendingDiscountCents, subtotal);
+        const afterDiscount = Math.max(subtotal - discount, 0);
+        const tip = tipCentsFor(afterDiscount);
         subtotalEl.textContent = money(subtotal);
+        if (discount > 0 && appliedCouponCode) {
+          discountRowEl.hidden = false;
+          discountLabelEl.textContent = discountLabel(appliedCouponCode);
+          discountAmountEl.textContent = '−' + money(discount);
+        } else {
+          discountRowEl.hidden = true;
+        }
         tipAmountEl.textContent = money(tip);
         tipRowEl.hidden = tip <= 0;
-        totalEl.textContent = money(subtotal + tip);
+        totalEl.textContent = money(afterDiscount + tip);
         // Gate checkout on a tip choice (any preset, or Custom — including 0).
         continueBtn.disabled = !tipChosen;
         document.getElementById('tip-hint')!.hidden = tipChosen;
 
-        // Lock tip controls once the Payment Element is mounted (the charged
+        // Lock tip/promo controls once the Payment Element is mounted (the charged
         // amount is fixed at that point).
         tipOptions.querySelectorAll('button').forEach(b => (b as HTMLButtonElement).disabled = paymentActive);
         tipCustomInput.disabled = paymentActive;
+        promoInput.disabled = paymentActive;
+        promoApplyBtn.disabled = paymentActive;
       }
 
       // ── Tip controls ──────────────────────────────────────────
@@ -341,6 +416,98 @@ function spotWindowLabel(startIso: string, endIso: string): string {
         tipCustomCents = Number.isFinite(dollars) && dollars > 0 ? Math.round(dollars * 100) : 0;
         render();
       });
+
+      // Promo: validate with the server so the discount amount shows immediately.
+      // Checkout still re-validates authoritatively when creating the session.
+      async function applyPromoCode() {
+        if (paymentActive) return;
+        const code = promoInput.value.trim().toUpperCase();
+        if (!code) {
+          appliedCouponCode = '';
+          clearPromoEstimate();
+          render();
+          return;
+        }
+
+        const lines = activeLines();
+        const subtotal = lines.reduce((sum, l) => sum + l.priceCents * l.qty, 0);
+        promoApplyBtn.disabled = true;
+        promoApplyBtn.textContent = '…';
+        try {
+          const res = await fetch('/api/v1/coupons/validate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ code, subtotalCents: subtotal }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            appliedCouponCode = '';
+            pendingDiscountCents = 0;
+            pendingDiscountPercent = null;
+            promoMsg.textContent = data.error ?? 'That promo code is not valid';
+            promoMsg.classList.remove('is-ok');
+            promoMsg.classList.add('is-error');
+            promoMsg.hidden = false;
+            render();
+            return;
+          }
+          lastSubtotalForPromo = subtotal;
+          applyPromoFromResponse(data, code);
+          render();
+        } catch {
+          appliedCouponCode = '';
+          pendingDiscountCents = 0;
+          pendingDiscountPercent = null;
+          promoMsg.textContent = 'Could not validate that code. Try again.';
+          promoMsg.classList.remove('is-ok');
+          promoMsg.classList.add('is-error');
+          promoMsg.hidden = false;
+          render();
+        } finally {
+          promoApplyBtn.disabled = paymentActive;
+          promoApplyBtn.textContent = 'Apply';
+        }
+      }
+
+      promoApplyBtn.addEventListener('click', () => { void applyPromoCode(); });
+      promoInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          void applyPromoCode();
+        }
+      });
+
+      // If the cart changes while a code is applied, re-validate so the discount
+      // amount stays correct (or clear it if the code no longer qualifies).
+      function maybeRevalidatePromo() {
+        if (paymentActive || !appliedCouponCode) return;
+        const subtotal = activeLines().reduce((sum, l) => sum + l.priceCents * l.qty, 0);
+        if (subtotal === lastSubtotalForPromo) return;
+        lastSubtotalForPromo = subtotal;
+        void (async () => {
+          try {
+            const res = await fetch('/api/v1/coupons/validate', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ code: appliedCouponCode, subtotalCents: subtotal }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+              pendingDiscountCents = 0;
+              pendingDiscountPercent = null;
+              promoMsg.textContent = data.error ?? 'Promo code no longer applies';
+              promoMsg.classList.remove('is-ok');
+              promoMsg.classList.add('is-error');
+              promoMsg.hidden = false;
+            } else {
+              applyPromoFromResponse(data, appliedCouponCode);
+            }
+            render();
+          } catch {
+            // Keep the previous estimate on transient network errors.
+          }
+        })();
+      }
 
       // Event delegation for the dynamically rendered line controls.
       linesEl.addEventListener('click', (e) => {
@@ -410,6 +577,7 @@ function spotWindowLabel(startIso: string, endIso: string): string {
         continueBtn.textContent = 'Setting up payment…';
 
         const subtotal = lines.reduce((sum, l) => sum + l.priceCents * l.qty, 0);
+        const afterDiscount = Math.max(subtotal - Math.min(pendingDiscountCents, subtotal), 0);
         const payload = {
           customer: {
             name: (document.getElementById('co-name') as HTMLInputElement).value,
@@ -417,8 +585,9 @@ function spotWindowLabel(startIso: string, endIso: string): string {
             phone: (document.getElementById('co-phone') as HTMLInputElement).value,
           },
           items: lines.map(l => ({ menuItemId: l.id, quantity: l.qty })),
-          tipCents: tipCentsFor(subtotal),
+          tipCents: tipCentsFor(afterDiscount),
           pickupSpotId,
+          couponCode: appliedCouponCode || undefined,
         };
 
         try {
@@ -447,6 +616,14 @@ function spotWindowLabel(startIso: string, endIso: string): string {
           confirmActions = loadActionsResult.actions;
 
           paymentActive = true;
+          // Sync summary to the server-confirmed amounts (discount may have applied).
+          if (typeof data.discountCents === 'number' && data.discountCents > 0) {
+            pendingDiscountCents = data.discountCents;
+            if (data.couponCode) appliedCouponCode = data.couponCode;
+            if (data.couponType === 'percent' && Number.isFinite(Number(data.couponValue))) {
+              pendingDiscountPercent = Number(data.couponValue);
+            }
+          }
           render();
           payBtnText.textContent = 'Pay ' + money(data.totalCents ?? data.subtotalCents);
           pickupForm.hidden = true;
@@ -491,7 +668,11 @@ function spotWindowLabel(startIso: string, endIso: string): string {
       });
 
       // Re-render on cart changes (this tab and others), unless locked.
-      onCartChange(() => { if (!paymentActive) render(); });
+      onCartChange(() => {
+        if (paymentActive) return;
+        render();
+        maybeRevalidatePromo();
+      });
       render();
 
       // Warm up Stripe.js up front when there's a purchasable cart, so the
@@ -606,6 +787,52 @@ function spotWindowLabel(startIso: string, endIso: string): string {
       border-top: 1px solid var(--accent);
       margin-top: 0.5rem;
     }
+    .promo-section {
+      padding: 0.85rem 0 0;
+      margin-top: 0.25rem;
+    }
+    .promo-label {
+      display: block;
+      font-size: 0.8rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #8a7a66;
+      margin-bottom: 0.5rem;
+    }
+    .promo-row {
+      display: flex;
+      gap: 0.5rem;
+    }
+    .promo-row input {
+      flex: 1;
+      min-width: 0;
+      padding: 0.5rem 0.75rem;
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      background: #fff;
+      font: inherit;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .promo-apply-btn {
+      padding: 0.5rem 0.9rem;
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      background: transparent;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .promo-apply-btn:hover:not(:disabled) { background: rgba(0, 0, 0, 0.04); }
+    .promo-apply-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .promo-msg {
+      margin: 0.45rem 0 0;
+      font-size: 0.85rem;
+    }
+    .promo-msg.is-ok { color: #2f6b3a; }
+    .promo-msg.is-error { color: #b00020; }
+    .discount-row { color: #2f6b3a; }
     .tip-label {
       display: block;
       font-size: 0.8rem;

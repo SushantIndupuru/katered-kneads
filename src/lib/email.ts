@@ -71,9 +71,10 @@ function renderOrderHtml(order: Order): string {
             ${rows}
         </table>
 
-        ${order.tipCents > 0 ? `<p style="margin:0 0 4px;text-align:right;color:#666;">Subtotal: ${formatMoney(order.subtotalCents)}</p>
-        <p style="margin:0 0 4px;text-align:right;color:#666;">Tip: ${formatMoney(order.tipCents)}</p>` : ''}
-        <p style="margin:0;text-align:right;font-size:18px;font-weight:700;">Total: ${formatMoney(order.subtotalCents + order.tipCents)}</p>
+        ${order.tipCents > 0 || order.discountCents > 0 ? `<p style="margin:0 0 4px;text-align:right;color:#666;">Subtotal: ${formatMoney(order.subtotalCents)}</p>
+        ${order.discountCents > 0 ? `<p style="margin:0 0 4px;text-align:right;color:#666;">${order.couponCode ? `Discount (${order.couponCode})` : 'Discount'}: −${formatMoney(order.discountCents)}</p>` : ''}
+        ${order.tipCents > 0 ? `<p style="margin:0 0 4px;text-align:right;color:#666;">Tip: ${formatMoney(order.tipCents)}</p>` : ''}` : ''}
+        <p style="margin:0;text-align:right;font-size:18px;font-weight:700;">Total: ${formatMoney(order.subtotalCents - order.discountCents + order.tipCents)}</p>
     </div>`;
 }
 
