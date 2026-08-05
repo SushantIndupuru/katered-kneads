@@ -282,6 +282,19 @@ export async function getOrders(
     return rows.map(r => mapOrder(r, itemsMap.get(r.id) ?? []));
 }
 
+// Counts orders for a drop that are still 'paid' (i.e. not yet handed to the
+// customer). Used to warn before archiving a drop with unclaimed pickups.
+export async function countUnfulfilledOrdersForDrop(dropId: string): Promise<number> {
+    const supabase = createServerClient();
+    const { count, error } = await supabase
+        .from('orders')
+        .select('id', { count: 'exact', head: true })
+        .eq('drop_id', dropId)
+        .eq('status', 'paid');
+    if (error) throw error;
+    return count ?? 0;
+}
+
 // Atomic stock decrement for a confirmed order via the SQL RPC.
 export async function decrementDropStock(
     dropId: string,

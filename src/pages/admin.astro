@@ -1,6 +1,6 @@
 ---
 import '../styles/global.css';
-import {getMenuItems, getActiveDrop, getArchivedDrops, getDropItemCounts, getDropItems, getPickupSpots} from '../lib/db';
+import {getMenuItems, getActiveDrop, getArchivedDrops, getDropItemCounts, getDropItems, getPickupSpots, countUnfulfilledOrdersForDrop} from '../lib/db';
 import {createAnonClient} from '../lib/supabase';
 import type {MenuItem, Drop, DropItemWithMenu, PickupSpot} from '../types/db-types.ts';
 
@@ -27,9 +27,13 @@ try {
 }
 
 let activeSpots: PickupSpot[] = [];
+let activeUnfulfilledCount = 0;
 try {
     activeDrop = await getActiveDrop();
-    if (activeDrop) activeSpots = await getPickupSpots(activeDrop.id);
+    if (activeDrop) {
+        activeSpots = await getPickupSpots(activeDrop.id);
+        activeUnfulfilledCount = await countUnfulfilledOrdersForDrop(activeDrop.id);
+    }
 } catch (e) {
     // non-fatal
 }
@@ -304,7 +308,7 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
                             {activeStatus === 'draft' && (
                                     <button class="admin-btn-drop-delete" data-id={activeDrop.id} data-name={activeDrop.name}>Delete</button>)}
                             {activeStatus === 'closed' && (
-                                    <button class="btn-primary admin-btn-archive" data-id={activeDrop.id} data-name={activeDrop.name}>Archive &amp; finish</button>)}
+                                    <button class="btn-primary admin-btn-archive" data-id={activeDrop.id} data-name={activeDrop.name} data-unfulfilled={activeUnfulfilledCount}>Archive &amp; finish</button>)}
                         </div>
                     </div>
 
@@ -687,6 +691,8 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
 </div>
 
 <script>
+    import {confirmDialog} from '../lib/toast';
+
     // ── Modal helpers ──────────────────────────────────────────
     function openModal(id: string) {
         const el = document.getElementById(id);
@@ -1629,8 +1635,18 @@ const storageUrl: string = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL as string
     document.querySelector<HTMLButtonElement>('.admin-btn-unannounce')?.addEventListener('click', function () {
         if (this.dataset.id) patchDrop(this.dataset.id, {announce: false}, this);
     });
-    document.querySelector<HTMLButtonElement>('.admin-btn-archive')?.addEventListener('click', function () {
-        if (this.dataset.id) patchDrop(this.dataset.id, {archive: true}, this);
+    document.querySelector<HTMLButtonElement>('.admin-btn-archive')?.addEventListener('click', async function () {
+        if (!this.dataset.id) return;
+        const unfulfilled = Number(this.dataset.unfulfilled ?? '0');
+        if (unfulfilled > 0) {
+            const noun = unfulfilled === 1 ? 'order' : 'orders';
+            const ok = await confirmDialog(
+                `${unfulfilled} ${noun} for this drop ${unfulfilled === 1 ? 'has' : 'have'} not been picked up yet. Archiving will finish the drop anyway. Continue?`,
+                {title: 'Orders not picked up', confirmLabel: 'Archive anyway', cancelLabel: 'Go back', danger: true},
+            );
+            if (!ok) return;
+        }
+        patchDrop(this.dataset.id, {archive: true}, this);
     });
 
     // ── Active drop countdown ──────────────────────────────────
