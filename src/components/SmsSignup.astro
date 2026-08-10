@@ -39,11 +39,13 @@ const fieldId = `sms-phone-${source}`;
       <button type="submit" class="btn-primary sms-signup-btn">Notify me</button>
     </div>
     <label class="sms-consent">
-      <input type="checkbox" name="consent" checked />
+      <input type="checkbox" name="consent" required />
       <span>
-        I agree to receive automated text updates from Katered Kneads about drops.
-        Msg &amp; data rates may apply. Reply STOP to opt out. See our
-        <a href="/privacy-policy">Privacy Policy</a>.
+        I agree to receive recurring automated marketing text messages from Katered Kneads
+        at the number provided — drop announcements, order open and close reminders, and
+        pickup details. Consent is not a condition of any purchase. Msg frequency varies.
+        Msg &amp; data rates may apply. Reply STOP to unsubscribe, HELP for help. See our
+        <a href="/privacy-policy">Privacy Policy</a> and <a href="/terms">Terms</a>.
       </span>
     </label>
     <p class="sms-signup-msg" data-sms-msg hidden aria-live="polite"></p>

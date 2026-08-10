@@ -7,7 +7,9 @@ export const POST: APIRoute = async ({ request }) => {
     try {
         const body = await request.json().catch(() => ({}));
         const rawPhone = typeof body?.phone === 'string' ? body.phone : '';
-        const consent = body?.consent !== false;
+        // Consent must be explicitly granted — A2P 10DLC requires an affirmative,
+        // unchecked-by-default opt-in, so a missing flag is not consent.
+        const consent = body?.consent === true;
         const source = typeof body?.source === 'string' ? body.source.trim().slice(0, 40) : '';
 
         const phone = normalizeUsPhone(rawPhone);
