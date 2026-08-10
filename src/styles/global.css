@@ -1486,7 +1486,8 @@ footer {
 }
 
 .form-field input:not([type="checkbox"]):not([type="radio"]),
-.form-field select {
+.form-field select,
+.form-field textarea {
   width: 100%;
   padding: 0.8rem 1rem;
   border: 1px solid var(--accent);
@@ -1501,7 +1502,8 @@ footer {
 }
 
 .form-field input:not([type="checkbox"]):not([type="radio"]):focus,
-.form-field select:focus {
+.form-field select:focus,
+.form-field textarea:focus {
   border-color: var(--text-primary);
 }
 

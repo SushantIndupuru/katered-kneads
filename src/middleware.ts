@@ -27,6 +27,8 @@ function isPublicApiRoute(pathname: string) {
     p === '/api/v1/auth/login' ||
     p === '/api/v1/auth/logout' ||
     p === '/api/v1/checkout' ||
+    p === '/api/v1/catering/quote' ||
+    p.startsWith('/api/v1/catering/pay/') ||
     p === '/api/v1/coupons/validate' ||
     p === '/api/v1/sms-signup' ||
     p === '/api/v1/stripe/webhook' ||

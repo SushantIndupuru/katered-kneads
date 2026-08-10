@@ -1,7 +1,7 @@
 ---
 import Image from 'astro/components/Image.astro';
 import Layout from '../layouts/Layout.astro';
-import banner from '../images/banner.webp'
+import banner from '../images/banner.jpg'
 import { getCurrentDrop, getDropItems } from '../lib/db'
 
 // ── Drop Configuration (driven by the current drop in the DB) ──
@@ -79,6 +79,7 @@ const CDN_URL              = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL;
           {ORDERS_CURRENTLY_OPEN ? 'Order Now →' : 'View Current Drop →'}
         </a>
         <a href="/menu" class="btn-secondary">Our Treats →</a>
+        <a href="/catering" class="btn-secondary">Catering →</a>
       </div>
     </div>
   </section>

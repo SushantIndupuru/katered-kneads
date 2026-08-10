@@ -277,6 +277,59 @@ CREATE INDEX IF NOT EXISTS coupons_code_idx ON coupons (code);
 -- ALTER TABLE coupons ENABLE ROW LEVEL SECURITY;
 -- REVOKE ALL ON coupons FROM anon, authenticated;
 
+-- Catering quote requests: customer picks items + qty from the full menu and
+-- submits a quote. Admin reviews, optionally adjusts line prices, then approves
+-- which emails a Stripe Checkout payment link. Payment webhook marks it paid.
+-- Status: pending → approved (awaiting payment) → paid | rejected.
+CREATE TABLE IF NOT EXISTS catering_requests
+(
+    id                          UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
+    status                      TEXT             NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'approved', 'paid', 'rejected')),
+    customer_name               TEXT             NOT NULL,
+    customer_email              TEXT             NOT NULL,
+    customer_phone              TEXT             NOT NULL DEFAULT '',
+    -- Optional event date (free-form or ISO date string from the form).
+    event_date                  TEXT             NOT NULL DEFAULT '',
+    -- Delivery / pickup notes, headcount, dietary needs, etc.
+    notes                       TEXT             NOT NULL DEFAULT '',
+    -- Sum of line totals (unit_price_cents * quantity) at current quoted prices.
+    subtotal_cents              INT              NOT NULL DEFAULT 0 CHECK (subtotal_cents >= 0),
+    -- Optional message from admin when rejecting or approving.
+    admin_note                  TEXT             NOT NULL DEFAULT '',
+    stripe_checkout_session_id  TEXT UNIQUE,
+    stripe_payment_intent_id    TEXT UNIQUE,
+    approved_at                 TIMESTAMPTZ,
+    paid_at                     TIMESTAMPTZ,
+    created_at                  TIMESTAMPTZ      NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS catering_request_items
+(
+    id               UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
+    request_id       UUID             NOT NULL,
+    menu_item_id     UUID,
+    name_snapshot    TEXT             NOT NULL,
+    unit_price_cents INT              NOT NULL CHECK (unit_price_cents >= 0),
+    quantity         INT              NOT NULL CHECK (quantity > 0),
+    FOREIGN KEY (request_id) REFERENCES catering_requests (id) ON DELETE CASCADE,
+    FOREIGN KEY (menu_item_id) REFERENCES menu_items (id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS catering_request_items_request_id_idx ON catering_request_items (request_id);
+CREATE INDEX IF NOT EXISTS catering_requests_status_idx ON catering_requests (status);
+CREATE INDEX IF NOT EXISTS catering_requests_created_at_idx ON catering_requests (created_at DESC);
+
+-- Migration for existing databases: create catering tables + RLS.
+-- CREATE TABLE IF NOT EXISTS catering_requests ( ... );  -- see CREATE above
+-- CREATE TABLE IF NOT EXISTS catering_request_items ( ... );
+-- CREATE INDEX IF NOT EXISTS catering_request_items_request_id_idx ON catering_request_items (request_id);
+-- CREATE INDEX IF NOT EXISTS catering_requests_status_idx ON catering_requests (status);
+-- CREATE INDEX IF NOT EXISTS catering_requests_created_at_idx ON catering_requests (created_at DESC);
+-- ALTER TABLE catering_requests ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE catering_request_items ENABLE ROW LEVEL SECURITY;
+-- REVOKE ALL ON catering_requests, catering_request_items FROM anon, authenticated;
+
 -- Customers who opted in to SMS drop updates (announce / open / close / pickup).
 -- The actual sending is wired up later; this table just captures consented
 -- numbers now. Phone is stored in E.164 (e.g. +15305551234) and is UNIQUE so
@@ -316,11 +369,13 @@ ALTER TABLE order_items     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE in_person_sales ENABLE ROW LEVEL SECURITY;
 ALTER TABLE sms_subscribers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE coupons         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE catering_requests      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE catering_request_items ENABLE ROW LEVEL SECURITY;
 
 -- Belt-and-suspenders: explicitly revoke all table privileges from the public
 -- API roles. RLS already blocks them, but revoking grants means even a future
 -- accidental policy can't hand them access unless privileges are re-granted too.
-REVOKE ALL ON menu_items, drops, pickup_spots, drop_items, orders, order_items, in_person_sales, sms_subscribers, coupons
+REVOKE ALL ON menu_items, drops, pickup_spots, drop_items, orders, order_items, in_person_sales, sms_subscribers, coupons, catering_requests, catering_request_items
     FROM anon, authenticated;
 
 -- Atomically bump a coupon's redemption_count when payment is confirmed.

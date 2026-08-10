@@ -1,0 +1,252 @@
+---
+import Layout from '../../../layouts/Layout.astro';
+
+const STRIPE_PK = import.meta.env.PUBLIC_STRIPE_PUBLISHABLE_KEY;
+const requestId = Astro.params.id ?? '';
+---
+
+<Layout
+  title="Pay for catering — Katered Kneads"
+  description="Complete payment for your Katered Kneads catering quote."
+  activePage="catering"
+  noIndex={true}
+>
+
+  <section class="order-hero">
+    <div class="container">
+      <p class="eyebrow">Catering</p>
+      <h1 class="order-heading">Complete payment</h1>
+      <p class="order-sub">Review your approved quote and pay securely on this page.</p>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="container catering-pay-layout">
+      <div id="pay-loading" class="status-panel status-closed">
+        <p class="status-text">Loading your quote…</p>
+      </div>
+
+      <div id="pay-error-panel" class="status-panel status-closed" hidden>
+        <div class="status-badge status-badge-closed">● Unavailable</div>
+        <h2 class="status-heading" id="pay-error-heading">Something went wrong</h2>
+        <p class="status-text" id="pay-error-text"></p>
+        <a href="/catering" class="btn-secondary">Back to catering →</a>
+      </div>
+
+      <div id="pay-grid" class="cart-page-grid" hidden>
+        <div class="cart-items-col">
+          <h2 class="section-heading">Your quote</h2>
+          <p class="catering-pay-greeting" id="pay-greeting"></p>
+          <ul class="cart-page-lines" id="pay-lines"></ul>
+          <div class="cart-summary">
+            <div class="cart-summary-row cart-total-row">
+              <span>Total due</span>
+              <span id="pay-total">$0.00</span>
+            </div>
+          </div>
+          <p class="catering-pay-note" id="pay-admin-note" hidden></p>
+        </div>
+
+        <div class="checkout-col">
+          <form id="payment-form" class="checkout-form">
+            <h2 class="checkout-step-heading">Payment</h2>
+            <div id="payment-element"></div>
+            <div id="payment-error" class="checkout-error" hidden></div>
+            <button type="submit" class="btn-primary checkout-submit" id="pay-btn">
+              <span id="pay-btn-text">Pay Now</span>
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</Layout>
+
+<style>
+  .catering-pay-layout { max-width: 960px; }
+  .cart-page-grid {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    gap: 2.5rem;
+    align-items: start;
+  }
+  @media (max-width: 768px) {
+    .cart-page-grid { grid-template-columns: 1fr; }
+  }
+  .cart-page-lines { list-style: none; padding: 0; margin: 1rem 0; }
+  :global(.cart-page-line) {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--accent);
+  }
+  .cart-summary { margin: 1rem 0 0; }
+  .cart-summary-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.4rem 0;
+  }
+  .cart-total-row { font-weight: 700; font-size: 1.1rem; margin-top: 0.35rem; }
+  .checkout-form { display: flex; flex-direction: column; gap: 1rem; }
+  .checkout-step-heading { margin: 0 0 0.25rem; font-size: 1.35rem; }
+  .checkout-submit { width: 100%; }
+  .checkout-error {
+    color: #9A3A1A;
+    background: #FDF0EE;
+    border: 1px solid #D9836A;
+    padding: 0.75rem 1rem;
+    font-size: 0.875rem;
+  }
+  .catering-pay-greeting {
+    margin: 0 0 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.95rem;
+  }
+  .catering-pay-note {
+    margin: 1rem 0 0;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    white-space: pre-wrap;
+  }
+</style>
+
+<script is:inline define:vars={{ STRIPE_PK, requestId }}>
+  window.__STRIPE_PK__ = STRIPE_PK;
+  window.__CATERING_REQUEST_ID__ = requestId;
+</script>
+
+<script>
+  import { loadStripe } from '@stripe/stripe-js';
+
+  function money(cents: number) {
+    return '$' + (cents / 100).toFixed(2);
+  }
+
+  function showFatal(heading: string, text: string) {
+    const loading = document.getElementById('pay-loading');
+    const errPanel = document.getElementById('pay-error-panel');
+    const grid = document.getElementById('pay-grid');
+    if (loading) loading.hidden = true;
+    if (grid) grid.hidden = true;
+    if (errPanel) errPanel.hidden = false;
+    const h = document.getElementById('pay-error-heading');
+    const t = document.getElementById('pay-error-text');
+    if (h) h.textContent = heading;
+    if (t) t.textContent = text;
+  }
+
+  async function init() {
+    const requestId = (window as any).__CATERING_REQUEST_ID__ as string;
+    const STRIPE_PK = (window as any).__STRIPE_PK__ as string | undefined;
+
+    if (!requestId) {
+      showFatal('Missing quote', 'This payment link is incomplete. Ask us to resend your quote email.');
+      return;
+    }
+    if (!STRIPE_PK) {
+      showFatal('Payments unavailable', 'Payments are not configured right now. Please try again later.');
+      return;
+    }
+
+    let data: any;
+    try {
+      const res = await fetch(`/api/v1/catering/pay/${requestId}`);
+      data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showFatal('Unavailable', data.error || 'Could not load this quote.');
+        return;
+      }
+    } catch {
+      showFatal('Unavailable', 'Could not load this quote. Please try again.');
+      return;
+    }
+
+    if (data.status === 'paid') {
+      const sid = data.sessionId ? `?session_id=${encodeURIComponent(data.sessionId)}` : '';
+      window.location.replace(`/catering/success${sid}`);
+      return;
+    }
+
+    const quote = data.quote;
+    if (!data.clientSecret || !quote) {
+      showFatal('Unavailable', 'Could not start payment for this quote.');
+      return;
+    }
+
+    const loading = document.getElementById('pay-loading');
+    const grid = document.getElementById('pay-grid');
+    if (loading) loading.hidden = true;
+    if (grid) grid.hidden = false;
+
+    const greeting = document.getElementById('pay-greeting');
+    if (greeting) {
+      const eventBit = quote.eventDate ? ` · event ${quote.eventDate}` : '';
+      greeting.textContent = `Hi ${quote.customerName}${eventBit}`;
+    }
+
+    const linesEl = document.getElementById('pay-lines');
+    if (linesEl) {
+      linesEl.innerHTML = (quote.items || [])
+        .map(
+          (i: { quantity: number; nameSnapshot: string }) =>
+            `<li class="cart-page-line"><span>${i.quantity}× ${i.nameSnapshot}</span></li>`,
+        )
+        .join('');
+    }
+
+    const totalEl = document.getElementById('pay-total');
+    if (totalEl) totalEl.textContent = money(quote.subtotalCents);
+
+    const noteEl = document.getElementById('pay-admin-note');
+    if (noteEl && quote.adminNote) {
+      noteEl.hidden = false;
+      noteEl.textContent = quote.adminNote;
+    }
+
+    const payBtnText = document.getElementById('pay-btn-text')!;
+    payBtnText.textContent = 'Pay ' + money(quote.subtotalCents);
+
+    const paymentError = document.getElementById('payment-error')!;
+    const payBtn = document.getElementById('pay-btn') as HTMLButtonElement;
+    const paymentForm = document.getElementById('payment-form') as HTMLFormElement;
+
+    try {
+      const stripe = await loadStripe(STRIPE_PK);
+      if (!stripe) throw new Error('Stripe failed to load');
+
+      const checkout = (stripe as any).initCheckoutElementsSdk({
+        clientSecret: data.clientSecret,
+        elementsOptions: { appearance: { theme: 'flat' } },
+      });
+      const paymentElement = checkout.createPaymentElement();
+      paymentElement.mount('#payment-element');
+
+      const loadActionsResult = await checkout.loadActions();
+      const confirmActions = loadActionsResult.actions;
+
+      paymentForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        paymentError.hidden = true;
+        paymentError.textContent = '';
+        payBtn.disabled = true;
+        const original = payBtnText.textContent;
+        payBtnText.textContent = 'Processing…';
+
+        const result = await confirmActions.confirm();
+        const error = result?.error;
+        // Success redirects to return_url (/catering/success). Only errors land here.
+        paymentError.textContent = error?.message ?? 'Payment failed. Please try again.';
+        paymentError.hidden = false;
+        payBtn.disabled = false;
+        payBtnText.textContent = original ?? 'Pay Now';
+      });
+    } catch (err) {
+      console.error(err);
+      showFatal('Payment error', 'Could not load the payment form. Please try again later.');
+    }
+  }
+
+  init();
+</script>

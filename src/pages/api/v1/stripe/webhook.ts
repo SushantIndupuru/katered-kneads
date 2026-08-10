@@ -1,7 +1,11 @@
 import type { APIRoute } from 'astro';
 import type Stripe from 'stripe';
 import { getStripe } from '../../../../lib/stripe';
-import { finalizeOrderIfPaid, finalizeInPersonSaleIfPaid } from '../../../../lib/fulfillment';
+import {
+    finalizeOrderIfPaid,
+    finalizeInPersonSaleIfPaid,
+    finalizeCateringIfPaid,
+} from '../../../../lib/fulfillment';
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET ?? import.meta.env.STRIPE_WEBHOOK_SECRET;
 
@@ -28,7 +32,11 @@ export const POST: APIRoute = async ({ request }) => {
             event.type === 'checkout.session.async_payment_succeeded'
         ) {
             const session = event.data.object as Stripe.Checkout.Session;
-            await finalizeOrderIfPaid(session.id);
+            if (session.metadata?.kind === 'catering') {
+                await finalizeCateringIfPaid(session.id);
+            } else {
+                await finalizeOrderIfPaid(session.id);
+            }
         } else if (event.type === 'payment_intent.succeeded') {
             const intent = event.data.object as Stripe.PaymentIntent;
             if (intent.metadata?.kind === 'in_person') {

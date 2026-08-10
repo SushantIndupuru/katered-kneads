@@ -144,6 +144,35 @@ export interface SmsSubscriber {
   createdAt: string;
 }
 
+// Catering quote lifecycle: customer requests → admin approves (emails a
+// Stripe Checkout link) → customer pays → status becomes paid.
+export type CateringRequestStatus = 'pending' | 'approved' | 'paid' | 'rejected';
+
+export interface CateringRequestItem {
+  menuItemId: string | null;
+  nameSnapshot: string;
+  unitPriceCents: number;
+  quantity: number;
+}
+
+export interface CateringRequest {
+  id: string;
+  status: CateringRequestStatus;
+  customerName: string;
+  customerEmail: string;
+  customerPhone: string;
+  eventDate: string;
+  notes: string;
+  subtotalCents: number;
+  adminNote: string;
+  stripeCheckoutSessionId: string | null;
+  stripePaymentIntentId: string | null;
+  approvedAt: string | null;
+  paidAt: string | null;
+  createdAt: string;
+  items: CateringRequestItem[];
+}
+
 // A walk-up sale taken through the in-person POS. Unlike online orders there is
 // no customer/pickup code — payment is captured on the spot via a QR code.
 export interface InPersonSale {

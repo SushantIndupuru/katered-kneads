@@ -1,0 +1,320 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { getMenuItems } from '../lib/db';
+
+const CDN_URL = import.meta.env.PUBLIC_SUPABASE_STORAGE_URL;
+const allItems = await getMenuItems();
+---
+
+<Layout
+  title="Catering — Katered Kneads"
+  description="Request a catering quote from Katered Kneads. Pick treats from our full menu, tell us about your event, and we'll follow up with a custom quote."
+  activePage="catering"
+>
+
+  <section class="order-hero">
+    <div class="container">
+      <p class="eyebrow">Events &amp; Gatherings</p>
+      <h1 class="order-heading">Catering</h1>
+      <p class="order-sub">
+        Choose what you want from our treats and tell us about your event.
+        We'll follow up to agree on pricing, then send a payment link when you're ready.
+      </p>
+    </div>
+  </section>
+
+  <section class="section" id="catering-menu">
+    <div class="container">
+      <div class="menu-note">
+        <strong>How it works:</strong> Select quantities, submit your request, and we'll reach out by email or text to confirm details and pricing.
+        Once you agree, we'll send a secure payment link.
+      </div>
+
+      {allItems.length > 0 ? (
+        <div class="product-grid" id="catering-grid">
+          {allItems.map(item => (
+            <div class="product-card">
+              <div class="product-card-image">
+                <img src={CDN_URL + item.id} alt={item.name} loading="lazy" />
+              </div>
+              <div class="product-card-body">
+                <h3>{item.name}</h3>
+                <p>{item.description}</p>
+                <div
+                  class="product-card-actions"
+                  data-item-id={item.id}
+                  data-item-name={item.name}
+                >
+                  <div class="product-card-buy">
+                    <span class="product-qty-label">Quantity</span>
+                    <div class="qty-stepper">
+                      <button type="button" class="qty-btn qty-minus" aria-label={`Decrease quantity of ${item.name}`}>−</button>
+                      <span class="qty-value" aria-live="polite">0</span>
+                      <button type="button" class="qty-btn qty-plus" aria-label={`Increase quantity of ${item.name}`}>+</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div class="drop-placeholder">
+          <p class="eyebrow">Menu Coming Soon</p>
+          <p>Our catalog is being updated. Check back soon to request a catering quote.</p>
+        </div>
+      )}
+    </div>
+  </section>
+
+  {allItems.length > 0 && (
+    <section class="section section-tinted" id="catering-request">
+      <div class="container catering-request-layout">
+        <div class="catering-summary-col">
+          <h2 class="section-heading">Your selection</h2>
+          <ul class="cart-page-lines" id="catering-lines">
+            <li class="catering-empty-lines">No items selected yet.</li>
+          </ul>
+          <p class="catering-estimate-note">Pricing is custom — we'll confirm the total with you before payment.</p>
+        </div>
+
+        <div class="checkout-col">
+          <form id="catering-form" class="checkout-form">
+            <h2 class="checkout-step-heading">Request a quote</h2>
+            <div class="form-field">
+              <label for="cat-name">Full Name</label>
+              <input type="text" id="cat-name" name="name" autocomplete="name" required />
+            </div>
+            <div class="form-field">
+              <label for="cat-email">Email</label>
+              <input type="email" id="cat-email" name="email" autocomplete="email" required />
+            </div>
+            <div class="form-field">
+              <label for="cat-phone">Phone (optional)</label>
+              <input type="tel" id="cat-phone" name="phone" autocomplete="tel" />
+            </div>
+            <div class="form-field">
+              <label for="cat-event-date">Event date (optional)</label>
+              <input type="date" id="cat-event-date" name="eventDate" />
+            </div>
+            <div class="form-field">
+              <label for="cat-notes">Event details / notes (optional)</label>
+              <textarea id="cat-notes" name="notes" rows="4" maxlength="2000" placeholder="Headcount, pickup vs delivery, dietary needs…"></textarea>
+            </div>
+            <p class="catering-form-error" id="catering-error" hidden></p>
+            <p class="catering-form-success" id="catering-success" hidden>
+              Request sent — we'll be in touch to confirm details and pricing.
+            </p>
+            <button type="submit" class="btn-primary" id="catering-submit" disabled>
+              Request Quote →
+            </button>
+          </form>
+        </div>
+      </div>
+    </section>
+  )}
+
+</Layout>
+
+<style>
+  .catering-request-layout {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2.5rem;
+    align-items: start;
+  }
+  .catering-estimate-note {
+    margin: 0.75rem 0 0;
+    font-size: 0.875rem;
+    color: var(--text-muted, #8a7a66);
+  }
+  .catering-empty-lines {
+    list-style: none;
+    color: var(--text-muted, #8a7a66);
+    padding: 0.5rem 0;
+  }
+  .catering-form-error {
+    color: #b33;
+    margin: 0 0 0.75rem;
+    font-size: 0.9rem;
+  }
+  .catering-form-success {
+    color: #2a6b3f;
+    margin: 0 0 0.75rem;
+    font-size: 0.9rem;
+  }
+  .product-card-actions {
+    margin-top: auto;
+    padding-top: 1.25rem;
+  }
+  .product-card-buy {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+  }
+  .product-qty-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+  .qty-stepper {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--accent);
+  }
+  .qty-btn {
+    width: 2.25rem;
+    height: 2.25rem;
+    font-size: 1.25rem;
+    line-height: 1;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: inherit;
+    transition: background 0.15s ease;
+  }
+  .qty-btn:hover:not(:disabled) { background: rgba(0, 0, 0, 0.04); }
+  .qty-value {
+    min-width: 1.75rem;
+    text-align: center;
+    font-weight: 600;
+    border-left: 1px solid var(--accent);
+    border-right: 1px solid var(--accent);
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 0.5rem;
+  }
+  .cart-page-lines { list-style: none; padding: 0; margin: 1rem 0; }
+  :global(.cart-page-line) {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--accent);
+  }
+  .checkout-form { display: flex; flex-direction: column; gap: 1rem; }
+  .checkout-step-heading { margin: 0 0 0.25rem; font-size: 1.35rem; }
+  @media (max-width: 800px) {
+    .catering-request-layout {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<script>
+  type Line = { id: string; name: string; qty: number };
+
+  const qtyById = new Map<string, number>();
+
+  function lines(): Line[] {
+    const out: Line[] = [];
+    document.querySelectorAll<HTMLElement>('.product-card-actions').forEach(el => {
+      const id = el.dataset.itemId!;
+      const qty = qtyById.get(id) ?? 0;
+      if (qty <= 0) return;
+      out.push({
+        id,
+        name: el.dataset.itemName!,
+        qty,
+      });
+    });
+    return out;
+  }
+
+  function syncUi() {
+    const selected = lines();
+    const linesEl = document.getElementById('catering-lines');
+    const submit = document.getElementById('catering-submit') as HTMLButtonElement | null;
+
+    document.querySelectorAll<HTMLElement>('.product-card-actions').forEach(el => {
+      const id = el.dataset.itemId!;
+      const qty = qtyById.get(id) ?? 0;
+      const val = el.querySelector('.qty-value');
+      if (val) val.textContent = String(qty);
+    });
+
+    if (linesEl) {
+      if (selected.length === 0) {
+        linesEl.innerHTML = '<li class="catering-empty-lines">No items selected yet.</li>';
+      } else {
+        linesEl.innerHTML = selected
+          .map(l => `<li class="cart-page-line"><span>${l.qty}&times; ${l.name}</span></li>`)
+          .join('');
+      }
+    }
+
+    if (submit) submit.disabled = selected.length === 0;
+  }
+
+  document.querySelectorAll<HTMLElement>('.product-card-actions').forEach(el => {
+    const id = el.dataset.itemId!;
+    el.querySelector('.qty-plus')?.addEventListener('click', () => {
+      const next = Math.min((qtyById.get(id) ?? 0) + 1, 500);
+      qtyById.set(id, next);
+      syncUi();
+    });
+    el.querySelector('.qty-minus')?.addEventListener('click', () => {
+      const next = Math.max((qtyById.get(id) ?? 0) - 1, 0);
+      qtyById.set(id, next);
+      syncUi();
+    });
+  });
+
+  const form = document.getElementById('catering-form') as HTMLFormElement | null;
+  const errorEl = document.getElementById('catering-error');
+  const successEl = document.getElementById('catering-success');
+
+  form?.addEventListener('submit', async e => {
+    e.preventDefault();
+    if (!form) return;
+
+    const selected = lines();
+    if (selected.length === 0) return;
+
+    const submit = document.getElementById('catering-submit') as HTMLButtonElement;
+    if (errorEl) { errorEl.hidden = true; errorEl.textContent = ''; }
+    if (successEl) successEl.hidden = true;
+    submit.disabled = true;
+    submit.textContent = 'Sending…';
+
+    try {
+      const res = await fetch('/api/v1/catering/quote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: selected.map(l => ({ menuItemId: l.id, quantity: l.qty })),
+          customer: {
+            name: (document.getElementById('cat-name') as HTMLInputElement).value,
+            email: (document.getElementById('cat-email') as HTMLInputElement).value,
+            phone: (document.getElementById('cat-phone') as HTMLInputElement).value,
+          },
+          eventDate: (document.getElementById('cat-event-date') as HTMLInputElement).value,
+          notes: (document.getElementById('cat-notes') as HTMLTextAreaElement).value,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Could not submit quote');
+
+      qtyById.clear();
+      form.reset();
+      syncUi();
+      if (successEl) successEl.hidden = false;
+      successEl?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    } catch (err) {
+      if (errorEl) {
+        errorEl.textContent = err instanceof Error ? err.message : 'Something went wrong';
+        errorEl.hidden = false;
+      }
+    } finally {
+      submit.textContent = 'Request Quote →';
+      syncUi();
+    }
+  });
+
+  syncUi();
+</script>

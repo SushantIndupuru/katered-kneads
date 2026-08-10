@@ -1,5 +1,5 @@
 import type Stripe from 'stripe';
-import type { Order } from '../types/db-types.ts';
+import type { CateringRequest, Order } from '../types/db-types.ts';
 import { getStripe } from './stripe.ts';
 import {
     getOrderByCheckoutSession,
@@ -11,10 +11,12 @@ import {
     getDropItems,
     getPickupSpot,
     incrementCouponRedemption,
+    getCateringRequestByCheckoutSession,
+    markCateringPaid,
     type CreateOrderLine,
 } from './db/index.ts';
 import { unitPriceCents } from './pricing.ts';
-import { sendOrderConfirmation } from './email.ts';
+import { sendOrderConfirmation, sendCateringPaidConfirmation } from './email.ts';
 
 export interface FinalizeResult {
     order: Order | null;
@@ -342,4 +344,53 @@ export async function finalizeInPersonSaleIfPaid(paymentIntentId: string): Promi
     }
 
     return { paid: true, recorded: true, subtotalCents, discountCents, tipCents, totalCents };
+}
+
+export interface FinalizeCateringResult {
+    request: CateringRequest | null;
+    finalized: boolean;
+}
+
+// Idempotently mark a catering quote as paid after Stripe Checkout completes.
+// Safe from both webhook and the success page (status check prevents double-email).
+export async function finalizeCateringIfPaid(sessionId: string): Promise<FinalizeCateringResult> {
+    const existing = await getCateringRequestByCheckoutSession(sessionId);
+    if (!existing) return { request: null, finalized: false };
+    if (existing.status === 'paid') return { request: existing, finalized: false };
+
+    const stripe = getStripe();
+    let session: Stripe.Checkout.Session;
+    try {
+        session = await stripe.checkout.sessions.retrieve(sessionId);
+    } catch (err) {
+        console.error(`finalizeCateringIfPaid: could not retrieve session ${sessionId}:`, err);
+        return { request: null, finalized: false };
+    }
+
+    if (session.payment_status !== 'paid') {
+        return { request: existing, finalized: false };
+    }
+
+    const paymentIntentId =
+        typeof session.payment_intent === 'string'
+            ? session.payment_intent
+            : session.payment_intent?.id ?? null;
+
+    const paid = await markCateringPaid({
+        id: existing.id,
+        stripePaymentIntentId: paymentIntentId,
+    });
+    if (!paid) {
+        // Lost the race or already paid — re-fetch current row.
+        const again = await getCateringRequestByCheckoutSession(sessionId);
+        return { request: again, finalized: false };
+    }
+
+    try {
+        await sendCateringPaidConfirmation(paid);
+    } catch (emailErr) {
+        console.error(`finalizeCateringIfPaid: email failed for ${existing.id}:`, emailErr);
+    }
+
+    return { request: paid, finalized: true };
 }

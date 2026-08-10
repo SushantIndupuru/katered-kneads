@@ -1,0 +1,914 @@
+---
+import '../../styles/global.css';
+
+// Route is protected by middleware (src/middleware.ts).
+const user = (Astro.locals as { user?: { email?: string } }).user;
+---
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg"/>
+    <link rel="icon" href="/favicon.ico"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <meta name="robots" content="noindex, nofollow"/>
+    <title>Catering — Katered Kneads</title>
+</head>
+<body class="admin-body">
+
+<aside class="admin-sidebar">
+    <div class="admin-sidebar-top">
+        <a href="/" class="admin-logo">Katered Kneads</a>
+        <span class="admin-badge">Admin</span>
+    </div>
+
+    <nav class="admin-nav">
+        <a href="/admin" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="7" height="7"/>
+                <rect x="14" y="3" width="7" height="7"/>
+                <rect x="14" y="14" width="7" height="7"/>
+                <rect x="3" y="14" width="7" height="7"/>
+            </svg>
+            Dashboard
+        </a>
+        <a href="/admin/stock" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                <line x1="12" y1="22.08" x2="12" y2="12"/>
+            </svg>
+            Stock
+        </a>
+        <a href="/admin/pos" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="3" width="20" height="14" rx="2"/>
+                <line x1="2" y1="9" x2="22" y2="9"/>
+                <line x1="8" y1="21" x2="16" y2="21"/>
+                <line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+            Point of Sale
+        </a>
+        <a href="/admin/orders" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 2h6a1 1 0 0 1 1 1v1h1a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1V3a1 1 0 0 1 1-1z"/>
+                <line x1="9" y1="12" x2="15" y2="12"/>
+                <line x1="9" y1="16" x2="15" y2="16"/>
+            </svg>
+            Orders
+        </a>
+        <a href="/admin/catering" class="admin-nav-link admin-nav-active">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 11h18v2a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4v-2z"/>
+                <path d="M12 3v4"/>
+                <path d="M8 7h8"/>
+                <path d="M5 11V9a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v2"/>
+            </svg>
+            Catering
+        </a>
+        <a href="/admin/coupons" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+                <line x1="7" y1="7" x2="7.01" y2="7"/>
+            </svg>
+            Coupons
+        </a>
+        <a href="/admin/sms" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+            SMS
+        </a>
+        <a href="/menu" target="_blank" class="admin-nav-link">
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="16" y1="13" x2="8" y2="13"/>
+                <line x1="16" y1="17" x2="8" y2="17"/>
+                <polyline points="10 9 9 9 8 9"/>
+            </svg>
+            View Menu ↗
+        </a>
+    </nav>
+
+    <div class="admin-sidebar-footer">
+        <p class="admin-user-email">{user?.email ?? 'Admin'}</p>
+        <form method="POST" action="/api/v1/auth/logout">
+            <button type="submit" class="admin-logout-btn">Sign Out</button>
+        </form>
+    </div>
+</aside>
+
+<main class="admin-main">
+    <div class="admin-topbar">
+        <div>
+            <h1 class="admin-page-title">Catering quotes</h1>
+            <p class="admin-page-sub">Contact the customer to agree on a price, then enter it and send a payment link.</p>
+        </div>
+        <span class="orders-section-count" id="catering-count"></span>
+    </div>
+
+    <div id="catering-loading" class="admin-loading">
+        <span class="admin-spinner"></span>
+        <span class="admin-loading-text">Loading quotes…</span>
+    </div>
+    <div id="catering-error" class="admin-alert admin-alert-error" hidden></div>
+    <div id="catering-empty" class="admin-empty" hidden>No catering quote requests yet.</div>
+
+    <div class="admin-table-wrap" id="catering-table-wrap" hidden>
+        <table class="admin-table">
+            <thead>
+            <tr>
+                <th>Date</th>
+                <th>Customer</th>
+                <th>Event</th>
+                <th>Items</th>
+                <th>Agreed total</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+            </thead>
+            <tbody id="catering-tbody"></tbody>
+        </table>
+    </div>
+</main>
+
+<!-- Detail modal (same pattern as Orders) -->
+<div class="admin-modal-overlay" id="catering-modal" hidden>
+    <div class="admin-modal" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+        <div class="admin-modal-header">
+            <h2 class="admin-modal-title" id="detail-title">Quote</h2>
+            <button type="button" class="admin-modal-close" id="detail-close" aria-label="Close">✕</button>
+        </div>
+        <div id="detail-body"></div>
+        <div class="admin-modal-actions" id="detail-actions"></div>
+    </div>
+</div>
+
+<style>
+    /* ── Admin layout (mirrors admin.astro / orders.astro) ─────── */
+    .admin-body {
+        min-height: 100vh;
+        background: #F3EDE5;
+        display: flex;
+    }
+    .admin-sidebar {
+        width: 220px;
+        flex-shrink: 0;
+        background: var(--bg);
+        border-right: 1px solid var(--accent);
+        display: flex;
+        flex-direction: column;
+        padding: 2rem 1.5rem;
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100vh;
+        overflow-y: auto;
+    }
+    .admin-sidebar-top { margin-bottom: 2.5rem; }
+    .admin-logo {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 1.15rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        color: var(--text-primary);
+        text-decoration: none;
+        display: block;
+    }
+    .admin-badge {
+        display: inline-block;
+        margin-top: 0.35rem;
+        font-size: 0.62rem;
+        font-weight: 600;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        background: var(--text-primary);
+        color: var(--bg);
+        padding: 0.18rem 0.55rem;
+    }
+    .admin-nav { display: flex; flex-direction: column; gap: 0.25rem; flex: 1; }
+    .admin-nav-link {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        font-size: 0.82rem;
+        font-weight: 500;
+        color: var(--text-muted);
+        text-decoration: none;
+        padding: 0.6rem 0.75rem;
+        border-radius: 2px;
+        transition: background 0.15s, color 0.15s;
+    }
+    .admin-nav-link:hover,
+    .admin-nav-active {
+        background: #EDE8E1;
+        color: var(--text-primary);
+    }
+    .admin-sidebar-footer {
+        border-top: 1px solid var(--accent);
+        padding-top: 1.25rem;
+        margin-top: auto;
+    }
+    .admin-user-email {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-bottom: 0.75rem;
+        word-break: break-all;
+    }
+    .admin-logout-btn {
+        font-size: 0.78rem;
+        font-weight: 500;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        cursor: pointer;
+        background: none;
+        border: 1px solid var(--accent);
+        padding: 0.45rem 0.9rem;
+        transition: border-color 0.15s, color 0.15s;
+        width: 100%;
+    }
+    .admin-logout-btn:hover { border-color: var(--text-primary); color: var(--text-primary); }
+
+    .admin-main {
+        margin-left: 220px;
+        flex: 1;
+        padding: 2.5rem 2rem;
+        min-width: 0;
+    }
+    .admin-topbar {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        margin-bottom: 2rem;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+    .admin-page-title {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 2rem;
+        font-weight: 600;
+        margin: 0;
+    }
+    .admin-page-sub {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        margin: 0.25rem 0 0;
+    }
+    .orders-section-count {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 1.4rem;
+        height: 1.4rem;
+        padding: 0 0.45rem;
+        border-radius: 999px;
+        background: var(--surface-2, #f1ece4);
+        color: var(--text-secondary, #6b6258);
+        font-size: 0.72rem;
+        font-weight: 600;
+    }
+    .orders-section-count:empty { display: none; }
+
+    .admin-loading {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        color: var(--text-muted);
+        padding: 2rem 0;
+    }
+    .admin-spinner {
+        width: 18px;
+        height: 18px;
+        border: 2px solid var(--accent);
+        border-top-color: var(--text-primary);
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .admin-table-wrap {
+        background: var(--bg);
+        border: 1px solid var(--accent);
+        overflow-x: auto;
+    }
+    .admin-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.875rem;
+    }
+    .admin-table thead { border-bottom: 1px solid var(--accent); }
+    .admin-table th {
+        text-align: left;
+        font-size: 0.65rem;
+        font-weight: 600;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        padding: 0.9rem 1.25rem;
+        white-space: nowrap;
+    }
+    :global(.admin-table td) {
+        padding: 1rem 1.25rem;
+        vertical-align: middle;
+        border-bottom: 1px solid var(--accent);
+        color: var(--text-primary);
+    }
+    :global(.admin-table tr:last-child td) { border-bottom: none; }
+    :global(.admin-table tr:hover td) { background: #FAF7F2; }
+    :global(.admin-td-items) {
+        max-width: 320px;
+        color: var(--text-muted);
+        font-size: 0.82rem;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        line-height: 1.5;
+    }
+    :global(.admin-td-actions) { white-space: nowrap; }
+    :global(.customer-cell) { display: flex; flex-direction: column; gap: 0.15rem; }
+    :global(.customer-cell strong) { font-weight: 500; }
+    :global(.customer-cell small) { color: var(--text-muted); font-size: 0.78rem; }
+
+    .admin-empty {
+        padding: 3rem;
+        text-align: center;
+        font-size: 0.9rem;
+        color: var(--text-muted);
+    }
+    .admin-alert {
+        padding: 0.75rem 1rem;
+        font-size: 0.85rem;
+        margin-bottom: 1rem;
+    }
+    .admin-alert-error {
+        background: #FDF0EE;
+        border: 1px solid #D9836A;
+        color: #9A3A1A;
+    }
+
+    :global(.admin-drop-status) {
+        display: inline-block;
+        font-size: 0.63rem;
+        font-weight: 600;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        padding: 0.2rem 0.55rem;
+        border: 1px solid var(--accent);
+        color: var(--text-muted);
+        white-space: nowrap;
+    }
+    :global(.admin-catering-pending) {
+        background: #FFF8E8;
+        border-color: #E0C47A;
+        color: #7A5B00;
+    }
+    :global(.admin-catering-approved) {
+        background: #EEF1F6;
+        border-color: #9CB0C7;
+        color: #2F4A6A;
+    }
+    :global(.admin-catering-paid) {
+        background: #EEF6EE;
+        border-color: #9CC79C;
+        color: #2F6A2F;
+    }
+    :global(.admin-catering-rejected) {
+        background: #FDF0EE;
+        border-color: #E8C4B4;
+        color: #9A3A1A;
+    }
+
+    :global(.admin-btn-order-action),
+    :global(.admin-btn-order-delete) {
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 0.35rem 0.75rem;
+        border: 1px solid var(--accent);
+        background: none;
+        color: var(--text-muted);
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.15s;
+        font-family: 'DM Sans', sans-serif;
+        margin: 0 0.2rem 0.2rem 0;
+    }
+    :global(.admin-btn-order-action:hover) {
+        color: var(--text-primary);
+        border-color: var(--text-primary);
+    }
+    :global(.admin-btn-order-primary) {
+        background: var(--text-primary);
+        color: var(--bg);
+        border-color: var(--text-primary);
+    }
+    :global(.admin-btn-order-primary:hover) {
+        opacity: 0.88;
+        color: var(--bg);
+    }
+    :global(.admin-btn-order-delete) {
+        border-color: #E8C4B4;
+        color: #9A3A1A;
+    }
+    :global(.admin-btn-order-delete:hover) {
+        background: #9A3A1A;
+        color: var(--bg);
+        border-color: #9A3A1A;
+    }
+
+    /* ── Modal ─────────────────────────────────────────────────── */
+    .admin-modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(26, 26, 26, 0.5);
+        z-index: 200;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem;
+    }
+    .admin-modal-overlay[hidden] { display: none; }
+    .admin-modal {
+        background: var(--bg);
+        border: 1px solid var(--accent);
+        width: 100%;
+        max-width: 560px;
+        max-height: 90vh;
+        overflow-y: auto;
+        padding: 2rem 2rem 0;
+        position: relative;
+    }
+    .admin-modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1.75rem;
+    }
+    .admin-modal-title {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 1.5rem;
+        font-weight: 500;
+        color: var(--text-primary);
+        margin: 0;
+    }
+    .admin-modal-close {
+        background: none;
+        border: none;
+        font-size: 1.1rem;
+        cursor: pointer;
+        color: var(--text-muted);
+        line-height: 1;
+        padding: 0.25rem;
+    }
+    .admin-modal-close:hover { color: var(--text-primary); }
+    .admin-modal-actions {
+        position: sticky;
+        bottom: 0;
+        z-index: 1;
+        display: flex;
+        gap: 0.75rem;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+        margin: 1.5rem -2rem 0;
+        padding: 1.25rem 2rem;
+        background: var(--bg);
+        border-top: 1px solid var(--accent);
+    }
+    .admin-modal-actions:empty { display: none; }
+    .admin-btn-cancel {
+        font-size: 0.82rem;
+        font-weight: 500;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        padding: 0.9rem 1.5rem;
+        border: 1px solid var(--accent);
+        background: none;
+        cursor: pointer;
+        color: var(--text-muted);
+        transition: all 0.15s;
+        font-family: 'DM Sans', sans-serif;
+    }
+    .admin-btn-cancel:hover { color: var(--text-primary); border-color: var(--text-primary); }
+    .admin-btn-primary {
+        font-family: 'DM Sans', sans-serif;
+        font-size: 0.82rem;
+        font-weight: 600;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        background: var(--text-primary);
+        color: #fff;
+        padding: 0.9rem 1.5rem;
+        border: none;
+        cursor: pointer;
+        transition: opacity 0.2s;
+    }
+    .admin-btn-primary:hover { opacity: 0.85; }
+
+    :global(.detail-meta) {
+        margin: 0 0 1rem;
+        font-size: 0.9rem;
+        color: var(--text-muted);
+        line-height: 1.6;
+    }
+    :global(.detail-meta strong) { color: var(--text-primary); }
+    :global(.detail-items) {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 0.75rem 0;
+        font-size: 0.875rem;
+    }
+    :global(.detail-items th) {
+        text-align: left;
+        font-size: 0.65rem;
+        font-weight: 600;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        padding: 0.45rem 0.35rem;
+        border-bottom: 1px solid var(--accent);
+    }
+    :global(.detail-items td) {
+        padding: 0.55rem 0.35rem;
+        border-bottom: 1px solid var(--accent);
+        color: var(--text-primary);
+    }
+    :global(.detail-items input) {
+        width: 5.5rem;
+        padding: 0.4rem 0.5rem;
+        border: 1px solid var(--accent);
+        background: var(--bg);
+        color: var(--text-primary);
+        font: inherit;
+        font-size: 0.875rem;
+    }
+    :global(.detail-note-label) {
+        display: block;
+        margin-top: 1rem;
+        font-size: 0.68rem;
+        font-weight: 600;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+    }
+    :global(.detail-note) {
+        width: 100%;
+        margin-top: 0.4rem;
+        padding: 0.7rem 0.85rem;
+        border: 1px solid var(--accent);
+        background: var(--bg);
+        color: var(--text-primary);
+        font: inherit;
+        font-size: 0.9rem;
+        resize: vertical;
+        min-height: 70px;
+    }
+    :global(.detail-agreed-total) {
+        width: 100%;
+        max-width: 200px;
+        margin-top: 0.4rem;
+        padding: 0.7rem 0.85rem;
+        border: 1px solid var(--accent);
+        background: var(--bg);
+        color: var(--text-primary);
+        font: inherit;
+        font-size: 1.1rem;
+        font-weight: 600;
+    }
+    :global(.detail-total) {
+        margin: 0.75rem 0 0;
+        font-size: 1rem;
+        font-weight: 600;
+    }
+
+    @media (max-width: 768px) {
+        .admin-body { flex-direction: column; }
+        .admin-sidebar {
+            position: static;
+            width: 100%;
+            height: auto;
+            flex-flow: row wrap;
+            align-items: center;
+            gap: 0.5rem 1rem;
+            padding: 0.85rem 1rem;
+            border-right: none;
+            border-bottom: 1px solid var(--accent);
+        }
+        .admin-sidebar-top {
+            margin-bottom: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+        .admin-badge { margin-top: 0; }
+        .admin-nav {
+            order: 2;
+            flex-basis: 100%;
+            flex-direction: row;
+            gap: 0.25rem;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        .admin-nav-link { white-space: nowrap; padding: 0.5rem 0.7rem; }
+        .admin-sidebar-footer {
+            margin: 0 0 0 auto;
+            padding-top: 0;
+            border-top: none;
+        }
+        .admin-user-email { display: none; }
+        .admin-logout-btn { width: auto; white-space: nowrap; }
+        .admin-main { margin-left: 0; padding: 1.5rem 1rem; }
+    }
+</style>
+
+<script>
+  type CateringItem = {
+    menuItemId: string | null;
+    nameSnapshot: string;
+    unitPriceCents: number;
+    quantity: number;
+  };
+  type CateringRequest = {
+    id: string;
+    status: 'pending' | 'approved' | 'paid' | 'rejected';
+    customerName: string;
+    customerEmail: string;
+    customerPhone: string;
+    eventDate: string;
+    notes: string;
+    subtotalCents: number;
+    adminNote: string;
+    createdAt: string;
+    items: CateringItem[];
+  };
+
+  let requests: CateringRequest[] = [];
+  let activeId: string | null = null;
+
+  function money(cents: number) {
+    return '$' + (cents / 100).toFixed(2);
+  }
+
+  function formatDate(iso: string) {
+    return new Date(iso).toLocaleString('en-US', {
+      month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+      timeZone: 'America/Los_Angeles',
+    });
+  }
+
+  function statusClass(s: string) {
+    return `admin-drop-status admin-catering-${s}`;
+  }
+
+  function closeModal() {
+    const modal = document.getElementById('catering-modal');
+    if (modal) modal.hidden = true;
+    activeId = null;
+  }
+
+  async function load() {
+    const loading = document.getElementById('catering-loading');
+    const error = document.getElementById('catering-error');
+    const empty = document.getElementById('catering-empty');
+    const wrap = document.getElementById('catering-table-wrap');
+    const count = document.getElementById('catering-count');
+    if (error) error.hidden = true;
+
+    try {
+      const res = await fetch('/api/v1/catering');
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to load');
+      requests = data.requests || [];
+      if (loading) loading.hidden = true;
+
+      const pending = requests.filter(r => r.status === 'pending').length;
+      if (count) count.textContent = pending ? `${pending} pending` : `${requests.length} total`;
+
+      if (requests.length === 0) {
+        if (empty) empty.hidden = false;
+        if (wrap) wrap.hidden = true;
+        return;
+      }
+      if (empty) empty.hidden = true;
+      if (wrap) wrap.hidden = false;
+      renderTable();
+    } catch (err) {
+      if (loading) loading.hidden = true;
+      if (error) {
+        error.hidden = false;
+        error.textContent = err instanceof Error ? err.message : 'Failed to load';
+      }
+    }
+  }
+
+  function renderTable() {
+    const tbody = document.getElementById('catering-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = requests.map(r => {
+      const itemsLabel = r.items.map(i => `${i.quantity}× ${i.nameSnapshot}`).join(', ');
+      const totalLabel = r.subtotalCents > 0 ? money(r.subtotalCents) : '—';
+      return `<tr data-id="${r.id}">
+        <td>${formatDate(r.createdAt)}</td>
+        <td><div class="customer-cell"><strong>${escapeHtml(r.customerName)}</strong>
+          <small>${escapeHtml(r.customerEmail)}</small>
+          ${r.customerPhone ? `<small>${escapeHtml(r.customerPhone)}</small>` : ''}
+        </div></td>
+        <td>${escapeHtml(r.eventDate || '—')}</td>
+        <td class="admin-td-items">${escapeHtml(itemsLabel)}</td>
+        <td>${totalLabel}</td>
+        <td><span class="${statusClass(r.status)}">${r.status}</span></td>
+        <td class="admin-td-actions">
+          <button type="button" class="admin-btn-order-action${r.status === 'pending' ? ' admin-btn-order-primary' : ''}" data-view="${r.id}">
+            ${r.status === 'pending' ? 'Set price' : 'View'}
+          </button>
+          ${r.status === 'pending' || r.status === 'approved' ? `<button type="button" class="admin-btn-order-action" data-quick-reject="${r.id}">Reject</button>` : ''}
+          <button type="button" class="admin-btn-order-delete" data-delete="${r.id}">Delete</button>
+        </td>
+      </tr>`;
+    }).join('');
+  }
+
+  function escapeHtml(s: string) {
+    return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
+  }
+
+  function openDetail(id: string) {
+    const r = requests.find(x => x.id === id);
+    if (!r) return;
+    activeId = id;
+    const modal = document.getElementById('catering-modal');
+    const title = document.getElementById('detail-title');
+    const body = document.getElementById('detail-body');
+    const actions = document.getElementById('detail-actions');
+    if (title) title.textContent = `${r.customerName} · ${r.status}`;
+    const editable = r.status === 'pending';
+    if (body) {
+      body.innerHTML = `
+        <p class="detail-meta"><strong>${escapeHtml(r.customerEmail)}</strong>
+          ${r.customerPhone ? ` · ${escapeHtml(r.customerPhone)}` : ''}<br/>
+          Event: ${escapeHtml(r.eventDate || 'not specified')}<br/>
+          Submitted ${formatDate(r.createdAt)}
+        </p>
+        ${r.notes ? `<p class="detail-meta" style="white-space:pre-wrap">${escapeHtml(r.notes)}</p>` : ''}
+        <p class="detail-meta">Agree on a price offline, then enter the total below to email a payment link.</p>
+        <table class="detail-items">
+          <thead><tr><th>Item</th><th>Qty</th></tr></thead>
+          <tbody>
+            ${r.items.map((i, idx) => `
+              <tr data-idx="${idx}" data-menu-item-id="${i.menuItemId ?? ''}">
+                <td>${escapeHtml(i.nameSnapshot)}</td>
+                <td>${editable
+                  ? `<input type="number" min="1" max="500" step="1" class="detail-qty" value="${i.quantity}" />`
+                  : i.quantity}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+        ${editable
+          ? `<label class="detail-note-label" for="agreed-total">Agreed total ($)</label>
+             <input type="number" id="agreed-total" class="detail-agreed-total" min="0.01" step="0.01" inputmode="decimal" placeholder="0.00" required />`
+          : `<p class="detail-total">Agreed total: ${money(r.subtotalCents)}</p>`}
+        ${editable || r.status === 'approved'
+          ? `<label class="detail-note-label">Note to customer / internal
+              <textarea class="detail-note" id="detail-note" placeholder="Optional note">${escapeHtml(r.adminNote)}</textarea>
+            </label>`
+          : (r.adminNote ? `<p class="detail-meta">Note: ${escapeHtml(r.adminNote)}</p>` : '')}
+      `;
+    }
+    if (actions) {
+      actions.innerHTML = `
+        <button type="button" class="admin-btn-cancel" data-dialog-close>Close</button>
+        ${r.status === 'pending' ? `
+          <button type="button" class="admin-btn-cancel" data-dialog-reject>Reject</button>
+          <button type="button" class="admin-btn-primary" data-dialog-approve>Send payment link</button>
+        ` : ''}
+      `;
+    }
+    if (modal) modal.hidden = false;
+    if (editable) {
+      const totalInput = document.getElementById('agreed-total') as HTMLInputElement | null;
+      totalInput?.focus();
+    }
+  }
+
+  function collectQtyOverrides(): { menuItemId: string | null; quantity: number }[] | null {
+    const body = document.getElementById('detail-body');
+    if (!body || !body.querySelector('.detail-qty')) return null;
+    const items: { menuItemId: string | null; quantity: number }[] = [];
+    body.querySelectorAll('tr[data-idx]').forEach(row => {
+      const menuItemId = (row as HTMLElement).dataset.menuItemId || null;
+      const qty = Number((row.querySelector('.detail-qty') as HTMLInputElement).value);
+      items.push({
+        menuItemId: menuItemId || null,
+        quantity: qty,
+      });
+    });
+    return items;
+  }
+
+  async function patch(id: string, payload: Record<string, unknown>) {
+    const res = await fetch(`/api/v1/catering/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Request failed');
+    return data;
+  }
+
+  document.getElementById('detail-close')?.addEventListener('click', closeModal);
+  document.getElementById('catering-modal')?.addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeModal();
+  });
+
+  document.getElementById('catering-tbody')?.addEventListener('click', async e => {
+    const t = e.target as HTMLElement;
+    const viewId = t.getAttribute('data-view');
+    const rejectId = t.getAttribute('data-quick-reject');
+    const deleteId = t.getAttribute('data-delete');
+
+    if (viewId) {
+      openDetail(viewId);
+      return;
+    }
+    if (rejectId) {
+      if (!confirm('Reject this catering request?')) return;
+      try {
+        await patch(rejectId, { action: 'reject' });
+        await load();
+      } catch (err) {
+        alert(err instanceof Error ? err.message : 'Reject failed');
+      }
+      return;
+    }
+    if (deleteId) {
+      if (!confirm('Delete this request permanently?')) return;
+      try {
+        const res = await fetch(`/api/v1/catering/${deleteId}`, { method: 'DELETE' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Delete failed');
+        await load();
+      } catch (err) {
+        alert(err instanceof Error ? err.message : 'Delete failed');
+      }
+    }
+  });
+
+  document.getElementById('detail-actions')?.addEventListener('click', async e => {
+    const t = e.target as HTMLElement;
+    if (t.hasAttribute('data-dialog-close')) {
+      closeModal();
+      return;
+    }
+    if (!activeId) return;
+    const note = (document.getElementById('detail-note') as HTMLTextAreaElement | null)?.value ?? '';
+    if (t.hasAttribute('data-dialog-approve')) {
+      const totalInput = document.getElementById('agreed-total') as HTMLInputElement | null;
+      const agreedTotal = Number(totalInput?.value ?? '');
+      if (!Number.isFinite(agreedTotal) || agreedTotal <= 0) {
+        alert('Enter the agreed total before sending the payment link.');
+        totalInput?.focus();
+        return;
+      }
+      if (!confirm(`Send payment link for $${agreedTotal.toFixed(2)}?`)) return;
+      try {
+        const items = collectQtyOverrides();
+        await patch(activeId, {
+          action: 'approve',
+          adminNote: note,
+          agreedTotal,
+          ...(items ? { items } : {}),
+        });
+        closeModal();
+        await load();
+      } catch (err) {
+        alert(err instanceof Error ? err.message : 'Approve failed');
+      }
+    }
+    if (t.hasAttribute('data-dialog-reject')) {
+      try {
+        await patch(activeId, { action: 'reject', adminNote: note });
+        closeModal();
+        await load();
+      } catch (err) {
+        alert(err instanceof Error ? err.message : 'Reject failed');
+      }
+    }
+  });
+
+  load();
+</script>
+
+</body>
+</html>

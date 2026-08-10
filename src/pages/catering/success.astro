@@ -1,0 +1,52 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import { finalizeCateringIfPaid } from '../../lib/fulfillment';
+
+const sessionId = Astro.url.searchParams.get('session_id') ?? '';
+let paid = false;
+let name = '';
+let totalCents = 0;
+let eventDate = '';
+
+if (sessionId) {
+  try {
+    const result = await finalizeCateringIfPaid(sessionId);
+    if (result.request?.status === 'paid') {
+      paid = true;
+      name = result.request.customerName;
+      totalCents = result.request.subtotalCents;
+      eventDate = result.request.eventDate;
+    }
+  } catch (e) {
+    // non-fatal — show generic thank you
+  }
+}
+
+function money(cents: number) {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+---
+
+<Layout
+  title="Catering confirmed — Katered Kneads"
+  description="Your catering payment was received."
+  activePage="catering"
+  noIndex={true}
+>
+
+  <section class="order-hero">
+    <div class="container">
+      <p class="eyebrow">Catering</p>
+      <h1 class="order-heading">{paid ? 'Payment received' : 'Thanks'}</h1>
+      <p class="order-sub">
+        {paid
+          ? `Thanks${name ? `, ${name}` : ''}! Your catering order is confirmed${totalCents ? ` for ${money(totalCents)}` : ''}${eventDate ? ` · event ${eventDate}` : ''}. We'll be in touch about pickup or delivery.`
+          : 'If you just paid, give it a moment — a confirmation email is on the way.'}
+      </p>
+      <div style="margin-top:1.5rem;">
+        <a href="/" class="btn-primary">Back home →</a>
+      </div>
+    </div>
+  </section>
+
+</Layout>
