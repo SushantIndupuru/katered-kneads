@@ -280,12 +280,12 @@ CREATE INDEX IF NOT EXISTS coupons_code_idx ON coupons (code);
 -- Catering quote requests: customer picks items + qty from the full menu and
 -- submits a quote. Admin reviews, optionally adjusts line prices, then approves
 -- which emails a Stripe Checkout payment link. Payment webhook marks it paid.
--- Status: pending → approved (awaiting payment) → paid | rejected.
+-- Status: pending → approved (awaiting payment) → paid → fulfilled | rejected.
 CREATE TABLE IF NOT EXISTS catering_requests
 (
     id                          UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
     status                      TEXT             NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending', 'approved', 'paid', 'rejected')),
+        CHECK (status IN ('pending', 'approved', 'paid', 'fulfilled', 'rejected')),
     customer_name               TEXT             NOT NULL,
     customer_email              TEXT             NOT NULL,
     customer_phone              TEXT             NOT NULL DEFAULT '',
@@ -293,7 +293,7 @@ CREATE TABLE IF NOT EXISTS catering_requests
     event_date                  TEXT             NOT NULL DEFAULT '',
     -- Delivery / pickup notes, headcount, dietary needs, etc.
     notes                       TEXT             NOT NULL DEFAULT '',
-    -- Sum of line totals (unit_price_cents * quantity) at current quoted prices.
+    -- Agreed total set by admin when approving (cents).
     subtotal_cents              INT              NOT NULL DEFAULT 0 CHECK (subtotal_cents >= 0),
     -- Optional message from admin when rejecting or approving.
     admin_note                  TEXT             NOT NULL DEFAULT '',
@@ -301,6 +301,7 @@ CREATE TABLE IF NOT EXISTS catering_requests
     stripe_payment_intent_id    TEXT UNIQUE,
     approved_at                 TIMESTAMPTZ,
     paid_at                     TIMESTAMPTZ,
+    fulfilled_at                TIMESTAMPTZ,
     created_at                  TIMESTAMPTZ      NOT NULL DEFAULT now()
 );
 

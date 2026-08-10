@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS catering_requests
 (
     id                          UUID PRIMARY KEY NOT NULL DEFAULT gen_random_uuid(),
     status                      TEXT             NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending', 'approved', 'paid', 'rejected')),
+        CHECK (status IN ('pending', 'approved', 'paid', 'fulfilled', 'rejected')),
     customer_name               TEXT             NOT NULL,
     customer_email              TEXT             NOT NULL,
     customer_phone              TEXT             NOT NULL DEFAULT '',
@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS catering_requests
     stripe_payment_intent_id    TEXT UNIQUE,
     approved_at                 TIMESTAMPTZ,
     paid_at                     TIMESTAMPTZ,
+    fulfilled_at                TIMESTAMPTZ,
     created_at                  TIMESTAMPTZ      NOT NULL DEFAULT now()
 );
 
@@ -39,3 +40,15 @@ CREATE INDEX IF NOT EXISTS catering_requests_created_at_idx ON catering_requests
 ALTER TABLE catering_requests      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE catering_request_items ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON catering_requests, catering_request_items FROM anon, authenticated;
+
+-- ── If catering_requests already exists without fulfilled ───────────────────
+-- Run this block once to add fulfilled status + timestamp.
+ALTER TABLE catering_requests ADD COLUMN IF NOT EXISTS fulfilled_at TIMESTAMPTZ;
+DO $$
+BEGIN
+    ALTER TABLE catering_requests DROP CONSTRAINT IF EXISTS catering_requests_status_check;
+    ALTER TABLE catering_requests ADD CONSTRAINT catering_requests_status_check
+        CHECK (status IN ('pending', 'approved', 'paid', 'fulfilled', 'rejected'));
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;

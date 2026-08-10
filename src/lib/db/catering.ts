@@ -6,7 +6,7 @@ import type {
 } from '../../types/db-types.ts';
 
 const REQUEST_COLUMNS =
-    'id, status, customer_name, customer_email, customer_phone, event_date, notes, subtotal_cents, admin_note, stripe_checkout_session_id, stripe_payment_intent_id, approved_at, paid_at, created_at';
+    'id, status, customer_name, customer_email, customer_phone, event_date, notes, subtotal_cents, admin_note, stripe_checkout_session_id, stripe_payment_intent_id, approved_at, paid_at, fulfilled_at, created_at';
 
 interface RequestRow {
     id: string;
@@ -22,6 +22,7 @@ interface RequestRow {
     stripe_payment_intent_id: string | null;
     approved_at: string | null;
     paid_at: string | null;
+    fulfilled_at: string | null;
     created_at: string;
 }
 
@@ -57,6 +58,7 @@ function mapRequest(row: RequestRow, items: ItemRow[]): CateringRequest {
         stripePaymentIntentId: row.stripe_payment_intent_id,
         approvedAt: row.approved_at,
         paidAt: row.paid_at,
+        fulfilledAt: row.fulfilled_at ?? null,
         createdAt: row.created_at,
         items: items.map(mapItem),
     };
@@ -288,6 +290,25 @@ export async function markCateringPaid(input: {
 
     const itemsByRequest = await loadItemsForRequests(supabase, [input.id]);
     return mapRequest(data as RequestRow, itemsByRequest.get(input.id) ?? []);
+}
+
+export async function markCateringFulfilled(id: string): Promise<CateringRequest | null> {
+    const supabase = createServerClient();
+    const { data, error } = await supabase
+        .from('catering_requests')
+        .update({
+            status: 'fulfilled',
+            fulfilled_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .eq('status', 'paid')
+        .select(REQUEST_COLUMNS)
+        .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+
+    const itemsByRequest = await loadItemsForRequests(supabase, [id]);
+    return mapRequest(data as RequestRow, itemsByRequest.get(id) ?? []);
 }
 
 export async function deleteCateringRequest(id: string): Promise<void> {

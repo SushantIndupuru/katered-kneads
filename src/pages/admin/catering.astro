@@ -111,35 +111,94 @@ const user = (Astro.locals as { user?: { email?: string } }).user;
 <main class="admin-main">
     <div class="admin-topbar">
         <div>
-            <h1 class="admin-page-title">Catering quotes</h1>
-            <p class="admin-page-sub">Contact the customer to agree on a price, then enter it and send a payment link.</p>
+            <h1 class="admin-page-title">Catering</h1>
+            <p class="admin-page-sub">Quotes, paid orders to bake, and completed catering.</p>
         </div>
         <span class="orders-section-count" id="catering-count"></span>
     </div>
 
     <div id="catering-loading" class="admin-loading">
         <span class="admin-spinner"></span>
-        <span class="admin-loading-text">Loading quotes…</span>
+        <span class="admin-loading-text">Loading catering…</span>
     </div>
     <div id="catering-error" class="admin-alert admin-alert-error" hidden></div>
-    <div id="catering-empty" class="admin-empty" hidden>No catering quote requests yet.</div>
 
-    <div class="admin-table-wrap" id="catering-table-wrap" hidden>
-        <table class="admin-table">
-            <thead>
-            <tr>
-                <th>Date</th>
-                <th>Customer</th>
-                <th>Event</th>
-                <th>Items</th>
-                <th>Agreed total</th>
-                <th>Status</th>
-                <th>Actions</th>
-            </tr>
-            </thead>
-            <tbody id="catering-tbody"></tbody>
-        </table>
+    <!-- Paid orders that still need to be made -->
+    <div class="orders-section" id="to-make-section" hidden>
+        <div class="orders-section-head">
+            <h3 class="orders-section-title">To make</h3>
+            <span class="orders-section-count" id="to-make-count"></span>
+        </div>
+        <p class="orders-section-sub">Paid catering orders — bake these, then mark complete.</p>
+        <div class="admin-table-wrap" id="to-make-table-wrap" hidden>
+            <table class="admin-table">
+                <thead>
+                <tr>
+                    <th>Paid</th>
+                    <th>Customer</th>
+                    <th>Event</th>
+                    <th>Items</th>
+                    <th>Total</th>
+                    <th>Actions</th>
+                </tr>
+                </thead>
+                <tbody id="to-make-tbody"></tbody>
+            </table>
+        </div>
+        <div id="to-make-empty" class="admin-empty" hidden>No paid catering orders waiting.</div>
     </div>
+
+    <!-- Quote inbox -->
+    <div class="orders-section" id="quotes-section" hidden>
+        <div class="orders-section-head">
+            <h3 class="orders-section-title">Quote requests</h3>
+            <span class="orders-section-count" id="quotes-count"></span>
+        </div>
+        <p class="orders-section-sub">Agree on a price offline, then send a payment link.</p>
+        <div class="admin-table-wrap" id="quotes-table-wrap" hidden>
+            <table class="admin-table">
+                <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Customer</th>
+                    <th>Event</th>
+                    <th>Items</th>
+                    <th>Agreed total</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+                </thead>
+                <tbody id="quotes-tbody"></tbody>
+            </table>
+        </div>
+        <div id="quotes-empty" class="admin-empty" hidden>No open quote requests.</div>
+    </div>
+
+    <!-- Completed -->
+    <details class="orders-section orders-completed" id="fulfilled-section" hidden>
+        <summary class="orders-section-head orders-completed-summary">
+            <h3 class="orders-section-title">Completed</h3>
+            <span class="orders-section-count" id="fulfilled-count"></span>
+        </summary>
+        <p class="orders-section-sub">Marked complete after baking / handoff.</p>
+        <div class="admin-table-wrap" id="fulfilled-table-wrap" hidden>
+            <table class="admin-table">
+                <thead>
+                <tr>
+                    <th>Completed</th>
+                    <th>Customer</th>
+                    <th>Event</th>
+                    <th>Items</th>
+                    <th>Total</th>
+                    <th>Actions</th>
+                </tr>
+                </thead>
+                <tbody id="fulfilled-tbody"></tbody>
+            </table>
+        </div>
+    </details>
+
+    <div id="catering-empty" class="admin-empty" hidden>No catering activity yet.</div>
 </main>
 
 <!-- Detail modal (same pattern as Orders) -->
@@ -280,6 +339,41 @@ const user = (Astro.locals as { user?: { email?: string } }).user;
         font-weight: 600;
     }
     .orders-section-count:empty { display: none; }
+    .orders-section + .orders-section {
+        margin-top: 2.25rem;
+        padding-top: 2rem;
+        border-top: 1px solid var(--border, #e7e1d8);
+    }
+    .orders-section-head {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        margin-bottom: 0.2rem;
+    }
+    .orders-section-title {
+        font-family: 'Cormorant Garamond', serif;
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0;
+    }
+    .orders-section-sub {
+        margin: 0 0 0.85rem;
+        font-size: 0.82rem;
+        color: var(--text-secondary, #6b6258);
+    }
+    .orders-completed-summary {
+        cursor: pointer;
+        list-style: none;
+        user-select: none;
+    }
+    .orders-completed-summary::-webkit-details-marker { display: none; }
+    .orders-completed-summary::before {
+        content: '▸';
+        color: var(--text-muted);
+        font-size: 0.85rem;
+    }
+    .orders-completed[open] .orders-completed-summary::before { content: '▾'; }
 
     .admin-loading {
         display: flex;
@@ -383,10 +477,35 @@ const user = (Astro.locals as { user?: { email?: string } }).user;
         border-color: #9CC79C;
         color: #2F6A2F;
     }
+    :global(.admin-catering-fulfilled) {
+        background: #EEF1F6;
+        border-color: #9CB0C7;
+        color: #2F4A6A;
+    }
     :global(.admin-catering-rejected) {
         background: #FDF0EE;
         border-color: #E8C4B4;
         color: #9A3A1A;
+    }
+    :global(.admin-btn-fulfill) {
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 0.35rem 0.75rem;
+        border: 1px solid #9CC79C;
+        background: #EEF6EE;
+        color: #2F6A2F;
+        cursor: pointer;
+        white-space: nowrap;
+        transition: all 0.15s;
+        font-family: 'DM Sans', sans-serif;
+        margin: 0 0.2rem 0.2rem 0;
+    }
+    :global(.admin-btn-fulfill:hover) {
+        background: #2F6A2F;
+        color: #fff;
+        border-color: #2F6A2F;
     }
 
     :global(.admin-btn-order-action),
@@ -487,7 +606,7 @@ const user = (Astro.locals as { user?: { email?: string } }).user;
         border-top: 1px solid var(--accent);
     }
     .admin-modal-actions:empty { display: none; }
-    .admin-btn-cancel {
+    :global(.admin-btn-cancel) {
         font-size: 0.82rem;
         font-weight: 500;
         letter-spacing: 0.05em;
@@ -500,8 +619,8 @@ const user = (Astro.locals as { user?: { email?: string } }).user;
         transition: all 0.15s;
         font-family: 'DM Sans', sans-serif;
     }
-    .admin-btn-cancel:hover { color: var(--text-primary); border-color: var(--text-primary); }
-    .admin-btn-primary {
+    :global(.admin-btn-cancel:hover) { color: var(--text-primary); border-color: var(--text-primary); }
+    :global(.admin-btn-primary) {
         font-family: 'DM Sans', sans-serif;
         font-size: 0.82rem;
         font-weight: 600;
@@ -514,7 +633,7 @@ const user = (Astro.locals as { user?: { email?: string } }).user;
         cursor: pointer;
         transition: opacity 0.2s;
     }
-    .admin-btn-primary:hover { opacity: 0.85; }
+    :global(.admin-btn-primary:hover) { opacity: 0.85; }
 
     :global(.detail-meta) {
         margin: 0 0 1rem;
@@ -641,7 +760,7 @@ const user = (Astro.locals as { user?: { email?: string } }).user;
   };
   type CateringRequest = {
     id: string;
-    status: 'pending' | 'approved' | 'paid' | 'rejected';
+    status: 'pending' | 'approved' | 'paid' | 'fulfilled' | 'rejected';
     customerName: string;
     customerEmail: string;
     customerPhone: string;
@@ -650,6 +769,8 @@ const user = (Astro.locals as { user?: { email?: string } }).user;
     subtotalCents: number;
     adminNote: string;
     createdAt: string;
+    paidAt: string | null;
+    fulfilledAt: string | null;
     items: CateringItem[];
   };
 
@@ -660,7 +781,8 @@ const user = (Astro.locals as { user?: { email?: string } }).user;
     return '$' + (cents / 100).toFixed(2);
   }
 
-  function formatDate(iso: string) {
+  function formatDate(iso: string | null | undefined) {
+    if (!iso) return '—';
     return new Date(iso).toLocaleString('en-US', {
       month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
       timeZone: 'America/Los_Angeles',
@@ -671,18 +793,36 @@ const user = (Astro.locals as { user?: { email?: string } }).user;
     return `admin-drop-status admin-catering-${s}`;
   }
 
+  function itemsLabel(r: CateringRequest) {
+    return r.items.map(i => `${i.quantity}× ${i.nameSnapshot}`).join(', ');
+  }
+
+  function customerCell(r: CateringRequest) {
+    return `<div class="customer-cell"><strong>${escapeHtml(r.customerName)}</strong>
+      <small>${escapeHtml(r.customerEmail)}</small>
+      ${r.customerPhone ? `<small>${escapeHtml(r.customerPhone)}</small>` : ''}
+    </div>`;
+  }
+
   function closeModal() {
     const modal = document.getElementById('catering-modal');
     if (modal) modal.hidden = true;
     activeId = null;
   }
 
+  function setText(id: string, text: string) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  }
+
+  function show(id: string, visible: boolean) {
+    const el = document.getElementById(id);
+    if (el) el.hidden = !visible;
+  }
+
   async function load() {
     const loading = document.getElementById('catering-loading');
     const error = document.getElementById('catering-error');
-    const empty = document.getElementById('catering-empty');
-    const wrap = document.getElementById('catering-table-wrap');
-    const count = document.getElementById('catering-count');
     if (error) error.hidden = true;
 
     try {
@@ -691,18 +831,7 @@ const user = (Astro.locals as { user?: { email?: string } }).user;
       if (!res.ok) throw new Error(data.error || 'Failed to load');
       requests = data.requests || [];
       if (loading) loading.hidden = true;
-
-      const pending = requests.filter(r => r.status === 'pending').length;
-      if (count) count.textContent = pending ? `${pending} pending` : `${requests.length} total`;
-
-      if (requests.length === 0) {
-        if (empty) empty.hidden = false;
-        if (wrap) wrap.hidden = true;
-        return;
-      }
-      if (empty) empty.hidden = true;
-      if (wrap) wrap.hidden = false;
-      renderTable();
+      renderAll();
     } catch (err) {
       if (loading) loading.hidden = true;
       if (error) {
@@ -712,31 +841,94 @@ const user = (Astro.locals as { user?: { email?: string } }).user;
     }
   }
 
-  function renderTable() {
-    const tbody = document.getElementById('catering-tbody');
-    if (!tbody) return;
-    tbody.innerHTML = requests.map(r => {
-      const itemsLabel = r.items.map(i => `${i.quantity}× ${i.nameSnapshot}`).join(', ');
-      const totalLabel = r.subtotalCents > 0 ? money(r.subtotalCents) : '—';
-      return `<tr data-id="${r.id}">
-        <td>${formatDate(r.createdAt)}</td>
-        <td><div class="customer-cell"><strong>${escapeHtml(r.customerName)}</strong>
-          <small>${escapeHtml(r.customerEmail)}</small>
-          ${r.customerPhone ? `<small>${escapeHtml(r.customerPhone)}</small>` : ''}
-        </div></td>
-        <td>${escapeHtml(r.eventDate || '—')}</td>
-        <td class="admin-td-items">${escapeHtml(itemsLabel)}</td>
-        <td>${totalLabel}</td>
-        <td><span class="${statusClass(r.status)}">${r.status}</span></td>
-        <td class="admin-td-actions">
-          <button type="button" class="admin-btn-order-action${r.status === 'pending' ? ' admin-btn-order-primary' : ''}" data-view="${r.id}">
-            ${r.status === 'pending' ? 'Set price' : 'View'}
-          </button>
-          ${r.status === 'pending' || r.status === 'approved' ? `<button type="button" class="admin-btn-order-action" data-quick-reject="${r.id}">Reject</button>` : ''}
-          <button type="button" class="admin-btn-order-delete" data-delete="${r.id}">Delete</button>
-        </td>
-      </tr>`;
-    }).join('');
+  function renderAll() {
+    const toMake = requests.filter(r => r.status === 'paid');
+    const quotes = requests.filter(r => r.status === 'pending' || r.status === 'approved' || r.status === 'rejected');
+    const fulfilled = requests.filter(r => r.status === 'fulfilled');
+
+    const pendingCount = requests.filter(r => r.status === 'pending').length;
+    const toMakeCount = toMake.length;
+    if (toMakeCount > 0) {
+      setText('catering-count', `${toMakeCount} to make`);
+    } else if (pendingCount > 0) {
+      setText('catering-count', `${pendingCount} pending`);
+    } else {
+      setText('catering-count', `${requests.length} total`);
+    }
+
+    const any = requests.length > 0;
+    show('catering-empty', !any);
+    show('to-make-section', any);
+    show('quotes-section', any);
+    show('fulfilled-section', fulfilled.length > 0);
+
+    // To make
+    setText('to-make-count', String(toMake.length || ''));
+    show('to-make-table-wrap', toMake.length > 0);
+    show('to-make-empty', any && toMake.length === 0);
+    const toMakeBody = document.getElementById('to-make-tbody');
+    if (toMakeBody) {
+      toMakeBody.innerHTML = toMake.map(r => `
+        <tr data-id="${r.id}">
+          <td>${formatDate(r.paidAt || r.createdAt)}</td>
+          <td>${customerCell(r)}</td>
+          <td>${escapeHtml(r.eventDate || '—')}</td>
+          <td class="admin-td-items">${escapeHtml(itemsLabel(r))}</td>
+          <td>${money(r.subtotalCents)}</td>
+          <td class="admin-td-actions">
+            <button type="button" class="admin-btn-fulfill" data-fulfill="${r.id}">Mark complete</button>
+            <button type="button" class="admin-btn-order-action" data-view="${r.id}">View</button>
+            <button type="button" class="admin-btn-order-delete" data-delete="${r.id}">Delete</button>
+          </td>
+        </tr>`).join('');
+    }
+
+    // Quotes
+    setText('quotes-count', String(quotes.filter(r => r.status === 'pending').length || quotes.length || ''));
+    show('quotes-table-wrap', quotes.length > 0);
+    show('quotes-empty', any && quotes.length === 0);
+    const quotesBody = document.getElementById('quotes-tbody');
+    if (quotesBody) {
+      quotesBody.innerHTML = quotes.map(r => {
+        const totalLabel = r.subtotalCents > 0 ? money(r.subtotalCents) : '—';
+        return `<tr data-id="${r.id}">
+          <td>${formatDate(r.createdAt)}</td>
+          <td>${customerCell(r)}</td>
+          <td>${escapeHtml(r.eventDate || '—')}</td>
+          <td class="admin-td-items">${escapeHtml(itemsLabel(r))}</td>
+          <td>${totalLabel}</td>
+          <td><span class="${statusClass(r.status)}">${r.status}</span></td>
+          <td class="admin-td-actions">
+            <button type="button" class="admin-btn-order-action${r.status === 'pending' ? ' admin-btn-order-primary' : ''}" data-view="${r.id}">
+              ${r.status === 'pending' ? 'Set price' : 'View'}
+            </button>
+            ${r.status === 'pending' || r.status === 'approved'
+              ? `<button type="button" class="admin-btn-order-action" data-quick-reject="${r.id}">Reject</button>`
+              : ''}
+            <button type="button" class="admin-btn-order-delete" data-delete="${r.id}">Delete</button>
+          </td>
+        </tr>`;
+      }).join('');
+    }
+
+    // Fulfilled
+    setText('fulfilled-count', String(fulfilled.length || ''));
+    show('fulfilled-table-wrap', fulfilled.length > 0);
+    const fulfilledBody = document.getElementById('fulfilled-tbody');
+    if (fulfilledBody) {
+      fulfilledBody.innerHTML = fulfilled.map(r => `
+        <tr data-id="${r.id}">
+          <td>${formatDate(r.fulfilledAt || r.paidAt || r.createdAt)}</td>
+          <td>${customerCell(r)}</td>
+          <td>${escapeHtml(r.eventDate || '—')}</td>
+          <td class="admin-td-items">${escapeHtml(itemsLabel(r))}</td>
+          <td>${money(r.subtotalCents)}</td>
+          <td class="admin-td-actions">
+            <button type="button" class="admin-btn-order-action" data-view="${r.id}">View</button>
+            <button type="button" class="admin-btn-order-delete" data-delete="${r.id}">Delete</button>
+          </td>
+        </tr>`).join('');
+    }
   }
 
   function escapeHtml(s: string) {
@@ -759,9 +951,11 @@ const user = (Astro.locals as { user?: { email?: string } }).user;
           ${r.customerPhone ? ` · ${escapeHtml(r.customerPhone)}` : ''}<br/>
           Event: ${escapeHtml(r.eventDate || 'not specified')}<br/>
           Submitted ${formatDate(r.createdAt)}
+          ${r.paidAt ? `<br/>Paid ${formatDate(r.paidAt)}` : ''}
+          ${r.fulfilledAt ? `<br/>Completed ${formatDate(r.fulfilledAt)}` : ''}
         </p>
         ${r.notes ? `<p class="detail-meta" style="white-space:pre-wrap">${escapeHtml(r.notes)}</p>` : ''}
-        <p class="detail-meta">Agree on a price offline, then enter the total below to email a payment link.</p>
+        ${editable ? `<p class="detail-meta">Agree on a price offline, then enter the total below to email a payment link.</p>` : ''}
         <table class="detail-items">
           <thead><tr><th>Item</th><th>Qty</th></tr></thead>
           <tbody>
@@ -777,7 +971,7 @@ const user = (Astro.locals as { user?: { email?: string } }).user;
         ${editable
           ? `<label class="detail-note-label" for="agreed-total">Agreed total ($)</label>
              <input type="number" id="agreed-total" class="detail-agreed-total" min="0.01" step="0.01" inputmode="decimal" placeholder="0.00" required />`
-          : `<p class="detail-total">Agreed total: ${money(r.subtotalCents)}</p>`}
+          : (r.subtotalCents > 0 ? `<p class="detail-total">Agreed total: ${money(r.subtotalCents)}</p>` : '')}
         ${editable || r.status === 'approved'
           ? `<label class="detail-note-label">Note to customer / internal
               <textarea class="detail-note" id="detail-note" placeholder="Optional note">${escapeHtml(r.adminNote)}</textarea>
@@ -786,18 +980,22 @@ const user = (Astro.locals as { user?: { email?: string } }).user;
       `;
     }
     if (actions) {
+      let extra = '';
+      if (r.status === 'pending') {
+        extra = `
+          <button type="button" class="admin-btn-cancel" data-dialog-reject>Reject</button>
+          <button type="button" class="admin-btn-primary" data-dialog-approve>Send payment link</button>`;
+      } else if (r.status === 'paid') {
+        extra = `<button type="button" class="admin-btn-primary" data-dialog-fulfill>Mark complete</button>`;
+      }
       actions.innerHTML = `
         <button type="button" class="admin-btn-cancel" data-dialog-close>Close</button>
-        ${r.status === 'pending' ? `
-          <button type="button" class="admin-btn-cancel" data-dialog-reject>Reject</button>
-          <button type="button" class="admin-btn-primary" data-dialog-approve>Send payment link</button>
-        ` : ''}
+        ${extra}
       `;
     }
     if (modal) modal.hidden = false;
     if (editable) {
-      const totalInput = document.getElementById('agreed-total') as HTMLInputElement | null;
-      totalInput?.focus();
+      (document.getElementById('agreed-total') as HTMLInputElement | null)?.focus();
     }
   }
 
@@ -808,10 +1006,7 @@ const user = (Astro.locals as { user?: { email?: string } }).user;
     body.querySelectorAll('tr[data-idx]').forEach(row => {
       const menuItemId = (row as HTMLElement).dataset.menuItemId || null;
       const qty = Number((row.querySelector('.detail-qty') as HTMLInputElement).value);
-      items.push({
-        menuItemId: menuItemId || null,
-        quantity: qty,
-      });
+      items.push({ menuItemId: menuItemId || null, quantity: qty });
     });
     return items;
   }
@@ -832,14 +1027,25 @@ const user = (Astro.locals as { user?: { email?: string } }).user;
     if (e.target === e.currentTarget) closeModal();
   });
 
-  document.getElementById('catering-tbody')?.addEventListener('click', async e => {
+  async function onTableClick(e: Event) {
     const t = e.target as HTMLElement;
     const viewId = t.getAttribute('data-view');
     const rejectId = t.getAttribute('data-quick-reject');
     const deleteId = t.getAttribute('data-delete');
+    const fulfillId = t.getAttribute('data-fulfill');
 
     if (viewId) {
       openDetail(viewId);
+      return;
+    }
+    if (fulfillId) {
+      if (!confirm('Mark this catering order as complete?')) return;
+      try {
+        await patch(fulfillId, { action: 'fulfill' });
+        await load();
+      } catch (err) {
+        alert(err instanceof Error ? err.message : 'Could not mark complete');
+      }
       return;
     }
     if (rejectId) {
@@ -863,7 +1069,11 @@ const user = (Astro.locals as { user?: { email?: string } }).user;
         alert(err instanceof Error ? err.message : 'Delete failed');
       }
     }
-  });
+  }
+
+  document.getElementById('to-make-tbody')?.addEventListener('click', onTableClick);
+  document.getElementById('quotes-tbody')?.addEventListener('click', onTableClick);
+  document.getElementById('fulfilled-tbody')?.addEventListener('click', onTableClick);
 
   document.getElementById('detail-actions')?.addEventListener('click', async e => {
     const t = e.target as HTMLElement;
@@ -873,6 +1083,16 @@ const user = (Astro.locals as { user?: { email?: string } }).user;
     }
     if (!activeId) return;
     const note = (document.getElementById('detail-note') as HTMLTextAreaElement | null)?.value ?? '';
+    if (t.hasAttribute('data-dialog-fulfill')) {
+      try {
+        await patch(activeId, { action: 'fulfill' });
+        closeModal();
+        await load();
+      } catch (err) {
+        alert(err instanceof Error ? err.message : 'Could not mark complete');
+      }
+      return;
+    }
     if (t.hasAttribute('data-dialog-approve')) {
       const totalInput = document.getElementById('agreed-total') as HTMLInputElement | null;
       const agreedTotal = Number(totalInput?.value ?? '');

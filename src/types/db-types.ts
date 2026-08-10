@@ -144,9 +144,8 @@ export interface SmsSubscriber {
   createdAt: string;
 }
 
-// Catering quote lifecycle: customer requests → admin approves (emails a
-// Stripe Checkout link) → customer pays → status becomes paid.
-export type CateringRequestStatus = 'pending' | 'approved' | 'paid' | 'rejected';
+// Catering quote lifecycle: request → approve (payment link) → paid → fulfilled.
+export type CateringRequestStatus = 'pending' | 'approved' | 'paid' | 'fulfilled' | 'rejected';
 
 export interface CateringRequestItem {
   menuItemId: string | null;
@@ -169,6 +168,7 @@ export interface CateringRequest {
   stripePaymentIntentId: string | null;
   approvedAt: string | null;
   paidAt: string | null;
+  fulfilledAt: string | null;
   createdAt: string;
   items: CateringRequestItem[];
 }

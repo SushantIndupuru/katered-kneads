@@ -5,6 +5,7 @@ import {
     updateCateringRequestItems,
     markCateringApproved,
     markCateringRejected,
+    markCateringFulfilled,
     deleteCateringRequest,
 } from '../../../../lib/db';
 import { createCateringCheckoutSession } from '../../../../lib/catering-checkout';
@@ -46,6 +47,17 @@ export const PATCH: APIRoute = async ({ params, request, url }) => {
             }
             const rejected = await markCateringRejected(id, adminNote);
             return json({ request: rejected });
+        }
+
+        if (action === 'fulfill') {
+            if (existing.status !== 'paid') {
+                return json({ error: 'Only paid catering orders can be marked complete' }, 409);
+            }
+            const fulfilled = await markCateringFulfilled(id);
+            if (!fulfilled) {
+                return json({ error: 'Could not mark complete (already updated?)' }, 409);
+            }
+            return json({ request: fulfilled });
         }
 
         if (action === 'approve') {

@@ -49,7 +49,16 @@ const allItems = await getMenuItems();
                     <span class="product-qty-label">Quantity</span>
                     <div class="qty-stepper">
                       <button type="button" class="qty-btn qty-minus" aria-label={`Decrease quantity of ${item.name}`}>−</button>
-                      <span class="qty-value" aria-live="polite">0</span>
+                      <input
+                        type="number"
+                        class="qty-value"
+                        min="0"
+                        max="500"
+                        step="1"
+                        value="0"
+                        inputmode="numeric"
+                        aria-label={`Quantity of ${item.name}`}
+                      />
                       <button type="button" class="qty-btn qty-plus" aria-label={`Increase quantity of ${item.name}`}>+</button>
                     </div>
                   </div>
@@ -178,16 +187,31 @@ const allItems = await getMenuItems();
   }
   .qty-btn:hover:not(:disabled) { background: rgba(0, 0, 0, 0.04); }
   .qty-value {
-    min-width: 1.75rem;
+    width: 3.25rem;
+    min-width: 3.25rem;
     text-align: center;
     font-weight: 600;
+    font-size: 0.95rem;
+    font-family: inherit;
+    color: inherit;
+    border: none;
     border-left: 1px solid var(--accent);
     border-right: 1px solid var(--accent);
+    border-radius: 0;
     align-self: stretch;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0 0.5rem;
+    background: transparent;
+    padding: 0 0.35rem;
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+  .qty-value::-webkit-outer-spin-button,
+  .qty-value::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .qty-value:focus {
+    outline: none;
+    background: rgba(0, 0, 0, 0.03);
   }
   .cart-page-lines { list-style: none; padding: 0; margin: 1rem 0; }
   :global(.cart-page-line) {
@@ -209,7 +233,13 @@ const allItems = await getMenuItems();
 <script>
   type Line = { id: string; name: string; qty: number };
 
+  const MAX_QTY = 500;
   const qtyById = new Map<string, number>();
+
+  function clampQty(n: number): number {
+    if (!Number.isFinite(n)) return 0;
+    return Math.min(MAX_QTY, Math.max(0, Math.floor(n)));
+  }
 
   function lines(): Line[] {
     const out: Line[] = [];
@@ -234,8 +264,10 @@ const allItems = await getMenuItems();
     document.querySelectorAll<HTMLElement>('.product-card-actions').forEach(el => {
       const id = el.dataset.itemId!;
       const qty = qtyById.get(id) ?? 0;
-      const val = el.querySelector('.qty-value');
-      if (val) val.textContent = String(qty);
+      const input = el.querySelector('.qty-value') as HTMLInputElement | null;
+      if (input && document.activeElement !== input) {
+        input.value = String(qty);
+      }
     });
 
     if (linesEl) {
@@ -251,17 +283,56 @@ const allItems = await getMenuItems();
     if (submit) submit.disabled = selected.length === 0;
   }
 
+  function setQty(id: string, qty: number) {
+    const next = clampQty(qty);
+    if (next <= 0) qtyById.delete(id);
+    else qtyById.set(id, next);
+    syncUi();
+  }
+
   document.querySelectorAll<HTMLElement>('.product-card-actions').forEach(el => {
     const id = el.dataset.itemId!;
+    const input = el.querySelector('.qty-value') as HTMLInputElement | null;
+
     el.querySelector('.qty-plus')?.addEventListener('click', () => {
-      const next = Math.min((qtyById.get(id) ?? 0) + 1, 500);
-      qtyById.set(id, next);
-      syncUi();
+      setQty(id, (qtyById.get(id) ?? 0) + 1);
     });
     el.querySelector('.qty-minus')?.addEventListener('click', () => {
-      const next = Math.max((qtyById.get(id) ?? 0) - 1, 0);
-      qtyById.set(id, next);
-      syncUi();
+      setQty(id, (qtyById.get(id) ?? 0) - 1);
+    });
+
+    input?.addEventListener('input', () => {
+      const raw = input.value.trim();
+      if (raw === '') {
+        qtyById.delete(id);
+        const linesEl = document.getElementById('catering-lines');
+        const submit = document.getElementById('catering-submit') as HTMLButtonElement | null;
+        const selected = lines();
+        if (linesEl) {
+          linesEl.innerHTML = selected.length === 0
+            ? '<li class="catering-empty-lines">No items selected yet.</li>'
+            : selected.map(l => `<li class="cart-page-line"><span>${l.qty}&times; ${l.name}</span></li>`).join('');
+        }
+        if (submit) submit.disabled = selected.length === 0;
+        return;
+      }
+      const n = Number(raw);
+      if (!Number.isFinite(n)) return;
+      setQty(id, n);
+    });
+
+    input?.addEventListener('blur', () => {
+      const next = clampQty(Number(input.value));
+      setQty(id, next);
+      input.value = String(next);
+    });
+
+    // Keep Enter from submitting the quote form accidentally when typing qty.
+    input?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        input.blur();
+      }
     });
   });
 
